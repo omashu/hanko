@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy"
+  content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; img-src 'self' data: https: file:;" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Hanko</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="app">
+
+  <nav class="rail">
+    <button class="rail-brand" id="navHome" type="button" title="Hanko — на главную">
+      <span class="seal"></span>
+    </button>
+    <button class="rail-btn is-active" id="navManga" type="button" title="Манга и манхва">
+      <svg viewBox="0 0 24 24" width="22" height="22"><path d="M4 4h11l5 5v11a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 4v5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+      <span>Манга</span>
+    </button>
+    <button class="rail-btn" id="navAnime" type="button" title="Аниме">
+      <svg viewBox="0 0 24 24" width="22" height="22"><rect x="3" y="5" width="18" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M10 9l6 3-6 3V9z" fill="currentColor"/></svg>
+      <span>Аниме</span>
+    </button>
+    <button class="rail-btn" id="navFriends" type="button" title="Друзья">
+      <svg viewBox="0 0 24 24" width="22" height="22"><circle cx="8.5" cy="8.5" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M2.5 19c1.1-3.6 3.9-4.9 6-4.9s4.9 1.3 6 4.9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="17" cy="8" r="2.6" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M15.6 14.3c1.9.4 3.6 1.8 4.4 4.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <span>Друзья</span>
+      <span class="rail-badge" id="friendsNavBadge" hidden></span>
+    </button>
+    <button class="rail-btn" id="navProfile" type="button" title="Профиль">
+      <svg viewBox="0 0 24 24" width="22" height="22"><circle cx="12" cy="8.5" r="4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 20c1.4-4.6 5-6.2 8-6.2s6.6 1.6 8 6.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <span>Профиль</span>
+    </button>
+    <div class="rail-spacer"></div>
+  </nav>
+
+  <!-- ===================== ГЛАВНАЯ ===================== -->
+  <main class="view" id="viewHome" hidden>
+    <header class="view-header">
+      <div>
+        <h1>Hanko</h1>
+        <p class="view-sub">Стартовая страница — что сейчас популярно на MangaDex и AniList.</p>
+      </div>
+    </header>
+
+    <section class="section">
+      <h2 class="section-title">Популярная манга</h2>
+      <p class="empty-hint" id="homeMangaHint">Загружаю…</p>
+      <div class="grid" id="homeMangaGrid"></div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Популярное аниме</h2>
+      <p class="empty-hint" id="homeAnimeHint">Загружаю…</p>
+      <div class="grid" id="homeAnimeGrid"></div>
+    </section>
+  </main>
+
+  <!-- ===================== МАНГА / МАНХВА ===================== -->
+  <main class="view" id="viewManga">
+    <header class="view-header">
+      <div>
+        <h1>Манга и манхва</h1>
+        <p class="view-sub">Поиск по открытому каталогу MangaDex — читаем прямо тут, ничего не скачивая насовсем.</p>
+      </div>
+      <form id="mangaSearchForm" class="search-form">
+        <input id="mangaSearchInput" type="text" placeholder="Название тайтла…" autocomplete="off" />
+        <button type="submit">Искать</button>
+      </form>
+    </header>
+
+    <section class="section" id="mangaSearchSection" hidden>
+      <h2 class="section-title">Результаты поиска</h2>
+      <div class="grid" id="mangaSearchGrid"></div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Библиотека</h2>
+      <p class="empty-hint" id="mangaLibraryEmpty">Пока пусто — найди что-нибудь и добавь в библиотеку.</p>
+      <div class="grid" id="mangaLibraryGrid"></div>
+    </section>
+
+    <section class="section">
+      <div class="chapter-list-header">
+        <h2 class="section-title">Загрузки (офлайн)</h2>
+        <button class="btn-download-all btn-remove-all" id="downloadsRemoveAllBtn" type="button" hidden>Удалить все</button>
+      </div>
+      <p class="empty-hint" id="downloadsEmpty">Пока нет скачанных глав.</p>
+      <div class="chapter-list" id="downloadsList"></div>
+    </section>
+  </main>
+
+  <!-- ===================== АНИМЕ ===================== -->
+  <main class="view" id="viewAnime" hidden>
+    <header class="view-header">
+      <div>
+        <h1>Аниме</h1>
+        <p class="view-sub">Твои сайты в одной оболочке — без метания между вкладками браузера.</p>
+      </div>
+      <button class="btn-primary" id="addSiteBtn" type="button">+ Добавить сайт</button>
+    </header>
+
+    <section class="section" id="sitesSection">
+      <div class="grid grid--sites" id="sitesGrid"></div>
+    </section>
+
+    <section class="browser-pane" id="browserPane" hidden>
+      <div class="browser-bar">
+        <button id="browserBack" class="icon-btn" title="Назад">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button id="browserForward" class="icon-btn" title="Вперёд">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button id="browserReload" class="icon-btn" title="Обновить">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path d="M17.65 6.35A8 8 0 106 18.35L4 20M6.35 17.65A8 8 0 0018 6.35L20 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <span class="browser-url" id="browserUrl"></span>
+        <button id="browserClose" class="icon-btn" title="Закрыть">✕</button>
+      </div>
+      <webview id="siteWebview" partition="persist:hanko-anime" allowpopups></webview>
+      <div class="note-row">
+        <label for="siteNote">На чём остановился:</label>
+        <input id="siteNote" type="text" placeholder="напр. 3 сезон, 7 серия" autocomplete="off" />
+      </div>
+    </section>
+  </main>
+
+  <!-- ===================== ПРОФИЛЬ ===================== -->
+  <main class="view" id="viewProfile" hidden>
+    <header class="view-header">
+      <div>
+        <h1>Профиль</h1>
+        <p class="view-sub">Имя, аватар и закладки — только на этом компьютере. Друзья и чат — через аккаунт (см. ниже).</p>
+      </div>
+    </header>
+
+    <section class="section profile-card">
+      <button class="profile-avatar" id="profileAvatarBtn" type="button" title="Сменить аватар">
+        <img id="profileAvatarImg" alt="" hidden />
+        <span class="profile-avatar-fallback" id="profileAvatarFallback"></span>
+        <span class="profile-avatar-hint">Сменить</span>
+      </button>
+      <div class="profile-fields">
+        <label for="profileNameInput">Имя</label>
+        <input id="profileNameInput" type="text" maxlength="40" placeholder="Как к тебе обращаться" autocomplete="off" />
+        <label for="profileBioInput">О себе</label>
+        <input id="profileBioInput" type="text" maxlength="140" placeholder="Пара слов о себе (по желанию)" autocomplete="off" />
+        <p class="profile-stats" id="profileStats"></p>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Закладки — манга</h2>
+      <p class="empty-hint" id="profileMangaEmpty">Пока пусто — добавь тайтл в библиотеку в разделе «Манга».</p>
+      <div class="grid" id="profileMangaGrid"></div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Закладки — сайты</h2>
+      <p class="empty-hint" id="profileSitesEmpty">Пока пусто — добавь сайт в разделе «Аниме».</p>
+      <div class="grid grid--sites" id="profileSitesGrid"></div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Аккаунт</h2>
+      <p class="empty-hint" id="accountStatusText"></p>
+
+      <div class="auth-forms" id="authForms">
+        <form class="auth-form" id="registerForm">
+          <h4 class="auth-form-title">Зарегистрироваться</h4>
+          <input id="registerEmail" type="email" placeholder="Почта" autocomplete="off" />
+          <input id="registerPassword" type="password" placeholder="Пароль (мин. 6 символов)" autocomplete="new-password" />
+          <button type="submit" class="btn-secondary">Зарегистрироваться</button>
+          <p class="empty-hint auth-form-hint">Ник и друзья останутся те же — профиль просто перестанет быть привязан только к этому компьютеру.</p>
+        </form>
+        <form class="auth-form" id="loginForm">
+          <h4 class="auth-form-title">Войти в существующий аккаунт</h4>
+          <input id="loginEmail" type="email" placeholder="Почта" autocomplete="off" />
+          <input id="loginPassword" type="password" placeholder="Пароль" autocomplete="current-password" />
+          <button type="submit" class="btn-secondary">Войти</button>
+        </form>
+      </div>
+      <p class="empty-hint profile-note" id="authFeedback" hidden></p>
+      <button class="btn-secondary" id="logoutBtn" type="button" hidden>Выйти</button>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Аккаунт</h2>
+      <p class="empty-hint" id="accountOnlineHint"></p>
+    </section>
+  </main>
+
+  <!-- ===================== ДРУЗЬЯ ===================== -->
+  <main class="view" id="viewFriends" hidden>
+    <header class="view-header">
+      <div>
+        <h1>Друзья</h1>
+        <p class="view-sub">Кто сейчас в сети, заявки в друзья и личные переписки.</p>
+      </div>
+      <div class="view-header-actions">
+        <button class="icon-btn" id="requestsBtn" type="button" title="Заявки в друзья">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 3a6 6 0 0 0-6 6v3.2c0 .6-.2 1.2-.6 1.7L4 15.5c-.6.8 0 2 1 2h14c1 0 1.6-1.2 1-2l-1.4-1.6a2.6 2.6 0 0 1-.6-1.7V9a6 6 0 0 0-6-6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.5 19a2.5 2.5 0 0 0 5 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <span class="rail-badge" id="requestsBadge" hidden></span>
+        </button>
+        <button class="btn-primary" id="addFriendBtn" type="button" hidden>+ Добавить друга</button>
+      </div>
+    </header>
+
+    <section class="section">
+      <p class="empty-hint" id="onlineStatusHint">Подключаюсь…</p>
+      <button class="btn-secondary" id="onlineRetryBtn" type="button" hidden style="margin-bottom:14px;">Повторить подключение</button>
+
+      <div class="username-step" id="usernameStep" hidden>
+        <h3 class="section-title section-title--sub">Шаг 1 — придумай свой ник</h3>
+        <p class="empty-hint">Именно по нему тебя смогут найти другие — впиши сюда <b>своё</b> имя, не ник друга.</p>
+        <div class="username-row" id="usernameRow" hidden>
+          <span>Твой ник:</span>
+          <code id="usernameValue"></code>
+          <button class="btn-secondary" id="usernameEditBtn" type="button">Изменить</button>
+        </div>
+        <form class="friend-request-form" id="usernameForm" hidden>
+          <input id="usernameInput" type="text" placeholder="Свой ник: 3–20, латиница/цифры/_" autocomplete="off" maxlength="20" />
+          <button type="submit" class="btn-secondary">Сохранить</button>
+        </form>
+        <p class="empty-hint profile-note" id="usernameFeedback" hidden></p>
+      </div>
+
+      <h3 class="section-title section-title--sub">Мои друзья</h3>
+      <p class="empty-hint" id="friendsListEmpty">Пока никого нет — нажми «+ Добавить друга» выше.</p>
+      <div class="chapter-list" id="friendsList"></div>
+    </section>
+  </main>
+
+  <!-- ===================== ПОПАП: ДОБАВИТЬ ДРУГА ===================== -->
+  <div class="modal-backdrop" id="addFriendModalBackdrop" hidden>
+    <div class="modal" id="addFriendModal">
+      <button class="icon-btn modal-close" id="addFriendModalClose" type="button">✕</button>
+      <h3>Добавить друга</h3>
+      <p class="empty-hint">Впиши ник друга (например <code>alex_99</code>) или его код-приглашение (6 символов).</p>
+      <form id="addFriendForm">
+        <input id="addFriendInput" type="text" placeholder="Ник или код друга…" autocomplete="off" maxlength="20" />
+      </form>
+      <div id="addFriendPreview" class="add-friend-preview" hidden></div>
+      <p class="empty-hint profile-note" id="addFriendFeedback" hidden></p>
+    </div>
+  </div>
+
+  <!-- ===================== ПОПАП: ЗАЯВКИ (входящие/исходящие) ===================== -->
+  <div class="modal-backdrop" id="requestsModalBackdrop" hidden>
+    <div class="modal modal--wide" id="requestsModal">
+      <button class="icon-btn modal-close" id="requestsModalClose" type="button">✕</button>
+      <h3>Заявки в друзья</h3>
+
+      <h3 class="section-title section-title--sub">Входящие</h3>
+      <p class="empty-hint" id="incomingRequestsEmpty">Пока никто не присылал заявок.</p>
+      <div class="chapter-list" id="incomingRequestsList"></div>
+
+      <h3 class="section-title section-title--sub">Исходящие</h3>
+      <p class="empty-hint" id="outgoingRequestsEmpty">Нет отправленных заявок.</p>
+      <div class="chapter-list" id="outgoingRequestsList"></div>
+    </div>
+  </div>
+
+  <!-- ===================== ЧАТ (оверлей) ===================== -->
+  <div class="chat-overlay" id="chatOverlay" hidden>
+    <header class="reader-top">
+      <button id="chatBack" class="icon-btn" title="Назад к друзьям">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <span id="chatAvatar" class="chat-avatar"></span>
+      <span id="chatTitle" class="reader-title"></span>
+      <span id="chatOnlineLabel" class="chat-online-label" hidden>в сети</span>
+    </header>
+    <div class="chat-body" id="chatBody"></div>
+    <form class="chat-input-row" id="chatForm">
+      <input id="chatInput" type="text" placeholder="Написать сообщение…" autocomplete="off" maxlength="2000" />
+      <button type="submit" class="btn-primary">Отправить</button>
+    </form>
+  </div>
+
+  <!-- ===================== ПРОФИЛЬ ДРУГА ===================== -->
+  <div class="chat-overlay" id="friendProfileOverlay" hidden>
+    <header class="reader-top">
+      <button id="friendProfileBack" class="icon-btn" title="Назад к друзьям">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <span id="friendProfileAvatar" class="chat-avatar"></span>
+      <span id="friendProfileName" class="reader-title"></span>
+      <span id="friendProfileOnlineLabel" class="chat-online-label" hidden>в сети</span>
+    </header>
+    <div class="chat-body" id="friendProfileBody">
+      <section class="section">
+        <p class="empty-hint" id="friendProfileBio" hidden></p>
+        <p class="empty-hint" id="friendProfileError" hidden></p>
+      </section>
+
+      <section class="section" id="friendProfileBookmarksSection">
+        <h2 class="section-title">Закладки</h2>
+        <p class="empty-hint" id="friendBookmarksEmpty">Пока пусто.</p>
+        <div class="grid" id="friendBookmarksGrid"></div>
+      </section>
+
+      <section class="section" id="friendProfileCommentsSection">
+        <h2 class="section-title">Комментарии</h2>
+        <p class="empty-hint" id="friendCommentsEmpty">Комментариев пока нет.</p>
+        <div class="chapter-list" id="friendCommentsList"></div>
+        <form id="friendCommentForm" class="friend-request-form">
+          <input id="friendCommentInput" type="text" placeholder="Оставить комментарий…" maxlength="500" autocomplete="off" />
+          <button type="submit" class="btn-primary">Отправить</button>
+        </form>
+        <p class="empty-hint profile-note" id="friendCommentFeedback" hidden></p>
+      </section>
+    </div>
+  </div>
+
+  <!-- ===================== ЧИТАЛКА (оверлей) ===================== -->
+  <div class="reader-overlay" id="readerOverlay" hidden>
+    <header class="reader-top">
+      <button id="readerBack" class="icon-btn" title="Назад к тайтлу">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <span id="readerTitle" class="reader-title"></span>
+      <div class="reader-actions">
+        <button id="readerRefresh" class="icon-btn" title="Обновить страницы">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path d="M17.65 6.35A8 8 0 106 18.35L4 20M6.35 17.65A8 8 0 0018 6.35L20 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <div class="zoom-controls" id="zoomControls">
+          <button id="zoomOutBtn" class="icon-btn" type="button" title="Уменьшить">−</button>
+          <span id="zoomLabel" class="zoom-label" title="Сбросить масштаб">100%</span>
+          <button id="zoomInBtn" class="icon-btn" type="button" title="Увеличить">+</button>
+        </div>
+        <button id="readerModePaged" class="mode-btn" type="button">Постранично</button>
+        <button id="readerModeScroll" class="mode-btn" type="button">Вебтун-скролл</button>
+      </div>
+    </header>
+    <div class="reader-body" id="readerBody"></div>
+    <footer class="reader-bottom" id="readerPaged">
+      <button id="chapterPrevBtn" class="chapter-nav-btn" type="button">‹ Пред. глава</button>
+      <div class="reader-page-controls" id="readerPageControls">
+        <button id="readerPrev" class="icon-btn" title="Предыдущая">‹</button>
+        <span id="readerPageLabel"></span>
+        <button id="readerNext" class="icon-btn" title="Следующая">›</button>
+      </div>
+      <button id="chapterNextBtn" class="chapter-nav-btn" type="button">След. глава ›</button>
+    </footer>
+  </div>
+
+  <!-- ===================== МОДАЛКА ДОБАВЛЕНИЯ САЙТА ===================== -->
+  <div class="modal-backdrop" id="siteModalBackdrop" hidden>
+    <form class="modal" id="siteModalForm">
+      <h3>Новый сайт</h3>
+      <label for="siteNameInput">Название</label>
+      <input id="siteNameInput" type="text" placeholder="Как назвать плитку" autocomplete="off" required />
+      <label for="siteUrlInput">Адрес</label>
+      <input id="siteUrlInput" type="text" placeholder="https://…" autocomplete="off" required />
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="siteModalCancel">Отмена</button>
+        <button type="submit" class="btn-primary">Сохранить</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- ===================== ДЕТАЛИ ТАЙТЛА (модалка со списком глав) ===================== -->
+  <div class="modal-backdrop" id="titleModalBackdrop" hidden>
+    <div class="modal modal--wide" id="titleModal">
+      <button class="icon-btn modal-close" id="titleModalClose">✕</button>
+      <div class="title-modal-body" id="titleModalBody"></div>
+    </div>
+  </div>
+
+</div>
+
+<script src="renderer.js"></script>
+</body>
+</html>
