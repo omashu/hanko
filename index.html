@@ -265,6 +265,7 @@
         <div class="chat-pane-active" id="chatPaneActive" hidden>
           <header class="chat-pane-header">
             <span id="chatAvatar" class="chat-avatar"></span>
+            <span id="chatStatusDot" class="chat-status-dot"></span>
             <div class="chat-pane-header-info">
               <span id="chatTitle" class="chat-pane-title"></span>
               <span id="chatOnlineLabel" class="chat-online-label" hidden>в сети</span>
@@ -275,6 +276,9 @@
           </header>
           <div class="chat-body" id="chatBody"></div>
           <form class="chat-input-row" id="chatForm">
+            <button type="button" class="icon-btn" id="chatShareBtn" title="Стикеры и тайтлы">
+              <svg viewBox="0 0 24 24" width="19" height="19"><path d="M12 4v16M4 12h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            </button>
             <input id="chatInput" type="text" placeholder="Написать сообщение…" autocomplete="off" maxlength="2000" />
             <button type="submit" class="icon-btn chat-send-btn" title="Отправить">
               <svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 20l17-8L4 4l0 6.5L15 12l-11 1.5z" fill="currentColor"/></svg>
@@ -315,17 +319,41 @@
     </div>
   </div>
 
+  <!-- ===================== ПОПАП: БЫСТРЫЙ СПИСОК ДРУЗЕЙ (из профиля) ===================== -->
+  <div class="modal-backdrop" id="friendsQuickModalBackdrop" hidden>
+    <div class="modal modal--wide" id="friendsQuickModal">
+      <button class="icon-btn modal-close" id="friendsQuickModalClose" type="button">✕</button>
+      <h3>Друзья</h3>
+      <p class="empty-hint" id="friendsQuickEmpty">Пока никого нет.</p>
+      <div class="chat-list" id="friendsQuickList"></div>
+    </div>
+  </div>
+
+  <!-- ===================== ПОПАП: ДЕЙСТВИЯ С ДРУГОМ ===================== -->
+  <div class="modal-backdrop" id="friendActionModalBackdrop" hidden>
+    <div class="modal" id="friendActionModal">
+      <button class="icon-btn modal-close" id="friendActionModalClose" type="button">✕</button>
+      <h3 id="friendActionName"></h3>
+      <div class="friend-action-list">
+        <button class="friend-action-btn" id="friendActionVisitBtn" type="button">Посетить профиль</button>
+        <button class="friend-action-btn" id="friendActionMessageBtn" type="button">Написать сообщение</button>
+        <button class="friend-action-btn friend-action-btn--danger" id="friendActionRemoveBtn" type="button">Удалить из друзей</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ===================== ПРОФИЛЬ ДРУГА ===================== -->
-  <div class="chat-overlay" id="friendProfileOverlay" hidden>
-    <header class="reader-top">
-      <button id="friendProfileBack" class="icon-btn" title="Назад к друзьям">
-        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
-      <span id="friendProfileAvatar" class="chat-avatar"></span>
-      <span id="friendProfileName" class="reader-title"></span>
-      <span id="friendProfileOnlineLabel" class="chat-online-label" hidden>в сети</span>
-    </header>
-    <div class="chat-body" id="friendProfileBody">
+  <div class="modal-backdrop" id="friendProfileOverlay" hidden>
+    <div class="modal modal--wide modal--profile" id="friendProfileModal">
+      <button id="friendProfileBack" class="icon-btn modal-close" type="button" title="Закрыть">✕</button>
+      <div class="friend-profile-header">
+        <span id="friendProfileAvatar" class="chat-avatar friend-profile-avatar-lg"></span>
+        <div class="friend-profile-header-info">
+          <h3 id="friendProfileName"></h3>
+          <span id="friendProfileOnlineLabel" class="chat-online-label" hidden>в сети</span>
+        </div>
+      </div>
+    <div id="friendProfileBody">
       <p class="empty-hint" id="friendProfileError" hidden></p>
 
       <section class="section profile-block">
@@ -350,6 +378,32 @@
           </form>
           <p class="empty-hint profile-note" id="friendCommentFeedback" hidden></p>
         </section>
+      </div>
+    </div>
+    </div>
+  </div>
+
+  <!-- ===================== ПОПАП: СТИКЕРЫ И ПОДЕЛИТЬСЯ ТАЙТЛОМ ===================== -->
+  <div class="modal-backdrop" id="shareModalBackdrop" hidden>
+    <div class="modal modal--wide" id="shareModal">
+      <button class="icon-btn modal-close" id="shareModalClose" type="button">✕</button>
+      <h3>Поделиться в чат</h3>
+
+      <div class="share-tabs">
+        <button class="share-tab is-active" id="shareTabStickers" type="button">Стикеры</button>
+        <button class="share-tab" id="shareTabTitles" type="button">Тайтлы</button>
+      </div>
+
+      <div class="share-note-row">
+        <input id="shareNoteInput" type="text" placeholder="Комментарий (необязательно)…" maxlength="200" autocomplete="off" />
+      </div>
+
+      <div class="share-panel" id="shareStickerPanel">
+        <div class="sticker-grid" id="stickerGrid"></div>
+      </div>
+      <div class="share-panel" id="shareTitlesPanel" hidden>
+        <p class="empty-hint" id="shareTitlesEmpty">В библиотеке пока пусто.</p>
+        <div class="chapter-list" id="shareTitlesList"></div>
       </div>
     </div>
   </div>
@@ -407,6 +461,18 @@
       <button class="icon-btn modal-close" id="titleModalClose">✕</button>
       <div class="title-modal-body" id="titleModalBody"></div>
     </div>
+  </div>
+
+  <!-- ===================== БАННЕР АВТООБНОВЛЕНИЯ ===================== -->
+  <div class="update-banner" id="updateBanner" hidden>
+    <div class="update-banner-icon">
+      <svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 19h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <div class="update-banner-info">
+      <span class="update-banner-title" id="updateBannerTitle">Скачивается обновление…</span>
+      <div class="update-banner-track"><div class="update-banner-fill" id="updateBannerFill"></div></div>
+    </div>
+    <button class="btn-primary" id="updateBannerBtn" type="button" hidden>Перезапустить</button>
   </div>
 
 </div>

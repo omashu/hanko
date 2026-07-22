@@ -64,6 +64,35 @@ const els = {
   requestsBadge: document.getElementById('requestsBadge'),
   requestsModalBackdrop: document.getElementById('requestsModalBackdrop'),
   requestsModalClose: document.getElementById('requestsModalClose'),
+
+  friendsQuickModalBackdrop: document.getElementById('friendsQuickModalBackdrop'),
+  friendsQuickModalClose: document.getElementById('friendsQuickModalClose'),
+  friendsQuickEmpty: document.getElementById('friendsQuickEmpty'),
+  friendsQuickList: document.getElementById('friendsQuickList'),
+
+  friendActionModalBackdrop: document.getElementById('friendActionModalBackdrop'),
+  friendActionModalClose: document.getElementById('friendActionModalClose'),
+  friendActionName: document.getElementById('friendActionName'),
+  friendActionVisitBtn: document.getElementById('friendActionVisitBtn'),
+  friendActionMessageBtn: document.getElementById('friendActionMessageBtn'),
+  friendActionRemoveBtn: document.getElementById('friendActionRemoveBtn'),
+
+  chatShareBtn: document.getElementById('chatShareBtn'),
+  shareModalBackdrop: document.getElementById('shareModalBackdrop'),
+  shareModalClose: document.getElementById('shareModalClose'),
+  shareTabStickers: document.getElementById('shareTabStickers'),
+  shareTabTitles: document.getElementById('shareTabTitles'),
+  shareNoteInput: document.getElementById('shareNoteInput'),
+  shareStickerPanel: document.getElementById('shareStickerPanel'),
+  shareTitlesPanel: document.getElementById('shareTitlesPanel'),
+  stickerGrid: document.getElementById('stickerGrid'),
+  shareTitlesEmpty: document.getElementById('shareTitlesEmpty'),
+  shareTitlesList: document.getElementById('shareTitlesList'),
+
+  updateBanner: document.getElementById('updateBanner'),
+  updateBannerTitle: document.getElementById('updateBannerTitle'),
+  updateBannerFill: document.getElementById('updateBannerFill'),
+  updateBannerBtn: document.getElementById('updateBannerBtn'),
   friendsList: document.getElementById('friendsList'),
   friendsListEmpty: document.getElementById('friendsListEmpty'),
   chatListSearch: document.getElementById('chatListSearch'),
@@ -72,6 +101,7 @@ const els = {
   chatPaneActive: document.getElementById('chatPaneActive'),
   chatProfileBtn: document.getElementById('chatProfileBtn'),
   chatAvatar: document.getElementById('chatAvatar'),
+  chatStatusDot: document.getElementById('chatStatusDot'),
   chatTitle: document.getElementById('chatTitle'),
   chatOnlineLabel: document.getElementById('chatOnlineLabel'),
   chatBody: document.getElementById('chatBody'),
@@ -1184,9 +1214,100 @@ function renderProfileStats() {
   els.statFriends.textContent = onlineState.ready ? String(friendsList.length) : '—';
 }
 
-els.statFriendsBlock.addEventListener('click', () => showView('friends'));
+els.statFriendsBlock.addEventListener('click', openFriendsQuickModal);
 els.statFriendsBlock.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showView('friends'); }
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openFriendsQuickModal(); }
+});
+
+// ---------------- мини-попап «Друзья» (из профиля) + меню действий ----------------
+
+function friendQuickRow(f) {
+  const row = document.createElement('div');
+  row.className = 'chat-list-item';
+  const name = f.display_name || 'Без имени';
+  const initial = name.trim().charAt(0).toUpperCase();
+  const online = onlineFriendIds.has(f.friend_id);
+  row.innerHTML = `
+    <span class="chat-list-item-avatar">
+      ${escapeHtml(initial)}
+      ${online ? '<span class="chat-list-item-online-dot" title="В сети"></span>' : ''}
+    </span>
+    <div class="chat-list-item-info">
+      <span class="chat-list-item-name">${escapeHtml(name)}</span>
+      <span class="chat-list-item-sub">Личный чат</span>
+    </div>
+    <button class="chat-list-item-msg-btn" title="Написать сообщение">
+      <svg viewBox="0 0 24 24" width="18" height="18"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  `;
+  row.addEventListener('click', () => openFriendActionModal(f));
+  row.querySelector('.chat-list-item-msg-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeFriendsQuickModal();
+    showView('friends');
+    openChat(f.friend_id, name);
+  });
+  return row;
+}
+
+function openFriendsQuickModal() {
+  els.friendsQuickList.innerHTML = '';
+  els.friendsQuickEmpty.hidden = friendsList.length > 0;
+  for (const f of friendsList) els.friendsQuickList.appendChild(friendQuickRow(f));
+  els.friendsQuickModalBackdrop.hidden = false;
+}
+function closeFriendsQuickModal() { els.friendsQuickModalBackdrop.hidden = true; }
+
+els.friendsQuickModalClose.addEventListener('click', closeFriendsQuickModal);
+els.friendsQuickModalBackdrop.addEventListener('click', (e) => {
+  if (e.target === els.friendsQuickModalBackdrop) closeFriendsQuickModal();
+});
+
+let quickActionFriend = null;
+
+function openFriendActionModal(f) {
+  quickActionFriend = f;
+  els.friendActionName.textContent = f.display_name || 'Без имени';
+  els.friendActionModalBackdrop.hidden = false;
+}
+function closeFriendActionModal() {
+  els.friendActionModalBackdrop.hidden = true;
+  quickActionFriend = null;
+}
+els.friendActionModalClose.addEventListener('click', closeFriendActionModal);
+els.friendActionModalBackdrop.addEventListener('click', (e) => {
+  if (e.target === els.friendActionModalBackdrop) closeFriendActionModal();
+});
+
+els.friendActionVisitBtn.addEventListener('click', () => {
+  if (!quickActionFriend) return;
+  const f = quickActionFriend;
+  closeFriendActionModal();
+  closeFriendsQuickModal();
+  openFriendProfile(f.friend_id, f.display_name || 'Без имени');
+});
+
+els.friendActionMessageBtn.addEventListener('click', () => {
+  if (!quickActionFriend) return;
+  const f = quickActionFriend;
+  closeFriendActionModal();
+  closeFriendsQuickModal();
+  showView('friends');
+  openChat(f.friend_id, f.display_name || 'Без имени');
+});
+
+els.friendActionRemoveBtn.addEventListener('click', async () => {
+  if (!quickActionFriend) return;
+  const f = quickActionFriend;
+  if (!confirm(`Удалить «${f.display_name || 'без имени'}» из друзей?`)) return;
+  try {
+    await window.hanko.onlineUnfriend(f.friend_id);
+    closeFriendActionModal();
+    closeFriendsQuickModal();
+    await refreshFriends();
+  } catch (err) {
+    alert(err.message);
+  }
 });
 
 function myCommentRow(c) {
@@ -1628,11 +1749,47 @@ els.chatListSearch.addEventListener('input', () => {
 
 // ---------------- чат ----------------
 
+// сообщения-«стикеры» и «поделиться тайтлом/главой» кодируются как обычный
+// текст с непечатаемым префиксом + JSON — так не нужно менять схему Supabase,
+// а старые текстовые сообщения (без префикса) остаются обычным текстом
+const RICH_PREFIX = '\u0001HANKO1\u0001';
+
+function encodeRichMessage(payload) {
+  return RICH_PREFIX + JSON.stringify(payload);
+}
+
 function chatBubble(msg) {
   const mine = msg.from_id === onlineState.myId;
   const bubble = document.createElement('div');
-  bubble.className = `chat-bubble ${mine ? 'is-mine' : 'is-theirs'}`;
   const time = new Date(msg.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+
+  let rich = null;
+  if (msg.body && msg.body.startsWith(RICH_PREFIX)) {
+    try { rich = JSON.parse(msg.body.slice(RICH_PREFIX.length)); } catch { rich = null; }
+  }
+
+  if (rich && rich.kind === 'sticker') {
+    bubble.className = `chat-bubble chat-bubble--sticker ${mine ? 'is-mine' : 'is-theirs'}`;
+    bubble.innerHTML = `${escapeHtml(rich.emoji)}<span class="chat-bubble-time">${escapeHtml(time)}</span>`;
+    return bubble;
+  }
+
+  if (rich && (rich.kind === 'share_title' || rich.kind === 'share_chapter')) {
+    bubble.className = `chat-bubble chat-bubble--card ${mine ? 'is-mine' : 'is-theirs'}`;
+    const sub = rich.kind === 'share_chapter' ? (rich.chapterLabel || 'Глава') : (rich.status || '');
+    bubble.innerHTML = `
+      <img class="card-cover" src="${rich.coverUrl || ''}" alt="" loading="lazy" onerror="this.style.opacity=0" />
+      <div class="chat-bubble--card-info">
+        <span class="chat-bubble--card-title">${escapeHtml(rich.title || '')}</span>
+        ${sub ? `<span class="chat-bubble--card-sub">${escapeHtml(sub)}</span>` : ''}
+        ${rich.note ? `<span class="chat-bubble--card-note">${escapeHtml(rich.note)}</span>` : ''}
+        <span class="chat-bubble-time">${escapeHtml(time)}</span>
+      </div>
+    `;
+    return bubble;
+  }
+
+  bubble.className = `chat-bubble ${mine ? 'is-mine' : 'is-theirs'}`;
   bubble.innerHTML = `${escapeHtml(msg.body)}<span class="chat-bubble-time">${escapeHtml(time)}</span>`;
   return bubble;
 }
@@ -1666,11 +1823,8 @@ els.chatProfileBtn.addEventListener('click', () => {
   if (activeChat) openFriendProfile(activeChat.friendId, activeChat.name);
 });
 
-els.chatForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const body = els.chatInput.value.trim();
-  if (!body || !activeChat) return;
-  els.chatInput.value = '';
+async function sendChatPayload(body) {
+  if (!activeChat) return;
   try {
     const msg = await window.hanko.onlineSendMessage({ friendId: activeChat.friendId, body });
     els.chatBody.appendChild(chatBubble(msg));
@@ -1678,7 +1832,99 @@ els.chatForm.addEventListener('submit', async (e) => {
   } catch (err) {
     alert(err.message);
   }
+}
+
+els.chatForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = els.chatInput.value.trim();
+  if (!body || !activeChat) return;
+  els.chatInput.value = '';
+  await sendChatPayload(body);
 });
+
+// ---------------- попап «поделиться»: стикеры + тайтлы/главы из библиотеки ----------------
+
+const STICKER_SET = ['😀', '😂', '😍', '👍', '🔥', '😢', '😮', '🎉', '❤️', '😴', '🤔', '👀', '😭', '🥳', '🙏', '💀'];
+
+function openShareModal() {
+  els.shareNoteInput.value = '';
+  renderStickerGrid();
+  renderShareTitlesList();
+  switchShareTab('stickers');
+  els.shareModalBackdrop.hidden = false;
+}
+function closeShareModal() { els.shareModalBackdrop.hidden = true; }
+
+function switchShareTab(tab) {
+  const isStickers = tab === 'stickers';
+  els.shareTabStickers.classList.toggle('is-active', isStickers);
+  els.shareTabTitles.classList.toggle('is-active', !isStickers);
+  els.shareStickerPanel.hidden = !isStickers;
+  els.shareTitlesPanel.hidden = isStickers;
+}
+
+function renderStickerGrid() {
+  els.stickerGrid.innerHTML = '';
+  for (const emoji of STICKER_SET) {
+    const btn = document.createElement('button');
+    btn.className = 'sticker-btn';
+    btn.type = 'button';
+    btn.textContent = emoji;
+    btn.addEventListener('click', async () => {
+      closeShareModal();
+      await sendChatPayload(encodeRichMessage({ kind: 'sticker', emoji }));
+    });
+    els.stickerGrid.appendChild(btn);
+  }
+}
+
+function shareTitleRow(item) {
+  const row = document.createElement('div');
+  row.className = 'share-title-row';
+  row.innerHTML = `
+    <img class="card-cover" src="${item.coverUrl || ''}" alt="" loading="lazy" onerror="this.style.opacity=0" />
+    <div class="share-title-row-info">
+      <span class="chapter-row-label">${escapeHtml(item.title)}</span>
+    </div>
+    <div class="share-title-row-actions">
+      <button type="button" class="share-title-btn">Тайтл</button>
+      ${item.progress && item.progress.chapterLabel ? `<button type="button" class="share-chapter-btn">${escapeHtml(item.progress.chapterLabel)}</button>` : ''}
+    </div>
+  `;
+  row.querySelector('.share-title-btn').addEventListener('click', async () => {
+    const note = els.shareNoteInput.value.trim();
+    closeShareModal();
+    await sendChatPayload(encodeRichMessage({
+      kind: 'share_title', mangaId: item.id, title: item.title, coverUrl: item.coverUrl, status: item.status, note,
+    }));
+  });
+  const chapterBtn = row.querySelector('.share-chapter-btn');
+  if (chapterBtn) {
+    chapterBtn.addEventListener('click', async () => {
+      const note = els.shareNoteInput.value.trim();
+      closeShareModal();
+      await sendChatPayload(encodeRichMessage({
+        kind: 'share_chapter', mangaId: item.id, title: item.title, coverUrl: item.coverUrl,
+        chapterLabel: item.progress.chapterLabel, note,
+      }));
+    });
+  }
+  return row;
+}
+
+function renderShareTitlesList() {
+  els.shareTitlesList.innerHTML = '';
+  els.shareTitlesEmpty.hidden = library.length > 0;
+  for (const item of library) els.shareTitlesList.appendChild(shareTitleRow(item));
+}
+
+els.chatShareBtn.addEventListener('click', openShareModal);
+els.shareModalClose.addEventListener('click', closeShareModal);
+els.shareModalBackdrop.addEventListener('click', (e) => {
+  if (e.target === els.shareModalBackdrop) closeShareModal();
+});
+els.shareTabStickers.addEventListener('click', () => switchShareTab('stickers'));
+els.shareTabTitles.addEventListener('click', () => switchShareTab('titles'));
 
 // живые уведомления из главного процесса (реалтайм Supabase) — обновляем то,
 // что сейчас видно, а остальное подтянется, когда откроют раздел «Профиль»
@@ -1690,7 +1936,9 @@ function updateFriendsNavBadge() {
 
 function updateChatOnlineLabel() {
   if (!activeChat || els.chatPaneActive.hidden) return;
-  els.chatOnlineLabel.hidden = !onlineFriendIds.has(activeChat.friendId);
+  const online = onlineFriendIds.has(activeChat.friendId);
+  els.chatOnlineLabel.hidden = !online;
+  els.chatStatusDot.classList.toggle('is-online', online);
 }
 
 function updateFriendProfileOnlineLabel() {
@@ -1787,6 +2035,9 @@ function closeFriendProfile() {
 }
 
 els.friendProfileBack.addEventListener('click', closeFriendProfile);
+els.friendProfileOverlay.addEventListener('click', (e) => {
+  if (e.target === els.friendProfileOverlay) closeFriendProfile();
+});
 
 els.friendProfileUnfriendBtn.addEventListener('click', async () => {
   if (!activeFriendProfile) return;
@@ -1864,5 +2115,34 @@ async function init() {
   // пока откроют «Профиль», чтобы заявки/сообщения могли прийти в любой момент
   connectOnline();
 }
+
+// ---------------- баннер автообновления ----------------
+
+function renderUpdateBanner(status) {
+  if (!status || status.state === 'idle' || status.state === 'error') {
+    els.updateBanner.hidden = true;
+    return;
+  }
+  els.updateBanner.hidden = false;
+  const v = status.version ? ` v${status.version}` : '';
+  if (status.state === 'available') {
+    els.updateBannerTitle.textContent = `Найдено обновление${v} — скачиваю…`;
+    els.updateBannerFill.style.width = '6%';
+    els.updateBannerBtn.hidden = true;
+  } else if (status.state === 'downloading') {
+    const pct = Math.round(status.percent || 0);
+    els.updateBannerTitle.textContent = `Скачивается обновление${v} — ${pct}%`;
+    els.updateBannerFill.style.width = `${Math.max(6, pct)}%`;
+    els.updateBannerBtn.hidden = true;
+  } else if (status.state === 'ready') {
+    els.updateBannerTitle.textContent = `Обновление${v} готово`;
+    els.updateBannerFill.style.width = '100%';
+    els.updateBannerBtn.hidden = false;
+  }
+}
+
+window.hanko.onUpdateStatus(renderUpdateBanner);
+window.hanko.updateGetStatus().then(renderUpdateBanner);
+els.updateBannerBtn.addEventListener('click', () => window.hanko.updateInstall());
 
 init();

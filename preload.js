@@ -75,4 +75,10 @@ contextBridge.exposeInMainWorld('hanko', {
   onOnlineEvent: (cb) => {
     ipcRenderer.on('online:event', (_e, data) => cb(data));
   },
+
+  updateGetStatus: () => ipcRenderer.invoke('update:getStatus'),
+  updateInstall: () => ipcRenderer.invoke('update:install'),
+  onUpdateStatus: (cb) => {
+    ipcRenderer.on('update:status', (_e, status) => cb(status));
+  },
 });

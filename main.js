@@ -2,7 +2,7 @@
 // Тут и только тут есть доступ к файловой системе и сети.
 // Окно (renderer) ничего не может напрямую — только через preload.js + ipc.
 
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, Menu } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const { autoUpdater } = require('electron-updater');
@@ -111,6 +111,7 @@ async function saveDownloadsIndex(entries) {
 // ---------- окно ----------
 
 function createWindow() {
+  Menu.setApplicationMenu(null);
   mainWindow = new BrowserWindow({
     width: 1320,
     height: 860,
@@ -139,35 +140,53 @@ function createWindow() {
 // ---------- автообновление (GitHub Releases, через electron-updater) ----------
 // Работает только в собранном .exe (app.isPackaged) — при обычном "npm start"
 // в разработке просто ничего не делает, там нет реального релиза для сверки.
+// Статус прокидывается в renderer через IPC, чтобы окно "доступно обновление"
+// было в стилистике приложения, а не системным диалогом Electron.
+let lastUpdateStatus = { state: 'idle' };
+
+function sendUpdateStatus(status) {
+  lastUpdateStatus = status;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update:status', status);
+  }
+}
+
 function setupAutoUpdate() {
   if (!app.isPackaged) return;
 
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
-  autoUpdater.on('update-downloaded', () => {
-    dialog
-      .showMessageBox(mainWindow, {
-        type: 'info',
-        title: 'Обновление Hanko готово',
-        message: 'Скачано новое обновление. Перезапустить сейчас, чтобы применить?',
-        buttons: ['Перезапустить', 'Позже'],
-        defaultId: 0,
-        cancelId: 1,
-      })
-      .then((result) => {
-        if (result.response === 0) autoUpdater.quitAndInstall();
-      });
+  autoUpdater.on('update-available', (info) => {
+    sendUpdateStatus({ state: 'available', version: info.version });
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    sendUpdateStatus({ state: 'downloading', percent: progress.percent, version: lastUpdateStatus.version });
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    sendUpdateStatus({ state: 'ready', version: info.version });
   });
 
   autoUpdater.on('error', (err) => {
     console.error('Автообновление:', err?.message || err);
+    sendUpdateStatus({ state: 'error', message: err?.message || String(err) });
   });
 
   autoUpdater.checkForUpdates().catch((err) => {
     console.error('Проверка обновлений не удалась:', err?.message || err);
   });
 }
+
+ipcMain.handle('update:getStatus', () => lastUpdateStatus);
+
+ipcMain.handle('update:install', () => {
+  // isSilent=true — ставит без видимого окна NSIS-инсталлятора (так это
+  // ощущается как обновление на месте, а не переустановка), isForceRunAfter=true
+  // — сам перезапускает приложение после установки
+  autoUpdater.quitAndInstall(true, true);
+});
 
 app.whenReady().then(() => {
   createWindow();
