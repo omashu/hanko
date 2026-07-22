@@ -23,7 +23,12 @@ const els = {
   profileMangaEmpty: document.getElementById('profileMangaEmpty'),
   profileSitesGrid: document.getElementById('profileSitesGrid'),
   profileSitesEmpty: document.getElementById('profileSitesEmpty'),
-  profileStats: document.getElementById('profileStats'),
+  statBooks: document.getElementById('statBooks'),
+  statFriendsBlock: document.getElementById('statFriendsBlock'),
+  statFriends: document.getElementById('statFriends'),
+  statComments: document.getElementById('statComments'),
+  myCommentsEmpty: document.getElementById('myCommentsEmpty'),
+  myCommentsList: document.getElementById('myCommentsList'),
 
   accountStatusText: document.getElementById('accountStatusText'),
   authForms: document.getElementById('authForms'),
@@ -61,9 +66,11 @@ const els = {
   requestsModalClose: document.getElementById('requestsModalClose'),
   friendsList: document.getElementById('friendsList'),
   friendsListEmpty: document.getElementById('friendsListEmpty'),
+  chatListSearch: document.getElementById('chatListSearch'),
 
-  chatOverlay: document.getElementById('chatOverlay'),
-  chatBack: document.getElementById('chatBack'),
+  chatPanePlaceholder: document.getElementById('chatPanePlaceholder'),
+  chatPaneActive: document.getElementById('chatPaneActive'),
+  chatProfileBtn: document.getElementById('chatProfileBtn'),
   chatAvatar: document.getElementById('chatAvatar'),
   chatTitle: document.getElementById('chatTitle'),
   chatOnlineLabel: document.getElementById('chatOnlineLabel'),
@@ -78,6 +85,7 @@ const els = {
   friendProfileOnlineLabel: document.getElementById('friendProfileOnlineLabel'),
   friendProfileBio: document.getElementById('friendProfileBio'),
   friendProfileError: document.getElementById('friendProfileError'),
+  friendProfileUnfriendBtn: document.getElementById('friendProfileUnfriendBtn'),
   friendBookmarksEmpty: document.getElementById('friendBookmarksEmpty'),
   friendBookmarksGrid: document.getElementById('friendBookmarksGrid'),
   friendCommentsEmpty: document.getElementById('friendCommentsEmpty'),
@@ -1097,6 +1105,7 @@ async function loadProfileView() {
   renderProfileBookmarks();
   renderProfileStats();
   await refreshOnline();
+  await loadMyComments();
 }
 
 function renderProfileHeader() {
@@ -1171,12 +1180,51 @@ function ruPlural(n, one, few, many) {
 }
 
 function renderProfileStats() {
-  if (!els.profileStats) return;
-  let text = `${library.length} ${ruPlural(library.length, 'тайтл', 'тайтла', 'тайтлов')} в библиотеке`;
-  if (onlineState.ready) {
-    text += ` · ${friendsList.length} ${ruPlural(friendsList.length, 'друг', 'друга', 'друзей')}`;
+  els.statBooks.textContent = String(library.length);
+  els.statFriends.textContent = onlineState.ready ? String(friendsList.length) : '—';
+}
+
+els.statFriendsBlock.addEventListener('click', () => showView('friends'));
+els.statFriendsBlock.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showView('friends'); }
+});
+
+function myCommentRow(c) {
+  const row = document.createElement('div');
+  row.className = 'chapter-row';
+  const date = new Date(c.created_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  row.innerHTML = `
+    <div class="chapter-row-main">
+      <span class="chapter-row-label"><b>${escapeHtml(c.author_name)}</b> — ${escapeHtml(c.body)}</span>
+      <p class="card-meta" style="margin:2px 0 0;">${escapeHtml(date)}</p>
+    </div>
+    <button class="friend-request-remove" title="Удалить комментарий">✕</button>
+  `;
+  row.querySelector('.friend-request-remove').addEventListener('click', async () => {
+    try {
+      await window.hanko.onlineDeleteProfileComment(c.id);
+      await loadMyComments();
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+  return row;
+}
+
+async function loadMyComments() {
+  if (!onlineState.ready) {
+    els.statComments.textContent = '—';
+    return;
   }
-  els.profileStats.textContent = text;
+  try {
+    const comments = await window.hanko.onlineListProfileComments(onlineState.myId);
+    els.statComments.textContent = String(comments.length);
+    els.myCommentsList.innerHTML = '';
+    els.myCommentsEmpty.hidden = comments.length > 0;
+    for (const c of comments) els.myCommentsList.appendChild(myCommentRow(c));
+  } catch {
+    els.statComments.textContent = '—';
+  }
 }
 
 async function connectOnline() {
@@ -1538,41 +1586,45 @@ function renderOutgoingRequests() {
 
 function friendRow(f) {
   const row = document.createElement('div');
-  row.className = 'chapter-row';
+  row.className = 'chat-list-item';
+  if (activeChat && activeChat.friendId === f.friend_id) row.classList.add('is-active');
   const unread = unreadFriendIds.has(f.friend_id);
+  const online = onlineFriendIds.has(f.friend_id);
+  const name = f.display_name || 'Без имени';
+  const initial = name.trim().charAt(0).toUpperCase();
   row.innerHTML = `
-    <div class="chapter-row-main friend-row-name" role="button" tabindex="0" style="cursor:pointer;">
-      ${unread ? '<span class="unread-dot" title="Новое сообщение"></span>' : ''}
-      <span class="chapter-row-label">${escapeHtml(f.display_name || 'Без имени')}</span>
-    </div>
-    <div class="request-row-actions">
-      <button class="btn-chat" type="button">Написать</button>
-      <button class="friend-request-remove" title="Удалить из друзей">✕</button>
+    <span class="chat-list-item-avatar">
+      ${escapeHtml(initial)}
+      ${online ? '<span class="chat-list-item-online-dot" title="В сети"></span>' : ''}
+      ${unread ? '<span class="chat-list-item-unread" title="Новое сообщение"></span>' : ''}
+    </span>
+    <div class="chat-list-item-info">
+      <span class="chat-list-item-name">${escapeHtml(name)}</span>
+      <span class="chat-list-item-sub">Личный чат</span>
     </div>
   `;
-  const nameEl = row.querySelector('.friend-row-name');
-  nameEl.addEventListener('click', () => openFriendProfile(f.friend_id, f.display_name || 'Без имени'));
-  nameEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openFriendProfile(f.friend_id, f.display_name || 'Без имени'); }
-  });
-  row.querySelector('.btn-chat').addEventListener('click', (e) => {
+  row.addEventListener('click', () => openChat(f.friend_id, name));
+  row.querySelector('.chat-list-item-avatar').addEventListener('click', (e) => {
     e.stopPropagation();
-    openChat(f.friend_id, f.display_name || 'Без имени');
-  });
-  row.querySelector('.friend-request-remove').addEventListener('click', async (e) => {
-    e.stopPropagation();
-    if (!confirm(`Удалить «${f.display_name || 'без имени'}» из друзей?`)) return;
-    await window.hanko.onlineUnfriend(f.friend_id);
-    await refreshFriends();
+    openFriendProfile(f.friend_id, name);
   });
   return row;
 }
 
+let chatListFilter = '';
 function renderFriendsList() {
+  const filtered = chatListFilter
+    ? friendsList.filter((f) => (f.display_name || '').toLowerCase().includes(chatListFilter))
+    : friendsList;
   els.friendsList.innerHTML = '';
   els.friendsListEmpty.hidden = friendsList.length > 0;
-  for (const f of friendsList) els.friendsList.appendChild(friendRow(f));
+  for (const f of filtered) els.friendsList.appendChild(friendRow(f));
 }
+
+els.chatListSearch.addEventListener('input', () => {
+  chatListFilter = els.chatListSearch.value.trim().toLowerCase();
+  renderFriendsList();
+});
 
 // ---------------- чат ----------------
 
@@ -1589,7 +1641,8 @@ async function openChat(friendId, name) {
   activeChat = { friendId, name };
   unreadFriendIds.delete(friendId);
   renderFriendsList();
-  els.chatOverlay.hidden = false;
+  els.chatPanePlaceholder.hidden = true;
+  els.chatPaneActive.hidden = false;
   els.chatTitle.textContent = name;
   els.chatAvatar.textContent = (name || '?').trim().charAt(0).toUpperCase();
   updateChatOnlineLabel();
@@ -1609,7 +1662,9 @@ function renderChatMessages(messages) {
   els.chatBody.scrollTop = els.chatBody.scrollHeight;
 }
 
-els.chatBack.addEventListener('click', () => { els.chatOverlay.hidden = true; activeChat = null; });
+els.chatProfileBtn.addEventListener('click', () => {
+  if (activeChat) openFriendProfile(activeChat.friendId, activeChat.name);
+});
 
 els.chatForm.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -1634,7 +1689,7 @@ function updateFriendsNavBadge() {
 }
 
 function updateChatOnlineLabel() {
-  if (!activeChat || els.chatOverlay.hidden) return;
+  if (!activeChat || els.chatPaneActive.hidden) return;
   els.chatOnlineLabel.hidden = !onlineFriendIds.has(activeChat.friendId);
 }
 
@@ -1733,6 +1788,18 @@ function closeFriendProfile() {
 
 els.friendProfileBack.addEventListener('click', closeFriendProfile);
 
+els.friendProfileUnfriendBtn.addEventListener('click', async () => {
+  if (!activeFriendProfile) return;
+  if (!confirm(`Удалить «${activeFriendProfile.name}» из друзей?`)) return;
+  try {
+    await window.hanko.onlineUnfriend(activeFriendProfile.friendId);
+    closeFriendProfile();
+    await refreshFriends();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
 function showFriendCommentFeedback(text, isError) {
   els.friendCommentFeedback.hidden = false;
   els.friendCommentFeedback.textContent = text;
@@ -1765,7 +1832,7 @@ window.hanko.onOnlineEvent(async (event) => {
     updateFriendProfileOnlineLabel();
   } else if (event.type === 'message') {
     const msg = event.message;
-    if (activeChat && msg.from_id === activeChat.friendId && !els.chatOverlay.hidden) {
+    if (activeChat && msg.from_id === activeChat.friendId && !els.chatPaneActive.hidden) {
       els.chatBody.appendChild(chatBubble(msg));
       els.chatBody.scrollTop = els.chatBody.scrollHeight;
     } else {
