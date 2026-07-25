@@ -2,7 +2,7 @@
 // Тут и только тут есть доступ к файловой системе и сети.
 // Окно (renderer) ничего не может напрямую — только через preload.js + ipc.
 
-const { app, BrowserWindow, ipcMain, shell, dialog, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, Menu, session } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const { autoUpdater } = require('electron-updater');
@@ -27,6 +27,30 @@ const DEFAULT_PROFILE = { displayName: 'Читатель', bio: '', avatarFile: 
 const MANGADEX_API = 'https://api.mangadex.org';
 const MANGADEX_UPLOADS = 'https://uploads.mangadex.org';
 const USER_AGENT = 'Hanko-PersonalReader/1.0 (+local, single-user desktop app)';
+
+// ReManga — неофициальный (реверс-инжиниренный) источник, добавлен как второй
+// поставщик тайтлов поверх MangaDex. У него нет открытого публичного API, поэтому
+// эндпоинты ниже подсмотрены по трафику (тот же способ, которым пользуются сторонние
+// читалки вроде Tachiyomi-расширений) и могут сломаться без предупреждения при
+// редизайне сайта — при ошибке просто молча не добавляем их в общую выдачу.
+const REMANGA_API = 'https://api.remanga.org/api';
+const REMANGA_SITE = 'https://remanga.org';
+// префикс в id — так по одному идентификатору сразу видно, к какому источнику
+// (и какому обработчику) относится тайтл/глава, не храня это отдельным полем
+// везде, где id тайтла уже используется как ключ (библиотека, загрузки, прогресс)
+const REMANGA_PREFIX = 'rm:';
+
+// WaManga — третий источник, добавлен по тому же принципу, что и ReManga.
+// В отличие от ReManga, у поиска есть открытый JSON-эндпоинт (api/v1/manga?query=),
+// подсмотренный через devtools (никакого Cloudflare/WAF, обычный fetch без токена).
+// А вот у страницы тайтла и главы отдельного JSON нет — сайт (SvelteKit) отдаёт
+// их сразу готовым HTML при обычной серверной отрисовке, поэтому детали/главы/
+// страницы мы просто вытаскиваем регэкспами из HTML, а не через API.
+const WAMANGA_API = 'https://wamanga.ru/api/v1';
+const WAMANGA_SITE = 'https://wamanga.ru';
+// id вида wa:<type>:<slug> — type это раздел сайта (manga/manhwa/manhua/comic),
+// он нужен, чтобы построить правильный URL страницы тайтла
+const WAMANGA_PREFIX = 'wa:';
 
 let mainWindow = null;
 
@@ -108,6 +132,37 @@ async function saveDownloadsIndex(entries) {
   return entries;
 }
 
+// картинки страниц/обложек грузятся напрямую тегами <img> из окна (file://),
+// у такой страницы браузер вообще не отправляет Referer — часть узлов раздачи
+// MangaDex (@Home) на это ругается и отдаёт битую страницу. Подставляем Referer
+// и наш User-Agent на уровне сети для всех запросов к MangaDex, чтобы это
+// работало одинаково что для API (уже шлёт UA сам), что для картинок.
+// ВАЖНО: у session.webRequest может быть только один активный обработчик
+// onBeforeSendHeaders на сессию — повторный вызов этого метода полностью
+// заменяет предыдущий колбэк, а не добавляется к нему (фильтр по urls тут
+// не спасает, ограничение на уровне самого вызова). Поэтому MangaDex и
+// ReManga обязаны подставлять заголовки из ОДНОГО обработчика, иначе тот,
+// что зарегистрирован вторым, тихо отключает заголовки для первого.
+function setupRequestHeaders() {
+  const filter = {
+    urls: ['*://*.mangadex.org/*', '*://*.mangadex.network/*', '*://*.remanga.org/*', '*://*.wamanga.ru/*'],
+  };
+  session.defaultSession.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
+    const url = details.url;
+    if (url.includes('remanga.org')) {
+      details.requestHeaders['Referer'] = `${REMANGA_SITE}/`;
+      details.requestHeaders['Origin'] = REMANGA_SITE;
+    } else if (url.includes('wamanga.ru')) {
+      details.requestHeaders['Referer'] = `${WAMANGA_SITE}/`;
+      details.requestHeaders['Origin'] = WAMANGA_SITE;
+    } else {
+      details.requestHeaders['Referer'] = 'https://mangadex.org/';
+    }
+    details.requestHeaders['User-Agent'] = USER_AGENT;
+    callback({ requestHeaders: details.requestHeaders });
+  });
+}
+
 // ---------- окно ----------
 
 function createWindow() {
@@ -117,7 +172,7 @@ function createWindow() {
     height: 860,
     minWidth: 960,
     minHeight: 600,
-    backgroundColor: '#10131a',
+    backgroundColor: '#84addd',
     title: 'Hanko',
     icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: {
@@ -190,6 +245,7 @@ ipcMain.handle('update:install', () => {
 
 app.whenReady().then(() => {
   createWindow();
+  setupRequestHeaders();
   setupAutoUpdate();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -337,10 +393,17 @@ ipcMain.handle('profile:pickAvatar', async () => {
 // Запросы идут отсюда (main), а не из окна — так проще держать CSP окна строгим
 // и не открывать renderer прямой доступ в сеть.
 
-async function mdFetch(url) {
-  const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
-  if (!res.ok) throw new Error(`MangaDex вернул HTTP ${res.status}`);
-  return res.json();
+async function mdFetch(url, attempt = 1) {
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+    if (!res.ok) throw new Error(`MangaDex вернул HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    // "fetch failed" / оборванный сокет — обычно кратковременный сетевой сбой,
+    // а не реальная проблема на стороне MangaDex; один повтор почти всегда чинит
+    if (attempt < 2) return mdFetch(url, attempt + 1);
+    throw err;
+  }
 }
 
 // У MangaDex "основной" title почти никогда не содержит ru — русский перевод
@@ -366,8 +429,27 @@ function pickTitle(attrs) {
   return 'Без названия';
 }
 
-function mapMangaList(data) {
-  return (data.data || []).map((m) => {
+// MangaDex хранит рейтинг отдельно от карточки тайтла — берём его одним
+// батч-запросом на всю выдачу разом, а не по одному на тайтл
+async function fetchRatings(ids) {
+  if (!ids.length) return {};
+  const params = new URLSearchParams();
+  for (const id of ids) params.append('manga[]', id);
+  try {
+    const data = await mdFetch(`${MANGADEX_API}/statistics/manga?${params.toString()}`);
+    const out = {};
+    for (const [id, stat] of Object.entries(data.statistics || {})) {
+      const avg = stat?.rating?.bayesian ?? stat?.rating?.average;
+      if (typeof avg === 'number') out[id] = Math.round(avg * 10) / 10;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+async function mapMangaList(data) {
+  const items = (data.data || []).map((m) => {
     const cover = (m.relationships || []).find((r) => r.type === 'cover_art');
     const fileName = cover?.attributes?.fileName;
     return {
@@ -378,20 +460,391 @@ function mapMangaList(data) {
       coverUrl: fileName ? `${MANGADEX_UPLOADS}/covers/${m.id}/${fileName}.256.jpg` : null,
     };
   });
+  const ratings = await fetchRatings(items.map((i) => i.id));
+  for (const item of items) item.rating = ratings[item.id] ?? null;
+  return items;
 }
 
-ipcMain.handle('mangadex:search', async (_e, query) => {
-  const params = new URLSearchParams({
-    title: query,
-    limit: '24',
-    'order[relevance]': 'desc',
+// ---------- ReManga (неофициальный источник, см. константы вверху файла) ----------
+
+async function rmFetch(url, attempt = 1) {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': USER_AGENT,
+        Referer: `${REMANGA_SITE}/`,
+        Origin: REMANGA_SITE,
+        'Accept-Language': 'ru,en;q=0.8',
+      },
+    });
+    if (!res.ok) throw new Error(`ReManga вернул HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    if (attempt < 2) return rmFetch(url, attempt + 1);
+    throw err;
+  }
+}
+
+// content/is_licensed у ReManga отдаётся числовым id статуса — сводим к тем же
+// значениям, что уже использует карточка/фильтры для MangaDex
+const REMANGA_STATUS_MAP = { 1: 'completed', 2: 'ongoing', 3: 'hiatus', 4: 'hiatus', 6: 'cancelled' };
+
+function remangaCoverUrl(img) {
+  const rel = img?.high || img?.mid || img?.low;
+  if (!rel) return null;
+  return rel.startsWith('http') ? rel : `${REMANGA_SITE}/${rel.replace(/^\//, '')}`;
+}
+
+// поиск / каталог отдают "плоские" карточки без описания и статуса — их
+// достаточно для карточки и превью, полное описание подтягивается только
+// при открытии карточки тайтла (см. remanga:details)
+function mapRemangaListItem(raw) {
+  const dir = raw.dir;
+  return {
+    id: `${REMANGA_PREFIX}${dir}`,
+    title: raw.rus_name || raw.main_name || dir,
+    coverUrl: remangaCoverUrl(raw.img),
+    status: null,
+    rating: null,
+    description: '',
+  };
+}
+
+function remangaSortChaptersAsc(items) {
+  items.sort((a, b) => {
+    const na = parseFloat(a.chapter);
+    const nb = parseFloat(b.chapter);
+    if (Number.isNaN(na) && Number.isNaN(nb)) return 0;
+    if (Number.isNaN(na)) return 1;
+    if (Number.isNaN(nb)) return -1;
+    return na - nb;
   });
+  return items;
+}
+
+async function remangaSearch(query, { count = 30 } = {}) {
+  if (!query.trim()) return { items: [], total: 0 };
+  const params = new URLSearchParams({ query: query.trim(), page: '1', count: String(count), field: 'titles' });
+  const data = await rmFetch(`${REMANGA_API}/search/?${params.toString()}`);
+  const content = data.content || [];
+  return { items: content.map(mapRemangaListItem), total: data.props?.total_titles ?? content.length };
+}
+
+async function remangaTitleDetails(dir) {
+  const data = await rmFetch(`${REMANGA_API}/titles/${encodeURIComponent(dir)}/`);
+  return data.content || null;
+}
+
+ipcMain.handle('remanga:details', async (_e, id) => {
+  const dir = String(id || '').replace(REMANGA_PREFIX, '');
+  const content = await remangaTitleDetails(dir);
+  if (!content) return null;
+  const description = String(content.description || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const statusId = content.status?.id;
+  return {
+    id: `${REMANGA_PREFIX}${dir}`,
+    title: content.rus_name || content.main_name || dir,
+    coverUrl: remangaCoverUrl(content.img),
+    description,
+    status: REMANGA_STATUS_MAP[statusId] || null,
+  };
+});
+
+async function remangaChapters(dir) {
+  const content = await remangaTitleDetails(dir);
+  const branches = content?.branches || [];
+  if (!branches.length) return [];
+  const branchId = branches[0].id;
+
+  let all = [];
+  for (let page = 1; page <= 30; page++) { // страховка от зацикливания, с запасом
+    const params = new URLSearchParams({
+      branch_id: String(branchId), ordering: '-index', page: String(page), count: '100', user_data: '1',
+    });
+    const data = await rmFetch(`${REMANGA_API}/titles/chapters/?${params.toString()}`);
+    const batch = data.content || [];
+    all = all.concat(batch.filter((c) => !c.is_paid));
+    if (batch.length < 100) break;
+  }
+
+  const items = all.map((c) => ({
+    id: `${REMANGA_PREFIX}${c.id}`,
+    chapter: c.chapter,
+    title: c.name || null,
+    lang: 'ru',
+  }));
+  return remangaSortChaptersAsc(items);
+}
+
+async function remangaPages(chapterId) {
+  const data = await rmFetch(`${REMANGA_API}/titles/chapters/${encodeURIComponent(chapterId)}/`);
+  const raw = data.content?.pages || [];
+  // pages у ReManga иногда приходит вложенным массивом (страница -> варианты) —
+  // расплющиваем на один уровень и сортируем по id, как в рабочем примере расширения
+  const flat = [];
+  const flatten = (arr) => {
+    for (const item of arr) {
+      if (Array.isArray(item)) flatten(item);
+      else flat.push(item);
+    }
+  };
+  flatten(raw);
+  flat.sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
+  return flat.map((p) => (p.link?.startsWith('http') ? p.link : `${REMANGA_SITE}/${(p.link || '').replace(/^\//, '')}`));
+}
+
+// ---------- WaManga (см. константы вверху файла) ----------
+
+async function waFetch(url, attempt = 1) {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': USER_AGENT,
+        Referer: `${WAMANGA_SITE}/`,
+        Origin: WAMANGA_SITE,
+        Accept: 'application/json',
+        'Accept-Language': 'ru,en;q=0.8',
+      },
+    });
+    if (!res.ok) throw new Error(`WaManga вернул HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    if (attempt < 2) return waFetch(url, attempt + 1);
+    throw err;
+  }
+}
+
+async function waFetchHtml(url, attempt = 1) {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': USER_AGENT,
+        Referer: `${WAMANGA_SITE}/`,
+        'Accept-Language': 'ru,en;q=0.8',
+      },
+    });
+    if (!res.ok) throw new Error(`WaManga вернул HTTP ${res.status}`);
+    return await res.text();
+  } catch (err) {
+    if (attempt < 2) return waFetchHtml(url, attempt + 1);
+    throw err;
+  }
+}
+
+// statusTitle у WaManga уже приходит человекочитаемой строкой и почти совпадает
+// с нашим словарём статусов — но на всякий случай сводим явным списком
+const WAMANGA_STATUS_MAP = {
+  ongoing: 'ongoing', announcement: 'ongoing', continuing: 'ongoing',
+  completed: 'completed', finished: 'completed',
+  hiatus: 'hiatus', paused: 'hiatus',
+  cancelled: 'cancelled', canceled: 'cancelled', dropped: 'cancelled',
+};
+
+function wamangaUrl(type, slug) {
+  return `${WAMANGA_SITE}/${type}/${slug}`;
+}
+
+// поиск отдаёт достаточно полную карточку (описание/жанры/статус уже есть),
+// в отличие от ReManga тут не нужен отдельный шаг wamanga:details для описания
+function mapWamangaListItem(raw) {
+  const type = raw.type || 'manga';
+  const slug = raw.slug;
+  return {
+    id: `${WAMANGA_PREFIX}${type}:${slug}`,
+    title: raw.title || raw.titleEnglish || slug,
+    coverUrl: raw.coverUrl ? `${WAMANGA_SITE}${raw.coverUrl}` : null,
+    status: WAMANGA_STATUS_MAP[raw.statusTitle] || null,
+    rating: null,
+    description: String(raw.description || '').trim(),
+  };
+}
+
+async function waSearch(query, { limit = 20 } = {}) {
+  if (!query.trim()) return { items: [], total: 0 };
+  const params = new URLSearchParams({ limit: String(limit), offset: '0', query: query.trim() });
+  const data = await waFetch(`${WAMANGA_API}/manga?${params.toString()}`);
+  const list = Array.isArray(data) ? data : (data.items || data.data || []);
+  return { items: list.map(mapWamangaListItem), total: list.length };
+}
+
+// разбираем id вида wa:<type>:<slug> на составляющие
+function parseWamangaId(id) {
+  const rest = String(id || '').slice(WAMANGA_PREFIX.length);
+  const idx = rest.indexOf(':');
+  return { type: rest.slice(0, idx), slug: rest.slice(idx + 1) };
+}
+
+// главы на странице тайтла лежат прямо в HTML как обычные ссылки вида
+// /<type>/<slug>/glava-N (в порядке убывания — новые сверху), забираем их
+// регэкспом и сортируем по возрастанию сами, как и остальные источники
+function parseWamangaChapters(html, type, slug) {
+  // номер главы берём прямо из адреса (glava-354, glava-346.5) — так надёжнее,
+  // чем парсить текст ссылки, который может быть обёрнут в произвольные теги
+  const re = new RegExp(`href="[^"]*/${type}/${slug}/(glava-([\\d.]+))"`, 'gi');
+  const seen = new Map();
+  let m;
+  while ((m = re.exec(html))) {
+    if (!seen.has(m[1])) seen.set(m[1], m[2]);
+  }
+  const items = Array.from(seen.entries()).map(([chapterSlug, num]) => ({
+    id: `${WAMANGA_PREFIX}${type}:${slug}:${chapterSlug}`,
+    chapter: num,
+    title: null,
+    lang: 'ru',
+  }));
+  return remangaSortChaptersAsc(items); // сортировка чисто числовая, функция общая
+}
+
+async function waChapters(type, slug) {
+  const html = await waFetchHtml(wamangaUrl(type, slug));
+  return parseWamangaChapters(html, type, slug);
+}
+
+// страницы главы — обычные <img>, подписанные "страница N" в alt — сортируем
+// по этому номеру, а не по порядку в html, на случай если разметка когда-то
+// перемешается местами (лениво подгружаемые картинки и т.п.)
+function parseWamangaPages(html) {
+  const re = /<img[^>]+src="([^"]+\/app\/uploads\/[^"]+\.(?:webp|jpe?g|png))"[^>]*alt="[^"]*страниц[аы]\s+(\d+)/gi;
+  const found = [];
+  let m;
+  while ((m = re.exec(html))) {
+    found.push({ url: m[1].startsWith('http') ? m[1] : `${WAMANGA_SITE}${m[1]}`, page: parseInt(m[2], 10) });
+  }
+  found.sort((a, b) => a.page - b.page);
+  return found.map((p) => p.url);
+}
+
+async function waPages(type, slug, chapterSlug) {
+  const html = await waFetchHtml(`${wamangaUrl(type, slug)}/${chapterSlug}`);
+  return parseWamangaPages(html);
+}
+
+// поиск на WaManga тайтла, соответствующего названию с MangaDex/другого источника
+// (тот же API, что и обычный поиск, просто используем его для матчинга по имени)
+async function findWamangaMatchForTitle(title) {
+  if (!title) return null;
+  try {
+    const { items } = await waSearch(title, { limit: 10 });
+    return pickBestTitleMatch(title, items, (it) => it.title);
+  } catch {
+    return null;
+  }
+}
+
+ipcMain.handle('mangadex:search', async (_e, payload) => {
+  // обратная совместимость: раньше сюда передавали просто строку с названием
+  const opts = typeof payload === 'string' ? { query: payload } : (payload || {});
+  const { query = '', tagIds = [], status = [], order = 'relevance', originalLanguage = [], offset = 0 } = opts;
+
+  const limit = 24;
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (query.trim()) params.append('title', query.trim());
+  for (const id of tagIds) params.append('includedTags[]', id);
+  for (const s of status) params.append('status[]', s);
+  for (const lang of originalLanguage) params.append('originalLanguage[]', lang);
+
+  // order[relevance] у MangaDex осмысленно работает только вместе с текстовым
+  // запросом (title). Если ищем просто по жанру/теме без текста, "релевантность"
+  // превращается в случайный порядок — оттуда и редкие тайтлы с парой лайков
+  // вместо нормальных популярных вещей. В этом случае молча подменяем сортировку
+  // на "по популярности", даже если в фильтрах стоит "По релевантности".
+  const effectiveOrder = (!query.trim() && order === 'relevance') ? 'popular' : order;
+  const orderKey = { relevance: 'relevance', popular: 'followedCount', rating: 'rating', latest: 'latestUploadedChapter' }[effectiveOrder] || 'relevance';
+  params.append(`order[${orderKey}]`, 'desc');
+
   params.append('includes[]', 'cover_art');
   params.append('contentRating[]', 'safe');
   params.append('contentRating[]', 'suggestive');
 
   const data = await mdFetch(`${MANGADEX_API}/manga?${params.toString()}`);
-  return mapMangaList(data);
+  const items = await mapMangaList(data);
+  let total = data.total ?? items.length;
+
+  // ReManga вливаем в ту же выдачу, а не отдельным переключателем — только на
+  // текстовый запрос (у него нет фильтров по тегам/статусу, как у MangaDex) и
+  // только на первую страницу: пагинация у двух источников с разным размером
+  // страницы точно не совместить, так что дальше (offset > 0) страницы
+  // докручивает только MangaDex, а ReManga отдаёт свой единственный "кусок" сразу.
+  // Если ReManga недоступен/изменил формат — просто тихо остаёмся с MangaDex.
+  if (query.trim() && offset === 0) {
+    try {
+      const rm = await remangaSearch(query);
+      if (rm.items.length) {
+        items.push(...rm.items);
+        total += rm.items.length;
+      }
+    } catch (err) {
+      console.error('ReManga поиск не удался:', err?.message || err);
+    }
+    try {
+      const wa = await waSearch(query);
+      if (wa.items.length) {
+        items.push(...wa.items);
+        total += wa.items.length;
+      }
+    } catch (err) {
+      console.error('WaManga поиск не удался:', err?.message || err);
+    }
+  }
+
+  // data.total — сколько всего тайтлов подходит под фильтр (не только на этой странице),
+  // нужно рендерeру, чтобы посчитать число страниц и включить/выключить "Вперёд"
+  return { items, total, offset, limit };
+});
+
+// у MangaDex почти нет русской локализации тегов — переводим сами то, что
+// реально встречается в жанрах/темах; чего нет в словаре — остаётся на английском
+const TAG_NAME_RU = {
+  // жанры
+  Action: 'Экшен', Adventure: 'Приключения', "Boys' Love": 'Яой', Comedy: 'Комедия',
+  Crime: 'Криминал', Drama: 'Драма', Fantasy: 'Фэнтези', "Girls' Love": 'Юри',
+  Historical: 'История', Horror: 'Ужасы', Isekai: 'Исекай', 'Magical Girls': 'Махо-сёдзё',
+  Mecha: 'Меха', Medical: 'Медицина', Mystery: 'Детектив', Philosophical: 'Философия',
+  Psychological: 'Психология', Romance: 'Романтика', 'Sci-Fi': 'Научная фантастика',
+  'Slice of Life': 'Повседневность', Sports: 'Спорт', Superhero: 'Супергерои',
+  Thriller: 'Триллер', Tragedy: 'Трагедия', Wuxia: 'Уся',
+  // темы
+  Aliens: 'Пришельцы', Animals: 'Животные', Cooking: 'Кулинария', Crossdressing: 'Кроссдрессинг',
+  Delinquents: 'Хулиганы', Demons: 'Демоны', Genderswap: 'Гендерная интрига', Ghosts: 'Призраки',
+  Gyaru: 'Гяру', Harem: 'Гарем', Incest: 'Инцест', Loli: 'Лоли', Mafia: 'Мафия',
+  Magic: 'Магия', Mahjong: 'Маджонг', 'Martial Arts': 'Боевые искусства', Military: 'Военное дело',
+  'Monster Girls': 'Девушки-монстры', Monsters: 'Монстры', Music: 'Музыка', Ninja: 'Ниндзя',
+  'Office Workers': 'Офисные работники', Police: 'Полиция', 'Post-Apocalyptic': 'Постапокалиптика',
+  Reincarnation: 'Реинкарнация', 'Reverse Harem': 'Обратный гарем', Samurai: 'Самураи',
+  'School Life': 'Школьная жизнь', Shota: 'Шота', Supernatural: 'Сверхъестественное',
+  Survival: 'Выживание', 'Time Travel': 'Путешествия во времени', 'Traditional Games': 'Традиционные игры',
+  Vampires: 'Вампиры', 'Video Games': 'Видеоигры', Villainess: 'Злодейка',
+  'Virtual Reality': 'Виртуальная реальность', Zombies: 'Зомби',
+};
+
+// приложение — обычный читалка манги/манхвы/маньхуа, без взрослых жанров и тем;
+// эти теги технически есть в справочнике MangaDex, но в фильтрах их быть не должно
+const EXCLUDED_TAG_NAMES = new Set([
+  "Boys' Love", "Girls' Love", // яой, юри
+  'Incest', 'Loli', 'Shota', // хентай-тематика
+  'Sexual Violence', // контентный тег 18+
+]);
+
+// список жанров/тем почти никогда не меняется — кэшируем на всё время работы приложения
+let cachedTags = null;
+ipcMain.handle('mangadex:tags', async () => {
+  if (cachedTags) return cachedTags;
+  const data = await mdFetch(`${MANGADEX_API}/manga/tag`);
+  const groups = {};
+  for (const t of data.data || []) {
+    const original = t.attributes?.name?.en || 'Без названия';
+    if (EXCLUDED_TAG_NAMES.has(original)) continue;
+    const group = t.attributes?.group || 'other';
+    const name = TAG_NAME_RU[original] || t.attributes?.name?.ru || original;
+    if (!groups[group]) groups[group] = [];
+    groups[group].push({ id: t.id, name });
+  }
+  for (const key of Object.keys(groups)) groups[key].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  cachedTags = groups;
+  return groups;
 });
 
 // «Популярное» для главной страницы — сортировка MangaDex по числу подписок
@@ -406,35 +859,163 @@ ipcMain.handle('mangadex:popular', async () => {
   params.append('hasAvailableChapters', 'true');
 
   const data = await mdFetch(`${MANGADEX_API}/manga?${params.toString()}`);
-  return mapMangaList(data);
+  return await mapMangaList(data);
 });
 
-ipcMain.handle('mangadex:chapters', async (_e, mangaId) => {
-  const params = new URLSearchParams({
-    limit: '200',
-    'order[chapter]': 'asc',
-  });
-  params.append('translatedLanguage[]', 'ru');
-  params.append('translatedLanguage[]', 'en');
-  const data = await mdFetch(`${MANGADEX_API}/manga/${mangaId}/feed?${params.toString()}`);
-  return (data.data || []).map((c) => ({
+// сравнение названий без учёта регистра/пунктуации — чтобы сматчить один и тот
+// же тайтл между MangaDex и ReManga, у которых написание может чуть отличаться
+function normalizeTitleForMatch(s) {
+  return (s || '').toLowerCase().replace(/[^a-zа-яё0-9]+/gi, ' ').trim();
+}
+
+function pickBestTitleMatch(target, candidates, getTitle) {
+  const targetNorm = normalizeTitleForMatch(target);
+  if (!targetNorm) return null;
+  let best = null;
+  let bestScore = 0;
+  for (const c of candidates) {
+    const t = normalizeTitleForMatch(getTitle(c));
+    if (!t) continue;
+    let score = 0;
+    if (t === targetNorm) score = 2;
+    else if (t.includes(targetNorm) || targetNorm.includes(t)) score = 1;
+    if (score > bestScore) { bestScore = score; best = c; }
+  }
+  return best;
+}
+
+// ищем на ReManga тайтл, соответствующий названию с MangaDex (для карточек,
+// открытых как MangaDex-тайтл — чтобы можно было сравнить, где глав на русском больше)
+async function findRemangaMatchForTitle(title) {
+  if (!title) return null;
+  try {
+    const { items } = await remangaSearch(title, { count: 10 });
+    return pickBestTitleMatch(title, items, (it) => it.title);
+  } catch {
+    return null;
+  }
+}
+
+// и наоборот — ищем на MangaDex тайтл, соответствующий названию с ReManga
+// (нужно, чтобы у ReManga-карточек тоже был английский перевод от MangaDex)
+async function findMangadexMatchForTitle(title) {
+  if (!title) return null;
+  try {
+    const params = new URLSearchParams({ limit: '10', title: title.trim() });
+    params.append('order[relevance]', 'desc');
+    params.append('contentRating[]', 'safe');
+    params.append('contentRating[]', 'suggestive');
+    const data = await mdFetch(`${MANGADEX_API}/manga?${params.toString()}`);
+    const match = pickBestTitleMatch(title, data.data || [], (m) => pickTitle(m.attributes));
+    return match?.id || null;
+  } catch {
+    return null;
+  }
+}
+
+// раньше брали только первые 200 записей одним запросом — у тайтлов, где
+// несколько групп переводчиков закрывали одни и те же главы, реальных строк
+// в ленте оказывается больше 200, и из-за лимита в выдачу попадал случайный
+// кусок вместо начала (например, сразу глава 238 вместо 1). Догружаем ленту
+// постранично, пока не заберём всё. langs — список кодов языка для фильтра.
+async function mdChaptersFeed(mangaId, langs) {
+  const limit = 500; // максимум, который отдаёт этот эндпоинт MangaDex за раз
+  let offset = 0;
+  let all = [];
+  for (let i = 0; i < 20; i++) { // страховка от зацикливания, с запасом на любой тайтл
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    params.append('order[chapter]', 'asc');
+    for (const lang of langs) params.append('translatedLanguage[]', lang);
+    const data = await mdFetch(`${MANGADEX_API}/manga/${mangaId}/feed?${params.toString()}`);
+    const batch = data.data || [];
+    all = all.concat(batch);
+    offset += limit;
+    if (batch.length < limit || offset >= (data.total ?? all.length)) break;
+  }
+  return all.map((c) => ({
     id: c.id,
     chapter: c.attributes?.chapter,
     title: c.attributes?.title,
     lang: c.attributes?.translatedLanguage,
     pages: c.attributes?.pages,
   }));
+}
+
+function sortChaptersAsc(items) {
+  items.sort((a, b) => {
+    const na = parseFloat(a.chapter);
+    const nb = parseFloat(b.chapter);
+    if (Number.isNaN(na) && Number.isNaN(nb)) return 0;
+    if (Number.isNaN(na)) return 1;
+    if (Number.isNaN(nb)) return -1;
+    return na - nb;
+  });
+  return items;
+}
+
+// главы всегда собираем из ОБОИХ источников, независимо от того, как изначально
+// пришла карточка (MangaDex или ReManga): EN — только с MangaDex (у ReManga его
+// просто нет), RU — с того источника, у которого на русском больше глав. Так
+// у тайтлов с неполным русским переводом на MangaDex подтягивается более полный
+// перевод с ReManga, а у тайтлов, найденных через ReManga, всё равно есть EN.
+ipcMain.handle('mangadex:chapters', async (_e, payload) => {
+  const { mangaId, title } = typeof payload === 'string' ? { mangaId: payload, title: '' } : (payload || {});
+  const isRemanga = typeof mangaId === 'string' && mangaId.startsWith(REMANGA_PREFIX);
+  const isWamanga = typeof mangaId === 'string' && mangaId.startsWith(WAMANGA_PREFIX);
+
+  let mdId = (isRemanga || isWamanga) ? null : mangaId;
+  let rmDir = isRemanga ? mangaId.slice(REMANGA_PREFIX.length) : null;
+  let waType = null, waSlug = null;
+  if (isWamanga) ({ type: waType, slug: waSlug } = parseWamangaId(mangaId));
+
+  if (!mdId && title) mdId = await findMangadexMatchForTitle(title);
+  if (!rmDir && title) {
+    const match = await findRemangaMatchForTitle(title);
+    if (match) rmDir = match.id.slice(REMANGA_PREFIX.length);
+  }
+  if (!waType && title) {
+    const match = await findWamangaMatchForTitle(title);
+    if (match) ({ type: waType, slug: waSlug } = parseWamangaId(match.id));
+  }
+
+  const [enItems, mdRuItems, rmRuItems, waRuItems] = await Promise.all([
+    mdId ? mdChaptersFeed(mdId, ['en']).catch(() => []) : [],
+    mdId ? mdChaptersFeed(mdId, ['ru']).catch(() => []) : [],
+    rmDir ? remangaChapters(rmDir).catch(() => []) : [],
+    waType ? waChapters(waType, waSlug).catch(() => []) : [],
+  ]);
+
+  // из трёх источников RU (MangaDex/ReManga/WaManga) берём тот, где глав больше
+  const ruCandidates = [mdRuItems, rmRuItems, waRuItems];
+  const ruItems = ruCandidates.reduce((best, cur) => (cur.length > best.length ? cur : best));
+
+  return sortChaptersAsc([...ruItems, ...enItems]);
 });
 
 async function getChapterPages(chapterId) {
-  const data = await mdFetch(`${MANGADEX_API}/at-home/server/${chapterId}`);
+  // forcePort443 — просим MangaDex назначить узел раздачи, который слушает именно
+  // 443-й порт. Часть их узлов (@Home) работают на нестандартных портах, которые
+  // тихо режутся роутером/провайдером/антивирусом — из-за этого одни тайтлы
+  // открываются, а другие нет, и повторный запрос той же картинки не помогает,
+  // т.к. порт всё так же заблокирован. 443 почти никогда никем не блокируется.
+  const data = await mdFetch(`${MANGADEX_API}/at-home/server/${chapterId}?forcePort443=true`);
   const base = data.baseUrl;
   const hash = data.chapter?.hash;
   const files = data.chapter?.data || [];
   return files.map((f) => `${base}/data/${hash}/${f}`);
 }
 
-ipcMain.handle('mangadex:pages', async (_e, chapterId) => getChapterPages(chapterId));
+ipcMain.handle('mangadex:pages', async (_e, chapterId) => {
+  if (typeof chapterId === 'string' && chapterId.startsWith(REMANGA_PREFIX)) {
+    return remangaPages(chapterId.slice(REMANGA_PREFIX.length));
+  }
+  if (typeof chapterId === 'string' && chapterId.startsWith(WAMANGA_PREFIX)) {
+    const rest = chapterId.slice(WAMANGA_PREFIX.length);
+    const [type, slug, chapterSlug] = rest.split(':');
+    return waPages(type, slug, chapterSlug);
+  }
+  return getChapterPages(chapterId);
+});
 
 // ---------- IPC: AniList (публичный открытый GraphQL API, без ключа) ----------
 // Используется только для витрины «Популярное аниме» на главной странице —
@@ -546,12 +1127,23 @@ ipcMain.handle('downloads:start', async (_e, { mangaId, title, coverUrl, chapter
   };
 
   try {
-    const pages = await getChapterPages(chapterId);
+    let pages;
+    if (chapterId.startsWith(REMANGA_PREFIX)) {
+      pages = await remangaPages(chapterId.slice(REMANGA_PREFIX.length));
+    } else if (chapterId.startsWith(WAMANGA_PREFIX)) {
+      const [waType, waSlug, waChapterSlug] = chapterId.slice(WAMANGA_PREFIX.length).split(':');
+      pages = await waPages(waType, waSlug, waChapterSlug);
+    } else {
+      pages = await getChapterPages(chapterId);
+    }
     for (let i = 0; i < pages.length; i++) {
       if (controller.signal.aborted) throw new DOMException('Отменено', 'AbortError');
       const url = pages[i];
       const ext = (url.split('.').pop() || 'jpg').split('?')[0].slice(0, 5);
-      const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT }, signal: controller.signal });
+      const imgHeaders = { 'User-Agent': USER_AGENT };
+      if (url.includes('remanga.org')) { imgHeaders.Referer = `${REMANGA_SITE}/`; imgHeaders.Origin = REMANGA_SITE; }
+      if (url.includes('wamanga.ru')) { imgHeaders.Referer = `${WAMANGA_SITE}/`; imgHeaders.Origin = WAMANGA_SITE; }
+      const res = await fetch(url, { headers: imgHeaders, signal: controller.signal });
       if (!res.ok) throw new Error(`Страница ${i + 1}: HTTP ${res.status}`);
       const buf = Buffer.from(await res.arrayBuffer());
       const fileName = `${String(i + 1).padStart(3, '0')}.${ext}`;
@@ -941,6 +1533,12 @@ ipcMain.handle('online:getProfile', async (_e, userId) => {
   const { data, error } = await supabase.rpc('rpc_get_profile', { p_user_id: userId }).maybeSingle();
   if (error) throw new Error(friendlyOnlineError(error));
   return data || null;
+});
+
+ipcMain.handle('online:toggleProfileLike', async (_e, profileId) => {
+  const { data, error } = await supabase.rpc('rpc_toggle_profile_like', { p_profile_id: profileId });
+  if (error) throw new Error(friendlyOnlineError(error));
+  return data;
 });
 
 // Синхронизация закладок — best-effort, вызывается при каждом изменении

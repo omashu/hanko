@@ -24,10 +24,12 @@ contextBridge.exposeInMainWorld('hanko', {
   saveProfile: (partial) => ipcRenderer.invoke('profile:save', partial),
   pickAvatar: () => ipcRenderer.invoke('profile:pickAvatar'),
 
-  mangadexSearch: (query) => ipcRenderer.invoke('mangadex:search', query),
+  mangadexSearch: (payload) => ipcRenderer.invoke('mangadex:search', payload),
+  mangadexTags: () => ipcRenderer.invoke('mangadex:tags'),
   mangadexPopular: () => ipcRenderer.invoke('mangadex:popular'),
-  mangadexChapters: (mangaId) => ipcRenderer.invoke('mangadex:chapters', mangaId),
+  mangadexChapters: (mangaId, title) => ipcRenderer.invoke('mangadex:chapters', { mangaId, title }),
   mangadexPages: (chapterId) => ipcRenderer.invoke('mangadex:pages', chapterId),
+  remangaDetails: (id) => ipcRenderer.invoke('remanga:details', id),
 
   anilistTrending: () => ipcRenderer.invoke('anilist:trending'),
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
@@ -66,6 +68,7 @@ contextBridge.exposeInMainWorld('hanko', {
   onlineListMessages: (friendId) => ipcRenderer.invoke('online:listMessages', friendId),
   onlineSetBio: (bio) => ipcRenderer.invoke('online:setBio', bio),
   onlineGetProfile: (userId) => ipcRenderer.invoke('online:getProfile', userId),
+  onlineToggleProfileLike: (profileId) => ipcRenderer.invoke('online:toggleProfileLike', profileId),
   onlineSyncBookmarkUpsert: (payload) => ipcRenderer.invoke('online:syncBookmarkUpsert', payload),
   onlineSyncBookmarkRemove: (mangaId) => ipcRenderer.invoke('online:syncBookmarkRemove', mangaId),
   onlineListBookmarks: (userId) => ipcRenderer.invoke('online:listBookmarks', userId),

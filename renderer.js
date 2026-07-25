@@ -8,6 +8,7 @@ const els = {
   navProfile: document.getElementById('navProfile'),
   navFriends: document.getElementById('navFriends'),
   friendsNavBadge: document.getElementById('friendsNavBadge'),
+  railOnlineFriends: document.getElementById('railOnlineFriends'),
   viewHome: document.getElementById('viewHome'),
   viewManga: document.getElementById('viewManga'),
   viewAnime: document.getElementById('viewAnime'),
@@ -113,8 +114,18 @@ const els = {
   friendProfileAvatar: document.getElementById('friendProfileAvatar'),
   friendProfileName: document.getElementById('friendProfileName'),
   friendProfileOnlineLabel: document.getElementById('friendProfileOnlineLabel'),
+  friendProfileTabProfile: document.getElementById('friendProfileTabProfile'),
+  friendProfileTabBookmarks: document.getElementById('friendProfileTabBookmarks'),
+  friendProfileTabProfilePanel: document.getElementById('friendProfileTabProfilePanel'),
+  friendProfileTabBookmarksPanel: document.getElementById('friendProfileTabBookmarksPanel'),
   friendProfileBio: document.getElementById('friendProfileBio'),
   friendProfileError: document.getElementById('friendProfileError'),
+  friendStatViews: document.getElementById('friendStatViews'),
+  friendStatLikeBlock: document.getElementById('friendStatLikeBlock'),
+  friendStatLikes: document.getElementById('friendStatLikes'),
+  friendStatLikesLabel: document.getElementById('friendStatLikesLabel'),
+  friendStatFriends: document.getElementById('friendStatFriends'),
+  friendStatComments: document.getElementById('friendStatComments'),
   friendProfileUnfriendBtn: document.getElementById('friendProfileUnfriendBtn'),
   friendBookmarksEmpty: document.getElementById('friendBookmarksEmpty'),
   friendBookmarksGrid: document.getElementById('friendBookmarksGrid'),
@@ -126,15 +137,42 @@ const els = {
 
   downloadsRemoveAllBtn: document.getElementById('downloadsRemoveAllBtn'),
 
+  themeToggleBtn: document.getElementById('themeToggleBtn'),
+
+  homeContinueSection: document.getElementById('homeContinueSection'),
+  homeContinueGrid: document.getElementById('homeContinueGrid'),
   homeMangaGrid: document.getElementById('homeMangaGrid'),
   homeMangaHint: document.getElementById('homeMangaHint'),
   homeAnimeGrid: document.getElementById('homeAnimeGrid'),
+  homeMangaSection: document.getElementById('homeMangaSection'),
+  homeAnimeSection: document.getElementById('homeAnimeSection'),
+  homeTabAll: document.getElementById('homeTabAll'),
+  homeTabManga: document.getElementById('homeTabManga'),
+  homeTabAnime: document.getElementById('homeTabAnime'),
   homeAnimeHint: document.getElementById('homeAnimeHint'),
 
   mangaSearchForm: document.getElementById('mangaSearchForm'),
   mangaSearchInput: document.getElementById('mangaSearchInput'),
   mangaSearchSection: document.getElementById('mangaSearchSection'),
+  mangaPopularSection: document.getElementById('mangaPopularSection'),
+  mangaSearchPagination: document.getElementById('mangaSearchPagination'),
+  mangaSearchPageLabel: document.getElementById('mangaSearchPageLabel'),
+  mangaSearchPrevBtn: document.getElementById('mangaSearchPrevBtn'),
+  mangaSearchNextBtn: document.getElementById('mangaSearchNextBtn'),
   mangaSearchGrid: document.getElementById('mangaSearchGrid'),
+  mangaPopularHint: document.getElementById('mangaPopularHint'),
+  mangaPopularGrid: document.getElementById('mangaPopularGrid'),
+  mangaFiltersBtn: document.getElementById('mangaFiltersBtn'),
+  mangaFiltersModalBackdrop: document.getElementById('mangaFiltersModalBackdrop'),
+  mangaFiltersModalClose: document.getElementById('mangaFiltersModalClose'),
+  formatFilterRow: document.getElementById('formatFilterRow'),
+  mangaSortSelect: document.getElementById('mangaSortSelect'),
+  statusFilterRow: document.getElementById('statusFilterRow'),
+  genreFilterHint: document.getElementById('genreFilterHint'),
+  genreFilterRow: document.getElementById('genreFilterRow'),
+  themeFilterRow: document.getElementById('themeFilterRow'),
+  mangaFiltersResetBtn: document.getElementById('mangaFiltersResetBtn'),
+  mangaFiltersApplyBtn: document.getElementById('mangaFiltersApplyBtn'),
   mangaLibraryGrid: document.getElementById('mangaLibraryGrid'),
   mangaLibraryEmpty: document.getElementById('mangaLibraryEmpty'),
 
@@ -151,6 +189,12 @@ const els = {
   browserClose: document.getElementById('browserClose'),
   siteWebview: document.getElementById('siteWebview'),
   siteNote: document.getElementById('siteNote'),
+
+  appConfirmBackdrop: document.getElementById('appConfirmBackdrop'),
+  appConfirmTitle: document.getElementById('appConfirmTitle'),
+  appConfirmMessage: document.getElementById('appConfirmMessage'),
+  appConfirmCancelBtn: document.getElementById('appConfirmCancelBtn'),
+  appConfirmOkBtn: document.getElementById('appConfirmOkBtn'),
 
   siteModalBackdrop: document.getElementById('siteModalBackdrop'),
   siteModalForm: document.getElementById('siteModalForm'),
@@ -177,9 +221,45 @@ const els = {
   zoomInBtn: document.getElementById('zoomInBtn'),
   zoomOutBtn: document.getElementById('zoomOutBtn'),
   zoomLabel: document.getElementById('zoomLabel'),
+  readerProgressFill: document.getElementById('readerProgressFill'),
   chapterPrevBtn: document.getElementById('chapterPrevBtn'),
   chapterNextBtn: document.getElementById('chapterNextBtn'),
 };
+
+// ---------- окно подтверждения (замена системного window.confirm) ----------
+// Возвращает Promise<boolean>: true — нажали основную кнопку, false — отмена/Esc/клик по фону.
+let appConfirmResolve = null;
+
+function showAppConfirm(message, opts = {}) {
+  const { title = 'Подтверждение', okText = 'Удалить', cancelText = 'Отмена', danger = true } = opts;
+  els.appConfirmTitle.textContent = title;
+  els.appConfirmMessage.textContent = message;
+  els.appConfirmOkBtn.textContent = okText;
+  els.appConfirmCancelBtn.textContent = cancelText;
+  els.appConfirmOkBtn.classList.toggle('btn-primary--danger', danger);
+  els.appConfirmBackdrop.hidden = false;
+  return new Promise((resolve) => {
+    appConfirmResolve = resolve;
+  });
+}
+
+function closeAppConfirm(result) {
+  els.appConfirmBackdrop.hidden = true;
+  if (appConfirmResolve) {
+    const resolve = appConfirmResolve;
+    appConfirmResolve = null;
+    resolve(result);
+  }
+}
+
+els.appConfirmOkBtn.addEventListener('click', () => closeAppConfirm(true));
+els.appConfirmCancelBtn.addEventListener('click', () => closeAppConfirm(false));
+els.appConfirmBackdrop.addEventListener('click', (e) => {
+  if (e.target === els.appConfirmBackdrop) closeAppConfirm(false);
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !els.appConfirmBackdrop.hidden) closeAppConfirm(false);
+});
 
 let library = [];
 let sites = [];
@@ -232,7 +312,8 @@ function showView(name) {
   els.navProfile.classList.toggle('is-active', isProfile);
   els.navFriends.classList.toggle('is-active', isFriends);
   window.hanko.saveSettings({ lastTab: name });
-  if (isHome) loadHomeContent();
+  if (isHome) { renderHomeContinue(); loadHomeContent(); }
+  if (isManga) loadMangaPopular();
   if (isProfile) loadProfileView();
   if (isFriends) loadFriendsView();
 }
@@ -243,12 +324,42 @@ els.navAnime.addEventListener('click', () => showView('anime'));
 els.navProfile.addEventListener('click', () => showView('profile'));
 els.navFriends.addEventListener('click', () => showView('friends'));
 
+function applyTheme(theme) {
+  document.body.dataset.theme = theme === 'dark' ? 'dark' : 'light';
+}
+
+els.themeToggleBtn.addEventListener('click', () => {
+  const next = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  window.hanko.saveSettings({ theme: next });
+});
+
 // ---------------- главная: витрина популярного ----------------
+
+// показывает на главной то, что реально читалось последним — сортировка
+// по library[].progress.updatedAt, локально, без сети, поэтому обновляем
+// это каждый раз при заходе на «Главную», а не один раз как витрину популярного
+function renderHomeContinue() {
+  const items = library
+    .filter((item) => item.progress && item.progress.updatedAt)
+    .sort((a, b) => b.progress.updatedAt - a.progress.updatedAt)
+    .slice(0, 8);
+  els.homeContinueSection.hidden = items.length === 0;
+  els.homeContinueGrid.innerHTML = '';
+  for (const item of items) {
+    els.homeContinueGrid.appendChild(mangaCard(item, { inLibrary: true }));
+  }
+}
 
 let homeLoaded = false;
 async function loadHomeContent() {
   if (homeLoaded) return;
   homeLoaded = true;
+
+  els.homeMangaHint.hidden = true;
+  els.homeAnimeHint.hidden = true;
+  renderSkeletons(els.homeMangaGrid);
+  renderSkeletons(els.homeAnimeGrid);
 
   try {
     const items = await window.hanko.mangadexPopular();
@@ -276,6 +387,37 @@ async function loadHomeContent() {
     els.homeAnimeHint.textContent = `Не удалось загрузить: ${err.message}`;
   }
 }
+
+let mangaPopularLoaded = false;
+async function loadMangaPopular() {
+  if (mangaPopularLoaded) return;
+  mangaPopularLoaded = true;
+  els.mangaPopularHint.hidden = true;
+  renderSkeletons(els.mangaPopularGrid);
+  try {
+    const items = await window.hanko.mangadexPopular();
+    els.mangaPopularHint.hidden = items.length > 0;
+    els.mangaPopularHint.textContent = 'Пусто.';
+    els.mangaPopularGrid.innerHTML = '';
+    for (const item of items) {
+      els.mangaPopularGrid.appendChild(mangaCard(item, { inLibrary: library.some((l) => l.id === item.id) }));
+    }
+  } catch (err) {
+    els.mangaPopularHint.hidden = false;
+    els.mangaPopularHint.textContent = `Не удалось загрузить: ${err.message}`;
+  }
+}
+
+function switchHomeCategory(cat) {
+  els.homeTabAll.classList.toggle('is-active', cat === 'all');
+  els.homeTabManga.classList.toggle('is-active', cat === 'manga');
+  els.homeTabAnime.classList.toggle('is-active', cat === 'anime');
+  els.homeMangaSection.hidden = cat === 'anime';
+  els.homeAnimeSection.hidden = cat === 'manga';
+}
+els.homeTabAll.addEventListener('click', () => switchHomeCategory('all'));
+els.homeTabManga.addEventListener('click', () => switchHomeCategory('manga'));
+els.homeTabAnime.addEventListener('click', () => switchHomeCategory('anime'));
 
 function animeCard(item) {
   const card = document.createElement('div');
@@ -325,6 +467,13 @@ function openAnimeInfoModal(item) {
 
 // ---------------- манга: поиск ----------------
 
+const MANGA_STATUS_RU = {
+  ongoing: 'Онгоинг',
+  completed: 'Завершено',
+  hiatus: 'Приостановлено',
+  cancelled: 'Отменено',
+};
+
 function mangaCard(item, { inLibrary }) {
   const card = document.createElement('div');
   card.className = 'card';
@@ -335,14 +484,22 @@ function mangaCard(item, { inLibrary }) {
   const note = item.note
     ? `<p class="card-note">${escapeHtml(item.note)}</p>`
     : '';
+  const statusRu = item.status ? (MANGA_STATUS_RU[item.status] || item.status) : '';
+  const ratingBadge = typeof item.rating === 'number' && item.rating > 0
+    ? `<span class="card-rating">★ ${item.rating.toFixed(1)}</span>`
+    : '';
 
   card.innerHTML = `
     ${fold}
     <img class="card-cover" src="${item.coverUrl || ''}" alt="" loading="lazy" onerror="this.style.opacity=0" />
     <div class="card-body">
-      <p class="card-title">${escapeHtml(item.title)}</p>
-      <p class="card-meta">${item.status ? escapeHtml(item.status) : ''}</p>
+      <div class="card-title-row">
+        <p class="card-title">${escapeHtml(item.title)}</p>
+        ${ratingBadge}
+      </div>
+      <p class="card-meta">${escapeHtml(statusRu)}</p>
       ${note}
+      <div class="card-progress-track"><div class="card-progress-fill" id="progress-${item.id}"></div></div>
     </div>
     ${inLibrary ? '' : '<button class="card-add" title="В библиотеку">+</button>'}
   `;
@@ -366,7 +523,39 @@ function mangaCard(item, { inLibrary }) {
     });
   }
 
+  // если по тайтлу уже есть прогресс чтения — досчитываем реальную долю
+  // прочитанных глав (не для каждой карточки подряд, а только для тех, где
+  // это вообще имеет смысл, чтобы не заваливать MangaDex запросами)
+  if (item.progress) {
+    window.hanko.mangadexChapters(item.id, item.title).then((chapters) => {
+      if (!chapters || !chapters.length) return;
+      const idx = chapters.findIndex((c) => c.id === item.progress.chapterId);
+      const percent = idx >= 0 ? Math.round(((idx + 1) / chapters.length) * 100) : 0;
+      const fill = card.querySelector(`#progress-${CSS.escape(item.id)}`);
+      if (fill) fill.style.width = `${Math.min(100, Math.max(2, percent))}%`;
+    }).catch(() => {});
+  }
+
   return card;
+}
+
+function skeletonCard() {
+  const card = document.createElement('div');
+  card.className = 'card skeleton-card';
+  card.innerHTML = `
+    <div class="skeleton-cover"></div>
+    <div class="card-body">
+      <div class="skeleton-line"></div>
+      <div class="skeleton-line skeleton-line--short"></div>
+    </div>
+  `;
+  return card;
+}
+
+function renderSkeletons(grid, count = 6) {
+  if (!grid) return;
+  grid.innerHTML = '';
+  for (let i = 0; i < count; i++) grid.appendChild(skeletonCard());
 }
 
 function escapeHtml(s) {
@@ -384,26 +573,187 @@ function syncBookmarkRemove(id) {
   window.hanko.onlineSyncBookmarkRemove(id).catch(() => {});
 }
 
-els.mangaSearchForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
+const STATUS_FILTER_OPTIONS = [
+  { value: 'ongoing', label: 'Онгоинг' },
+  { value: 'completed', label: 'Завершено' },
+  { value: 'hiatus', label: 'Приостановлено' },
+  { value: 'cancelled', label: 'Отменено' },
+];
+const FORMAT_FILTER_OPTIONS = [
+  { label: 'Манга', langs: ['ja'] },
+  { label: 'Манхва', langs: ['ko'] },
+  { label: 'Маньхуа', langs: ['zh', 'zh-hk'] },
+  { label: 'Западный комикс', langs: ['en'] },
+  { label: 'Индонезийский комикс', langs: ['id'] },
+];
+const mangaFilters = { tagIds: new Set(), status: new Set(), origin: new Set(), order: 'relevance' };
+let mangaTagsCache = null;
+const MANGA_PAGE_SIZE = 24;
+let mangaSearchOffset = 0;
+let mangaSearchTotal = 0;
+
+async function runMangaSearch({ resetPage = true } = {}) {
   const q = els.mangaSearchInput.value.trim();
-  if (!q) return;
+  if (!q && mangaFilters.tagIds.size === 0 && mangaFilters.status.size === 0 && mangaFilters.origin.size === 0) {
+    els.mangaSearchSection.hidden = true;
+    els.mangaPopularSection.hidden = false;
+    return;
+  }
+  if (resetPage) mangaSearchOffset = 0;
   els.mangaSearchGrid.innerHTML = '<p class="empty-hint">Ищу…</p>';
   els.mangaSearchSection.hidden = false;
+  els.mangaPopularSection.hidden = true;
+  els.mangaSearchPagination.hidden = true;
   try {
-    const results = await window.hanko.mangadexSearch(q);
+    const { items, total } = await window.hanko.mangadexSearch({
+      query: q,
+      tagIds: [...mangaFilters.tagIds],
+      status: [...mangaFilters.status],
+      originalLanguage: [...mangaFilters.origin],
+      order: mangaFilters.order,
+      offset: mangaSearchOffset,
+    });
+    mangaSearchTotal = total;
     els.mangaSearchGrid.innerHTML = '';
-    if (!results.length) {
+    if (!items.length) {
       els.mangaSearchGrid.innerHTML = '<p class="empty-hint">Ничего не нашлось.</p>';
       return;
     }
-    for (const item of results) {
+    for (const item of items) {
       const inLibrary = library.some((l) => l.id === item.id);
       els.mangaSearchGrid.appendChild(mangaCard(item, { inLibrary }));
     }
+    renderMangaSearchPagination();
   } catch (err) {
     els.mangaSearchGrid.innerHTML = `<p class="empty-hint">Не удалось получить результаты: ${escapeHtml(err.message)}</p>`;
   }
+}
+
+// показывает "Назад / Страница X из Y / Вперёд" под результатами поиска манги
+// и включает/выключает кнопки по краям диапазона
+function renderMangaSearchPagination() {
+  const totalPages = Math.max(1, Math.ceil(mangaSearchTotal / MANGA_PAGE_SIZE));
+  const currentPage = Math.floor(mangaSearchOffset / MANGA_PAGE_SIZE) + 1;
+  els.mangaSearchPagination.hidden = totalPages <= 1;
+  els.mangaSearchPageLabel.textContent = `Страница ${currentPage} из ${totalPages}`;
+  els.mangaSearchPrevBtn.disabled = mangaSearchOffset <= 0;
+  els.mangaSearchNextBtn.disabled = mangaSearchOffset + MANGA_PAGE_SIZE >= mangaSearchTotal;
+}
+
+els.mangaSearchPrevBtn.addEventListener('click', () => {
+  if (mangaSearchOffset <= 0) return;
+  mangaSearchOffset = Math.max(0, mangaSearchOffset - MANGA_PAGE_SIZE);
+  runMangaSearch({ resetPage: false });
+  els.mangaSearchSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+els.mangaSearchNextBtn.addEventListener('click', () => {
+  if (mangaSearchOffset + MANGA_PAGE_SIZE >= mangaSearchTotal) return;
+  mangaSearchOffset += MANGA_PAGE_SIZE;
+  runMangaSearch({ resetPage: false });
+  els.mangaSearchSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
+els.mangaSearchForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  runMangaSearch();
+});
+
+function updateMangaFiltersBtnLabel() {
+  const count = mangaFilters.tagIds.size + mangaFilters.status.size + mangaFilters.origin.size + (mangaFilters.order !== 'relevance' ? 1 : 0);
+  els.mangaFiltersBtn.textContent = count > 0 ? `Фильтры (${count})` : 'Фильтры';
+}
+
+function filterChip(label, isActive, onToggle) {
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = 'filter-chip' + (isActive ? ' is-active' : '');
+  chip.textContent = label;
+  chip.addEventListener('click', () => {
+    chip.classList.toggle('is-active');
+    onToggle(chip.classList.contains('is-active'));
+  });
+  return chip;
+}
+
+function renderStatusChips() {
+  els.statusFilterRow.innerHTML = '';
+  for (const opt of STATUS_FILTER_OPTIONS) {
+    els.statusFilterRow.appendChild(filterChip(opt.label, mangaFilters.status.has(opt.value), (active) => {
+      if (active) mangaFilters.status.add(opt.value); else mangaFilters.status.delete(opt.value);
+    }));
+  }
+}
+
+function renderFormatChips() {
+  els.formatFilterRow.innerHTML = '';
+  for (const opt of FORMAT_FILTER_OPTIONS) {
+    const isActive = opt.langs.every((l) => mangaFilters.origin.has(l));
+    els.formatFilterRow.appendChild(filterChip(opt.label, isActive, (active) => {
+      for (const l of opt.langs) {
+        if (active) mangaFilters.origin.add(l); else mangaFilters.origin.delete(l);
+      }
+    }));
+  }
+}
+
+function renderTagChips(container, tags) {
+  container.innerHTML = '';
+  for (const tag of tags) {
+    container.appendChild(filterChip(tag.name, mangaFilters.tagIds.has(tag.id), (active) => {
+      if (active) mangaFilters.tagIds.add(tag.id); else mangaFilters.tagIds.delete(tag.id);
+    }));
+  }
+}
+
+async function openMangaFiltersModal() {
+  renderStatusChips();
+  renderFormatChips();
+  els.mangaSortSelect.value = mangaFilters.order;
+  els.mangaFiltersModalBackdrop.hidden = false;
+
+  if (!mangaTagsCache) {
+    try {
+      mangaTagsCache = await window.hanko.mangadexTags();
+      els.genreFilterHint.hidden = true;
+      renderTagChips(els.genreFilterRow, mangaTagsCache.genre || []);
+      renderTagChips(els.themeFilterRow, mangaTagsCache.theme || []);
+    } catch (err) {
+      els.genreFilterHint.textContent = `Не удалось загрузить жанры: ${err.message}`;
+    }
+  } else {
+    renderTagChips(els.genreFilterRow, mangaTagsCache.genre || []);
+    renderTagChips(els.themeFilterRow, mangaTagsCache.theme || []);
+  }
+}
+
+els.mangaFiltersBtn.addEventListener('click', openMangaFiltersModal);
+els.mangaFiltersModalClose.addEventListener('click', () => { els.mangaFiltersModalBackdrop.hidden = true; });
+els.mangaFiltersModalBackdrop.addEventListener('click', (e) => {
+  if (e.target === els.mangaFiltersModalBackdrop) els.mangaFiltersModalBackdrop.hidden = true;
+});
+
+els.mangaFiltersApplyBtn.addEventListener('click', () => {
+  mangaFilters.order = els.mangaSortSelect.value;
+  updateMangaFiltersBtnLabel();
+  els.mangaFiltersModalBackdrop.hidden = true;
+  runMangaSearch();
+});
+
+els.mangaFiltersResetBtn.addEventListener('click', () => {
+  mangaFilters.tagIds.clear();
+  mangaFilters.status.clear();
+  mangaFilters.origin.clear();
+  mangaFilters.order = 'relevance';
+  els.mangaSortSelect.value = 'relevance';
+  renderStatusChips();
+  renderFormatChips();
+  if (mangaTagsCache) {
+    renderTagChips(els.genreFilterRow, mangaTagsCache.genre || []);
+    renderTagChips(els.themeFilterRow, mangaTagsCache.theme || []);
+  }
+  updateMangaFiltersBtnLabel();
+  els.mangaFiltersModalBackdrop.hidden = true;
+  runMangaSearch();
 });
 
 function renderLibrary() {
@@ -448,7 +798,7 @@ function renderDownloads() {
 
 els.downloadsRemoveAllBtn.addEventListener('click', async () => {
   if (!downloads.length) return;
-  if (!confirm(`Удалить все скачанные главы (${downloads.length})? Это освободит место на диске.`)) return;
+  if (!(await showAppConfirm(`Удалить все скачанные главы (${downloads.length})? Это освободит место на диске.`, { title: 'Удалить все главы?', okText: 'Удалить все' }))) return;
   els.downloadsRemoveAllBtn.disabled = true;
   els.downloadsRemoveAllBtn.textContent = 'Удаляю…';
   await window.hanko.removeAllDownloads();
@@ -470,7 +820,17 @@ async function openTitleModal(item) {
   els.titleModalBackdrop.hidden = false;
   els.titleModalBody.innerHTML = '<p class="empty-hint">Загружаю главы…</p>';
   try {
-    const allChapters = await window.hanko.mangadexChapters(item.id);
+    // карточки ReManga из поиска приходят без описания/статуса (их нет в ответе
+    // каталога) — подгружаем один раз при открытии, до отрисовки модалки
+    if (item.id.startsWith('rm:') && !item.description) {
+      try {
+        const details = await window.hanko.remangaDetails(item.id);
+        if (details) {
+          item = { ...item, description: details.description, status: details.status || item.status };
+        }
+      } catch { /* тихо остаёмся без описания, если ReManga недоступен */ }
+    }
+    const allChapters = await window.hanko.mangadexChapters(item.id, item.title);
     const inLibrary = library.some((l) => l.id === item.id);
     const libItem = library.find((l) => l.id === item.id);
 
@@ -728,7 +1088,7 @@ async function openTitleModal(item) {
       const removeAllBtn = document.getElementById('removeAllBtn');
       if (removeAllBtn) {
         removeAllBtn.addEventListener('click', async () => {
-          if (!confirm(`Удалить скачанные главы (${downloadedCount}) для «${item.title}»?`)) return;
+          if (!(await showAppConfirm(`Удалить скачанные главы (${downloadedCount}) для «${item.title}»?`, { title: 'Удалить главы?' }))) return;
           removeAllBtn.disabled = true;
           removeAllBtn.textContent = 'Удаляю…';
           for (const ch of chapters) {
@@ -797,7 +1157,7 @@ async function openReader(item, chapter, opts = {}) {
   };
   els.readerOverlay.hidden = false;
   els.readerTitle.textContent = reader.title + (reader.offline ? ' (офлайн)' : '');
-  els.readerBody.innerHTML = '<p class="empty-hint" style="padding:40px;">Загружаю страницы…</p>';
+  els.readerBody.innerHTML = '<div class="reader-loading-skeleton"></div><div class="reader-loading-skeleton"></div>';
   setZoom(reader.zoom);
   updateChapterNavButtons();
 
@@ -842,7 +1202,10 @@ function makeRetryButton(img, url) {
   const retry = document.createElement('button');
   retry.type = 'button';
   retry.className = 'page-retry';
-  retry.textContent = 'Страница не загрузилась — нажми, чтобы попробовать снова';
+  retry.innerHTML = `
+    <svg viewBox="0 0 24 24" width="16" height="16"><path d="M17.65 6.35A8 8 0 106 18.35L4 20M6.35 17.65A8 8 0 0018 6.35L20 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    <span>Страница не загрузилась — нажми, чтобы попробовать снова</span>
+  `;
   retry.addEventListener('click', () => {
     retry.remove();
     img.classList.remove('is-broken');
@@ -855,6 +1218,7 @@ function makeRetryButton(img, url) {
 function attachPageErrorHandling(wrap, img, url) {
   img.addEventListener('load', () => {
     img.classList.remove('is-broken');
+    img.classList.add('is-loaded');
     const retryBtn = wrap.querySelector('.page-retry');
     if (retryBtn) retryBtn.remove();
   });
@@ -926,7 +1290,27 @@ function setReaderMode(mode) {
   els.readerModePaged.classList.toggle('is-active', mode === 'paged');
   els.readerModeScroll.classList.toggle('is-active', mode === 'scroll');
   if (mode === 'paged') showPage(reader.page);
+  updateReaderProgress();
 }
+
+// в постраничном режиме прогресс — по номеру страницы, в вебтун-скролле —
+// по фактической прокрутке холста (там нет понятия "текущая страница")
+function updateReaderProgress() {
+  if (!els.readerProgressFill) return;
+  let pct = 0;
+  if (reader.mode === 'paged') {
+    pct = reader.pages.length ? ((reader.page + 1) / reader.pages.length) * 100 : 0;
+  } else {
+    const el = els.readerBody;
+    const max = el.scrollHeight - el.clientHeight;
+    pct = max > 0 ? (el.scrollTop / max) * 100 : 0;
+  }
+  els.readerProgressFill.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+}
+
+els.readerBody.addEventListener('scroll', () => {
+  if (reader.mode === 'scroll') updateReaderProgress();
+});
 
 // масштаб страниц — общий для обоих режимов чтения (постранично и скролл),
 // т.к. и там, и там размер картинки задаётся одним и тем же CSS-правилом
@@ -945,6 +1329,13 @@ els.zoomInBtn.addEventListener('click', () => setZoom((reader.zoom || 1) + ZOOM_
 els.zoomOutBtn.addEventListener('click', () => setZoom((reader.zoom || 1) - ZOOM_STEP));
 els.zoomLabel.addEventListener('click', () => setZoom(1));
 
+// Ctrl/Cmd + колесо мыши — быстрый зум, как в большинстве просмотрщиков изображений
+els.readerBody.addEventListener('wheel', (e) => {
+  if (!e.ctrlKey && !e.metaKey) return;
+  e.preventDefault();
+  setZoom((reader.zoom || 1) + (e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
+}, { passive: false });
+
 function showPage(idx) {
   const pages = els.readerBody.querySelectorAll('.reader-page');
   if (!pages.length) return;
@@ -958,6 +1349,7 @@ function updatePageLabel() {
   els.readerPageLabel.textContent = reader.pages.length
     ? `${reader.page + 1} / ${reader.pages.length}`
     : '';
+  updateReaderProgress();
 }
 
 let progressSaveTimer = null;
@@ -1007,6 +1399,13 @@ els.readerRefresh.addEventListener('click', async () => {
 document.addEventListener('keydown', (e) => {
   if (els.readerOverlay.hidden) return;
   if (e.key === 'Escape') { els.readerOverlay.hidden = true; return; }
+
+  if (e.ctrlKey || e.metaKey) {
+    if (e.key === '+' || e.key === '=') { e.preventDefault(); setZoom((reader.zoom || 1) + ZOOM_STEP); return; }
+    if (e.key === '-') { e.preventDefault(); setZoom((reader.zoom || 1) - ZOOM_STEP); return; }
+    if (e.key === '0') { e.preventDefault(); setZoom(1); return; }
+  }
+
   if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
 
   if (reader.mode !== 'paged') {
@@ -1299,7 +1698,7 @@ els.friendActionMessageBtn.addEventListener('click', () => {
 els.friendActionRemoveBtn.addEventListener('click', async () => {
   if (!quickActionFriend) return;
   const f = quickActionFriend;
-  if (!confirm(`Удалить «${f.display_name || 'без имени'}» из друзей?`)) return;
+  if (!(await showAppConfirm(`Удалить «${f.display_name || 'без имени'}» из друзей?`, { title: 'Удалить из друзей?' }))) return;
   try {
     await window.hanko.onlineUnfriend(f.friend_id);
     closeFriendActionModal();
@@ -1473,7 +1872,7 @@ els.loginForm.addEventListener('submit', async (e) => {
 });
 
 els.logoutBtn.addEventListener('click', async () => {
-  if (!confirm('Выйти из аккаунта? На этом компьютере снова станет анонимный (гостевой) профиль.')) return;
+  if (!(await showAppConfirm('Выйти из аккаунта? На этом компьютере снова станет анонимный (гостевой) профиль.', { title: 'Выйти из аккаунта?', okText: 'Выйти', danger: false }))) return;
   onlineState = await window.hanko.onlineLogout();
   renderOnlineStatus();
   if (onlineState.ready) await Promise.all([refreshIncoming(), refreshOutgoing(), refreshFriends()]);
@@ -1740,6 +2139,36 @@ function renderFriendsList() {
   els.friendsList.innerHTML = '';
   els.friendsListEmpty.hidden = friendsList.length > 0;
   for (const f of filtered) els.friendsList.appendChild(friendRow(f));
+  renderRailOnlineFriends();
+}
+
+// стопка мини-аватаров друзей, которые сейчас в сети — видна из любого раздела,
+// не только со вкладки «Друзья», клик сразу открывает переписку с этим другом
+const RAIL_ONLINE_MAX = 4;
+function renderRailOnlineFriends() {
+  if (!els.railOnlineFriends) return;
+  const online = friendsList.filter((f) => onlineFriendIds.has(f.friend_id));
+  els.railOnlineFriends.innerHTML = '';
+  for (const f of online.slice(0, RAIL_ONLINE_MAX)) {
+    const name = f.display_name || 'Без имени';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'rail-online-avatar';
+    btn.title = `${name} — в сети`;
+    btn.innerHTML = `${escapeHtml(name.trim().charAt(0).toUpperCase())}<span class="rail-online-avatar-dot"></span>`;
+    btn.addEventListener('click', () => {
+      showView('friends');
+      openChat(f.friend_id, name);
+    });
+    els.railOnlineFriends.appendChild(btn);
+  }
+  if (online.length > RAIL_ONLINE_MAX) {
+    const more = document.createElement('div');
+    more.className = 'rail-online-more';
+    more.title = `Ещё в сети: ${online.length - RAIL_ONLINE_MAX}`;
+    more.textContent = `+${online.length - RAIL_ONLINE_MAX}`;
+    els.railOnlineFriends.appendChild(more);
+  }
 }
 
 els.chatListSearch.addEventListener('input', () => {
@@ -1978,6 +2407,7 @@ function friendCommentRow(c) {
       try {
         await window.hanko.onlineDeleteProfileComment(c.id);
         await loadFriendComments(activeFriendProfile.friendId);
+        els.friendStatComments.textContent = String(Math.max(0, (parseInt(els.friendStatComments.textContent, 10) || 1) - 1));
       } catch (err) {
         alert(err.message);
       }
@@ -1993,15 +2423,47 @@ async function loadFriendComments(friendId) {
   for (const c of comments) els.friendCommentsList.appendChild(friendCommentRow(c));
 }
 
+function switchFriendProfileTab(tab) {
+  const isProfile = tab === 'profile';
+  els.friendProfileTabProfile.classList.toggle('is-active', isProfile);
+  els.friendProfileTabBookmarks.classList.toggle('is-active', !isProfile);
+  els.friendProfileTabProfilePanel.hidden = !isProfile;
+  els.friendProfileTabBookmarksPanel.hidden = isProfile;
+}
+els.friendProfileTabProfile.addEventListener('click', () => switchFriendProfileTab('profile'));
+els.friendProfileTabBookmarks.addEventListener('click', () => switchFriendProfileTab('bookmarks'));
+
+function renderFriendLikeBlock(likesCount, likedByMe) {
+  els.friendStatLikes.textContent = String(likesCount);
+  els.friendStatLikeBlock.classList.toggle('is-liked', likedByMe);
+  els.friendStatLikesLabel.textContent = likedByMe ? 'лайкнуто' : 'лайков';
+}
+
+els.friendStatLikeBlock.addEventListener('click', async () => {
+  if (!activeFriendProfile) return;
+  try {
+    const likedNow = await window.hanko.onlineToggleProfileLike(activeFriendProfile.friendId);
+    const current = parseInt(els.friendStatLikes.textContent, 10) || 0;
+    renderFriendLikeBlock(likedNow ? current + 1 : Math.max(0, current - 1), likedNow);
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
 async function openFriendProfile(friendId, name) {
   activeFriendProfile = { friendId, name };
   els.friendProfileOverlay.hidden = false;
   els.friendProfileName.textContent = name;
   els.friendProfileAvatar.textContent = (name || '?').trim().charAt(0).toUpperCase();
   updateFriendProfileOnlineLabel();
+  switchFriendProfileTab('profile');
 
   els.friendProfileError.hidden = true;
   els.friendProfileBio.hidden = true;
+  els.friendStatViews.textContent = '0';
+  renderFriendLikeBlock(0, false);
+  els.friendStatFriends.textContent = '0';
+  els.friendStatComments.textContent = '0';
   els.friendBookmarksGrid.innerHTML = '';
   els.friendBookmarksEmpty.hidden = true;
   els.friendCommentsList.innerHTML = '';
@@ -2017,6 +2479,10 @@ async function openFriendProfile(friendId, name) {
         els.friendProfileBio.hidden = false;
         els.friendProfileBio.textContent = profileData.bio;
       }
+      els.friendStatViews.textContent = String(profileData.view_count ?? 0);
+      renderFriendLikeBlock(profileData.likes_count ?? 0, !!profileData.liked_by_me);
+      els.friendStatFriends.textContent = String(profileData.friends_count ?? 0);
+      els.friendStatComments.textContent = String(profileData.comments_count ?? 0);
     }
     const bookmarks = await window.hanko.onlineListBookmarks(friendId);
     els.friendBookmarksEmpty.hidden = bookmarks.length > 0;
@@ -2041,7 +2507,7 @@ els.friendProfileOverlay.addEventListener('click', (e) => {
 
 els.friendProfileUnfriendBtn.addEventListener('click', async () => {
   if (!activeFriendProfile) return;
-  if (!confirm(`Удалить «${activeFriendProfile.name}» из друзей?`)) return;
+  if (!(await showAppConfirm(`Удалить «${activeFriendProfile.name}» из друзей?`, { title: 'Удалить из друзей?' }))) return;
   try {
     await window.hanko.onlineUnfriend(activeFriendProfile.friendId);
     closeFriendProfile();
@@ -2066,6 +2532,7 @@ els.friendCommentForm.addEventListener('submit', async (e) => {
     els.friendCommentInput.value = '';
     els.friendCommentFeedback.hidden = true;
     await loadFriendComments(activeFriendProfile.friendId);
+    els.friendStatComments.textContent = String((parseInt(els.friendStatComments.textContent, 10) || 0) + 1);
   } catch (err) {
     showFriendCommentFeedback(err.message, true);
   }
@@ -2076,9 +2543,12 @@ window.hanko.onOnlineEvent(async (event) => {
     if (!els.viewFriends.hidden) await refreshIncoming();
   } else if (event.type === 'friend-request-updated') {
     if (!els.viewFriends.hidden) await Promise.all([refreshOutgoing(), refreshFriends()]);
+    else friendsList = await window.hanko.onlineListFriends();
+    renderRailOnlineFriends();
   } else if (event.type === 'presence') {
     onlineFriendIds = new Set(event.onlineIds);
     if (!els.viewFriends.hidden) renderFriendsList();
+    else renderRailOnlineFriends();
     updateChatOnlineLabel();
     updateFriendProfileOnlineLabel();
   } else if (event.type === 'message') {
@@ -2106,6 +2576,7 @@ async function init() {
   library = lib;
   sites = sitesList;
   downloads = downloadsList;
+  applyTheme(settings.theme);
   renderLibrary();
   renderSites();
   renderDownloads();
@@ -2144,5 +2615,111 @@ function renderUpdateBanner(status) {
 window.hanko.onUpdateStatus(renderUpdateBanner);
 window.hanko.updateGetStatus().then(renderUpdateBanner);
 els.updateBannerBtn.addEventListener('click', () => window.hanko.updateInstall());
+
+// ---------------- фоновая сцена: город на заднем плане ----------------
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+function buildBackgroundSkyline() {
+  const far = document.getElementById('bgSkylineFar');
+  const near = document.getElementById('bgSkylineNear');
+  if (!far || !near) return;
+
+  const farLayout = [
+    { x: 0, w: 120, h: 280 }, { x: 140, w: 90, h: 320 }, { x: 260, w: 140, h: 250 },
+    { x: 430, w: 100, h: 300 }, { x: 560, w: 160, h: 270 }, { x: 760, w: 110, h: 330 },
+    { x: 900, w: 130, h: 260 }, { x: 1060, w: 95, h: 310 }, { x: 1190, w: 150, h: 250 },
+    { x: 1370, w: 110, h: 290 }, { x: 1510, w: 120, h: 240 },
+  ];
+  const grads = ['url(#bgA)', 'url(#bgB)', 'url(#bgC)', 'url(#bgD)'];
+  farLayout.forEach((b, i) => {
+    const rect = document.createElementNS(SVG_NS, 'rect');
+    rect.setAttribute('x', b.x);
+    rect.setAttribute('y', 420 - b.h);
+    rect.setAttribute('width', b.w);
+    rect.setAttribute('height', b.h);
+    rect.setAttribute('fill', grads[i % grads.length]);
+    far.appendChild(rect);
+  });
+
+  const nearLayout = [
+    { x: -20, w: 100, h: 260 }, { x: 70, w: 70, h: 200 }, { x: 150, w: 130, h: 320 }, { x: 290, w: 90, h: 230 },
+    { x: 390, w: 150, h: 290 }, { x: 550, w: 80, h: 210 }, { x: 640, w: 120, h: 350 }, { x: 770, w: 100, h: 250 },
+    { x: 880, w: 160, h: 300 }, { x: 1050, w: 90, h: 220 }, { x: 1150, w: 140, h: 340 }, { x: 1300, w: 100, h: 260 },
+    { x: 1410, w: 130, h: 310 }, { x: 1550, w: 80, h: 230 },
+  ];
+  nearLayout.forEach((b, i) => {
+    const y = 420 - b.h;
+    const fill = grads[i % grads.length];
+    const g = document.createElementNS(SVG_NS, 'g');
+
+    const rect = document.createElementNS(SVG_NS, 'rect');
+    rect.setAttribute('x', b.x); rect.setAttribute('y', y);
+    rect.setAttribute('width', b.w); rect.setAttribute('height', b.h);
+    rect.setAttribute('fill', fill);
+    rect.setAttribute('rx', 4);
+    g.appendChild(rect);
+
+    const roofType = i % 3;
+    if (roofType === 0) {
+      const antenna = document.createElementNS(SVG_NS, 'line');
+      antenna.setAttribute('x1', b.x + b.w / 2); antenna.setAttribute('y1', y - 34);
+      antenna.setAttribute('x2', b.x + b.w / 2); antenna.setAttribute('y2', y);
+      antenna.setAttribute('stroke', '#8a7aa8'); antenna.setAttribute('stroke-width', 2);
+      g.appendChild(antenna);
+      const dot = document.createElementNS(SVG_NS, 'circle');
+      dot.setAttribute('cx', b.x + b.w / 2); dot.setAttribute('cy', y - 34); dot.setAttribute('r', 4);
+      dot.setAttribute('fill', '#ff8a7a');
+      g.appendChild(dot);
+    } else if (roofType === 1) {
+      const box = document.createElementNS(SVG_NS, 'rect');
+      box.setAttribute('x', b.x + b.w * 0.25); box.setAttribute('y', y - 22);
+      box.setAttribute('width', b.w * 0.5); box.setAttribute('height', 22);
+      box.setAttribute('fill', fill); box.setAttribute('rx', 3);
+      g.appendChild(box);
+    } else {
+      const dome = document.createElementNS(SVG_NS, 'circle');
+      dome.setAttribute('cx', b.x + b.w / 2); dome.setAttribute('cy', y); dome.setAttribute('r', b.w * 0.22);
+      dome.setAttribute('fill', fill);
+      g.appendChild(dome);
+    }
+
+    const cols = Math.max(2, Math.floor(b.w / 18));
+    const rows = Math.max(3, Math.floor(b.h / 22));
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (Math.random() < 0.28) continue;
+        const win = document.createElementNS(SVG_NS, 'rect');
+        const wx = b.x + 8 + (c * (b.w - 16)) / cols;
+        const wy = y + 14 + (r * (b.h - 24)) / rows;
+        win.setAttribute('x', wx); win.setAttribute('y', wy);
+        win.setAttribute('width', 6); win.setAttribute('height', 8);
+        const lit = Math.random() < 0.35;
+        win.setAttribute('fill', lit ? '#ffe19a' : 'rgba(120,100,150,0.35)');
+        g.appendChild(win);
+      }
+    }
+    near.appendChild(g);
+  });
+
+  // «вайфай-башня» — фирменная деталь фона
+  const wifi = document.createElementNS(SVG_NS, 'g');
+  const wx0 = 700, wy0 = 200, ww = 90, wh = 220;
+  const wrect = document.createElementNS(SVG_NS, 'rect');
+  wrect.setAttribute('x', wx0); wrect.setAttribute('y', wy0);
+  wrect.setAttribute('width', ww); wrect.setAttribute('height', wh);
+  wrect.setAttribute('fill', '#5a6fb0'); wrect.setAttribute('rx', 4);
+  wifi.appendChild(wrect);
+  [0, 1, 2].forEach((bar) => {
+    const barEl = document.createElementNS(SVG_NS, 'path');
+    const r = 14 + bar * 12;
+    barEl.setAttribute('d', `M ${wx0 + ww / 2 - r} ${wy0 + 70} A ${r} ${r} 0 0 1 ${wx0 + ww / 2 + r} ${wy0 + 70}`);
+    barEl.setAttribute('stroke', '#fff'); barEl.setAttribute('stroke-width', 5);
+    barEl.setAttribute('fill', 'none'); barEl.setAttribute('stroke-linecap', 'round');
+    barEl.setAttribute('opacity', 0.9 - bar * 0.15);
+    wifi.appendChild(barEl);
+  });
+  near.appendChild(wifi);
+}
+buildBackgroundSkyline();
 
 init();

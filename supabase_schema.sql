@@ -32,6 +32,8 @@ create unique index if not exists profiles_username_key on public.profiles (user
 
 -- био — публичное короткое описание в профиле, видно друзьям (см. rpc_get_profile)
 alter table public.profiles add column if not exists bio text;
+-- счётчик просмотров профиля (растёт, когда друг открывает твой профиль)
+alter table public.profiles add column if not exists view_count bigint not null default 0;
 
 create table if not exists public.friend_requests (
   id uuid primary key default gen_random_uuid(),
@@ -85,6 +87,14 @@ create table if not exists public.profile_comments (
 
 create index if not exists profile_comments_profile_idx on public.profile_comments (profile_id, created_at);
 
+-- лайки профиля (кто кому поставил лайк — по одному на пару)
+create table if not exists public.profile_likes (
+  profile_id uuid not null references public.profiles(id) on delete cascade,
+  liker_id uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (profile_id, liker_id)
+);
+
 -- ---------- RLS ----------
 -- Прямой доступ к таблицам закрыт почти полностью: всё чтение/запись идёт
 -- через функции ниже (security definer), которые сами проверяют auth.uid().
@@ -98,6 +108,7 @@ alter table public.friends enable row level security;
 alter table public.messages enable row level security;
 alter table public.bookmarks enable row level security;
 alter table public.profile_comments enable row level security;
+alter table public.profile_likes enable row level security;
 
 drop policy if exists "own profile" on public.profiles;
 create policy "own profile" on public.profiles
@@ -122,6 +133,10 @@ create policy "see own bookmarks" on public.bookmarks
 drop policy if exists "see own or authored comments" on public.profile_comments;
 create policy "see own or authored comments" on public.profile_comments
   for select using (profile_id = auth.uid() or author_id = auth.uid());
+
+drop policy if exists "see own or authored likes" on public.profile_likes;
+create policy "see own or authored likes" on public.profile_likes
+  for select using (profile_id = auth.uid() or liker_id = auth.uid());
 
 -- ---------- автосоздание профиля при регистрации (анонимной) ----------
 
@@ -499,7 +514,10 @@ $$;
 
 drop function if exists public.rpc_get_profile(uuid);
 create or replace function public.rpc_get_profile(p_user_id uuid)
-returns table(id uuid, username text, display_name text, bio text, friend_code text)
+returns table(
+  id uuid, username text, display_name text, bio text, friend_code text,
+  view_count bigint, friends_count bigint, comments_count bigint, likes_count bigint, liked_by_me boolean
+)
 language plpgsql
 security definer
 set search_path = public
@@ -510,10 +528,49 @@ begin
   ) then
     raise exception 'not_friends';
   end if;
+
+  -- считаем просмотр только когда смотрят чужой профиль (не свой собственный)
+  if p_user_id <> auth.uid() then
+    update public.profiles set view_count = profiles.view_count + 1 where profiles.id = p_user_id;
+  end if;
+
   return query
-    select p.id, p.username, p.display_name, p.bio, p.friend_code
+    select
+      p.id, p.username, p.display_name, p.bio, p.friend_code, p.view_count,
+      (select count(*) from public.friends f where f.user_id = p.id),
+      (select count(*) from public.profile_comments c where c.profile_id = p.id),
+      (select count(*) from public.profile_likes l where l.profile_id = p.id),
+      exists(select 1 from public.profile_likes l where l.profile_id = p.id and l.liker_id = auth.uid())
     from public.profiles p
     where p.id = p_user_id;
+end;
+$$;
+
+-- ---------- RPC: лайк профиля (переключатель — поставить/убрать) ----------
+
+drop function if exists public.rpc_toggle_profile_like(uuid);
+create or replace function public.rpc_toggle_profile_like(p_profile_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_liked boolean;
+begin
+  if p_profile_id <> auth.uid() and not exists (
+    select 1 from public.friends where user_id = auth.uid() and friend_id = p_profile_id
+  ) then
+    raise exception 'not_friends';
+  end if;
+
+  select exists(select 1 from public.profile_likes where profile_id = p_profile_id and liker_id = auth.uid()) into v_liked;
+  if v_liked then
+    delete from public.profile_likes where profile_id = p_profile_id and liker_id = auth.uid();
+  else
+    insert into public.profile_likes (profile_id, liker_id) values (p_profile_id, auth.uid());
+  end if;
+  return not v_liked;
 end;
 $$;
 
@@ -659,6 +716,7 @@ revoke all on function public.rpc_send_message(uuid, text) from public;
 revoke all on function public.rpc_list_messages(uuid, int) from public;
 revoke all on function public.rpc_set_bio(text) from public;
 revoke all on function public.rpc_get_profile(uuid) from public;
+revoke all on function public.rpc_toggle_profile_like(uuid) from public;
 revoke all on function public.rpc_upsert_bookmark(text, text, text, text) from public;
 revoke all on function public.rpc_remove_bookmark(text) from public;
 revoke all on function public.rpc_list_bookmarks(uuid) from public;
@@ -684,6 +742,7 @@ grant execute on function public.rpc_send_message(uuid, text) to authenticated;
 grant execute on function public.rpc_list_messages(uuid, int) to authenticated;
 grant execute on function public.rpc_set_bio(text) to authenticated;
 grant execute on function public.rpc_get_profile(uuid) to authenticated;
+grant execute on function public.rpc_toggle_profile_like(uuid) to authenticated;
 grant execute on function public.rpc_upsert_bookmark(text, text, text, text) to authenticated;
 grant execute on function public.rpc_remove_bookmark(text) to authenticated;
 grant execute on function public.rpc_list_bookmarks(uuid) to authenticated;
