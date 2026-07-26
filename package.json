@@ -1,6 +1,6 @@
 {
   "name": "hanko",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "description": "Личное десктопное приложение для чтения манги/манхвы и просмотра аниме — без облака, без баз с твоими файлами на диске",
   "main": "main.js",
   "author": "You",
@@ -26,6 +26,9 @@
   "build": {
     "appId": "com.hanko.app",
     "productName": "Hanko",
+    "asarUnpack": [
+      "assets/**/*"
+    ],
     "directories": {
       "output": "dist"
     },

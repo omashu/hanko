@@ -2402,6 +2402,7 @@ async function openChat(friendId, name) {
   activeChat = { friendId, name };
   unreadFriendIds.delete(friendId);
   renderFriendsList();
+  updateFriendsNavBadge();
   els.chatPanePlaceholder.hidden = true;
   els.chatPaneActive.hidden = false;
   els.chatTitle.textContent = name;
@@ -2747,6 +2748,11 @@ function richPreviewText(rich) {
   return 'Сообщение';
 }
 
+// путь к иконке для нативных уведомлений — реальный путь на диске (не внутри
+// asar), иначе Windows тихо не показывает баннер уведомления, см. main.js
+let notificationIconPath = null;
+window.hanko.getNotificationIcon().then((p) => { notificationIconPath = p; }).catch(() => {});
+
 function notifyIncomingMessage(msg) {
   playNotificationSound();
   try {
@@ -2756,7 +2762,7 @@ function notifyIncomingMessage(msg) {
     if (bodyText.startsWith(RICH_PREFIX)) {
       try { bodyText = richPreviewText(JSON.parse(bodyText.slice(RICH_PREFIX.length))); } catch { bodyText = 'Сообщение'; }
     }
-    const notif = new Notification(name, { body: bodyText, icon: 'assets/icon.png' });
+    const notif = new Notification(name, { body: bodyText, icon: notificationIconPath || 'assets/icon.png' });
     notif.onclick = async () => {
       await window.hanko.focusApp();
       showView('friends');
@@ -2781,10 +2787,20 @@ window.hanko.onOnlineEvent(async (event) => {
   } else if (event.type === 'message') {
     const msg = event.message;
     const isActiveChatOpen = activeChat && msg.from_id === activeChat.friendId && !els.chatPaneActive.hidden;
-    if (isActiveChatOpen && document.hasFocus()) {
-      els.chatBody.appendChild(chatBubble(msg));
-      els.chatBody.scrollTop = els.chatBody.scrollHeight;
+    if (isActiveChatOpen) {
+      // сообщение уже могло попасть в DOM через REST-подгрузку истории в
+      // openChat() (гонка запросов) — не дублируем бабл, если он уже есть
+      if (!els.chatBody.querySelector(`[data-msg-id="${CSS.escape(msg.id)}"]`)) {
+        els.chatBody.appendChild(chatBubble(msg));
+        els.chatBody.scrollTop = els.chatBody.scrollHeight;
+      }
       window.hanko.onlineMarkMessagesRead(msg.from_id).catch(() => {});
+      // document.hasFocus() раньше решал, показывать ли сообщение живьём —
+      // но эта проверка ненадёжна (мигает из-за webview на вкладке "Аниме"),
+      // из-за чего сообщение не появлялось, пока не перезайдёшь в чат. Раз
+      // нужный диалог открыт — просто показываем сообщение всегда, а системное
+      // уведомление даём только если по факту нет фокуса окна.
+      if (!document.hasFocus()) notifyIncomingMessage(msg);
     } else {
       unreadFriendIds.add(msg.from_id);
       updateFriendsNavBadge();

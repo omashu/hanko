@@ -242,6 +242,17 @@ function createWindow() {
 // который получают обычные пользователи.
 ipcMain.handle('app:isDev', () => !app.isPackaged);
 
+// ---------- иконка для нативных уведомлений Windows ----------
+// Toast-уведомления Windows рисует отдельный системный процесс, который не
+// умеет читать файлы внутри app.asar — поэтому даём ему реальный путь на
+// диске (asarUnpack в package.json физически кладёт assets рядом с asar).
+ipcMain.handle('app:notificationIcon', () => {
+  const base = app.isPackaged
+    ? path.join(process.resourcesPath, 'app.asar.unpacked')
+    : __dirname;
+  return path.join(base, 'assets', 'icon.png');
+});
+
 // ---------- автообновление (GitHub Releases, через electron-updater) ----------
 // Работает только в собранном .exe (app.isPackaged) — при обычном "npm start"
 // в разработке просто ничего не делает, там нет реального релиза для сверки.
@@ -279,9 +290,26 @@ function setupAutoUpdate() {
     sendUpdateStatus({ state: 'error', message: err?.message || String(err) });
   });
 
+  // Раньше checkForUpdates() вызывался только один раз при запуске — если
+  // приложение долго не закрывать, а релиз вышел уже после старта, апдейтер
+  // об этом просто никогда не узнавал, пока не перезайдёшь в приложение.
+  // Теперь дополнительно перепроверяем раз в UPDATE_CHECK_INTERVAL_MS, пока
+  // само приложение открыто — как и раньше, ничего не показываем, если
+  // обновлений нет (never всё тихо).
+  const UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000; // раз в 30 минут
+
   autoUpdater.checkForUpdates().catch((err) => {
     console.error('Проверка обновлений не удалась:', err?.message || err);
   });
+
+  setInterval(() => {
+    // если уже нашли/скачали обновление в этом сеансе — не дёргаем заново,
+    // повторная проверка тут не нужна, просто ждём, пока человек перезайдёт
+    if (lastUpdateStatus.state === 'available' || lastUpdateStatus.state === 'downloading' || lastUpdateStatus.state === 'ready') return;
+    autoUpdater.checkForUpdates().catch((err) => {
+      console.error('Проверка обновлений не удалась:', err?.message || err);
+    });
+  }, UPDATE_CHECK_INTERVAL_MS);
 }
 
 ipcMain.handle('update:getStatus', () => lastUpdateStatus);
