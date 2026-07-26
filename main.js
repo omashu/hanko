@@ -15,6 +15,8 @@ if (!global.WebSocket) global.WebSocket = require('ws');
 const SETTINGS_PATH = () => path.join(app.getPath('userData'), 'settings.json');
 const LIBRARY_PATH = () => path.join(app.getPath('userData'), 'library.json');
 const HISTORY_PATH = () => path.join(app.getPath('userData'), 'history.json');
+const ANIME_LIBRARY_PATH = () => path.join(app.getPath('userData'), 'anime-library.json');
+const ANIME_HISTORY_PATH = () => path.join(app.getPath('userData'), 'anime-history.json');
 const SITES_PATH = () => path.join(app.getPath('userData'), 'sites.json');
 const DOWNLOADS_DIR = () => path.join(app.getPath('userData'), 'downloads');
 const DOWNLOADS_INDEX_PATH = () => path.join(DOWNLOADS_DIR(), 'index.json');
@@ -115,6 +117,32 @@ async function loadHistory() {
 
 async function saveHistory(items) {
   await writeJson(HISTORY_PATH(), { items: items.slice(0, HISTORY_MAX_ENTRIES) });
+  return items;
+}
+
+// Аниме-закладки — отдельный файл, полный аналог library.json, но для тайтлов
+// AniLibria (item.id — id релиза AniLibria, не пересекается с id манги).
+async function loadAnimeLibrary() {
+  const l = await readJson(ANIME_LIBRARY_PATH(), { items: [] });
+  return Array.isArray(l.items) ? l.items : [];
+}
+
+async function saveAnimeLibrary(items) {
+  await writeJson(ANIME_LIBRARY_PATH(), { items });
+  return items;
+}
+
+// История просмотров — аналог history.json для аниме: пишется для ЛЮБОГО
+// открытого тайтла (не только из закладок), при открытии серии в плеере.
+const ANIME_HISTORY_MAX_ENTRIES = 300;
+
+async function loadAnimeHistory() {
+  const h = await readJson(ANIME_HISTORY_PATH(), { items: [] });
+  return Array.isArray(h.items) ? h.items : [];
+}
+
+async function saveAnimeHistory(items) {
+  await writeJson(ANIME_HISTORY_PATH(), { items: items.slice(0, ANIME_HISTORY_MAX_ENTRIES) });
   return items;
 }
 
@@ -384,6 +412,30 @@ ipcMain.handle('history:progress', async (_e, { mangaId, title, coverUrl, chapte
   const filtered = items.filter((i) => i.mangaId !== mangaId);
   filtered.unshift({ mangaId, title, coverUrl, chapterId, chapterLabel, page, updatedAt: Date.now() });
   return saveHistory(filtered);
+});
+
+ipcMain.handle('anime-library:load', () => loadAnimeLibrary());
+
+ipcMain.handle('anime-library:upsert', async (_e, item) => {
+  const items = await loadAnimeLibrary();
+  const idx = items.findIndex((i) => i.id === item.id);
+  if (idx >= 0) items[idx] = { ...items[idx], ...item };
+  else items.push({ ...item, addedAt: Date.now() });
+  return saveAnimeLibrary(items);
+});
+
+ipcMain.handle('anime-library:remove', async (_e, id) => {
+  const items = (await loadAnimeLibrary()).filter((i) => i.id !== id);
+  return saveAnimeLibrary(items);
+});
+
+ipcMain.handle('anime-history:load', () => loadAnimeHistory());
+
+ipcMain.handle('anime-history:progress', async (_e, { releaseId, title, coverUrl, episodeIndex, episodeLabel }) => {
+  const items = await loadAnimeHistory();
+  const filtered = items.filter((i) => i.releaseId !== releaseId);
+  filtered.unshift({ releaseId, title, coverUrl, episodeIndex, episodeLabel, updatedAt: Date.now() });
+  return saveAnimeHistory(filtered);
 });
 
 ipcMain.handle('library:note', async (_e, { id, note }) => {

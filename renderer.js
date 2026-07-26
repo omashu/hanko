@@ -24,8 +24,10 @@ const els = {
   profileMangaEmpty: document.getElementById('profileMangaEmpty'),
   readingHistoryList: document.getElementById('readingHistoryList'),
   readingHistoryEmpty: document.getElementById('readingHistoryEmpty'),
-  profileSitesGrid: document.getElementById('profileSitesGrid'),
-  profileSitesEmpty: document.getElementById('profileSitesEmpty'),
+  profileAnimeGrid: document.getElementById('profileAnimeGrid'),
+  profileAnimeEmpty: document.getElementById('profileAnimeEmpty'),
+  watchHistoryList: document.getElementById('watchHistoryList'),
+  watchHistoryEmpty: document.getElementById('watchHistoryEmpty'),
   statBooks: document.getElementById('statBooks'),
   statFriendsBlock: document.getElementById('statFriendsBlock'),
   statFriends: document.getElementById('statFriends'),
@@ -181,16 +183,8 @@ const els = {
   downloadsList: document.getElementById('downloadsList'),
   downloadsEmpty: document.getElementById('downloadsEmpty'),
 
-  sitesGrid: document.getElementById('sitesGrid'),
-  addSiteBtn: document.getElementById('addSiteBtn'),
-  browserPane: document.getElementById('browserPane'),
-  browserUrl: document.getElementById('browserUrl'),
-  browserBack: document.getElementById('browserBack'),
-  browserForward: document.getElementById('browserForward'),
-  browserReload: document.getElementById('browserReload'),
-  browserClose: document.getElementById('browserClose'),
-  siteWebview: document.getElementById('siteWebview'),
-  siteNote: document.getElementById('siteNote'),
+  animeLibraryGrid: document.getElementById('animeLibraryGrid'),
+  animeLibraryEmpty: document.getElementById('animeLibraryEmpty'),
 
   animeSearchForm: document.getElementById('animeSearchForm'),
   animeSearchInput: document.getElementById('animeSearchInput'),
@@ -246,12 +240,6 @@ const els = {
   appConfirmMessage: document.getElementById('appConfirmMessage'),
   appConfirmCancelBtn: document.getElementById('appConfirmCancelBtn'),
   appConfirmOkBtn: document.getElementById('appConfirmOkBtn'),
-
-  siteModalBackdrop: document.getElementById('siteModalBackdrop'),
-  siteModalForm: document.getElementById('siteModalForm'),
-  siteModalCancel: document.getElementById('siteModalCancel'),
-  siteNameInput: document.getElementById('siteNameInput'),
-  siteUrlInput: document.getElementById('siteUrlInput'),
 
   titleModalBackdrop: document.getElementById('titleModalBackdrop'),
   titleModalBody: document.getElementById('titleModalBody'),
@@ -313,11 +301,11 @@ document.addEventListener('keydown', (e) => {
 });
 
 let library = [];
-let sites = [];
 let downloads = [];
 let readingHistory = [];
+let animeLibrary = [];
+let animeHistory = [];
 let profile = null;
-let currentSiteId = null;
 
 let onlineState = { ready: false, connecting: true, error: null, myId: null, friendCode: null };
 let onlineInitStarted = false;
@@ -1607,85 +1595,57 @@ window.hanko.onDownloadProgress(async ({ mangaId, chapterId, done, total, finish
   }
 });
 
-// ---------------- аниме: сайты + встроенный браузер ----------------
+// ---------------- аниме: закладки ----------------
+// Раньше здесь была вкладка "Мои сайты" (ручные закладки на внешние сайты +
+// встроенный webview-браузер) — с тех пор как появился встроенный поиск и
+// плеер AniLibria, эта фича стала не нужна, отдельные сайты для просмотра
+// искать/открывать в браузере приложения незачем. Убрали полностью, вместо
+// неё — обычные закладки на тайтлы AniLibria, по аналогии с библиотекой манги.
 
-function siteTile(site) {
-  const tile = document.createElement('div');
-  tile.className = 'site-tile';
-  tile.style.position = 'relative';
-  const letter = (site.name || '?').trim().charAt(0).toUpperCase();
-  tile.innerHTML = `
-    <button class="site-remove" title="Удалить">✕</button>
-    <div class="site-avatar">${escapeHtml(letter)}</div>
-    <div class="site-name">${escapeHtml(site.name)}</div>
-    <div class="site-note">${escapeHtml(site.note || '')}</div>
+function animeLibraryCard(item) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  const hist = animeHistory.find((h) => h.releaseId === item.id);
+  const fold = hist
+    ? `<div class="card-fold"></div><span class="card-fold-label">${escapeHtml(hist.episodeLabel || '')}</span>`
+    : '';
+  card.innerHTML = `
+    ${fold}
+    <img class="card-cover" src="${item.coverUrl || ''}" alt="" loading="lazy" onerror="this.style.opacity=0" />
+    <div class="card-body">
+      <p class="card-title">${escapeHtml(item.title)}</p>
+    </div>
+    <button class="card-add" title="Убрать из закладок">✕</button>
   `;
-  tile.addEventListener('click', (e) => {
-    if (e.target.closest('.site-remove')) return;
-    showView('anime');
-    openSite(site);
+  card.addEventListener('click', (e) => {
+    if (e.target.closest('.card-add')) return;
+    openAnimeTitleModal(item);
   });
-  tile.querySelector('.site-remove').addEventListener('click', async (e) => {
+  card.querySelector('.card-add').addEventListener('click', async (e) => {
     e.stopPropagation();
-    await window.hanko.removeSite(site.id);
-    sites = await window.hanko.loadSites();
-    renderSites();
+    await window.hanko.removeAnimeLibraryItem(item.id);
+    animeLibrary = await window.hanko.loadAnimeLibrary();
+    renderAnimeLibrary();
   });
-  return tile;
+  return card;
 }
 
-function renderSites() {
-  els.sitesGrid.innerHTML = '';
-  for (const s of sites) els.sitesGrid.appendChild(siteTile(s));
+function renderAnimeLibrary() {
+  els.animeLibraryGrid.innerHTML = '';
+  els.animeLibraryEmpty.hidden = animeLibrary.length > 0;
+  for (const item of animeLibrary) els.animeLibraryGrid.appendChild(animeLibraryCard(item));
 }
 
-function openSite(site) {
-  currentSiteId = site.id;
-  els.browserPane.hidden = false;
-  els.siteNote.value = site.note || '';
-  els.siteWebview.src = site.url;
-  els.browserUrl.textContent = site.url;
+// Записывает прогресс в отдельную историю просмотров (anime-history.json,
+// см. main.js) — для ЛЮБОГО тайтла, не только из закладок. Вызывается при
+// открытии серии в плеере (см. openAnimePlayer).
+async function recordAnimeHistoryProgress(payload) {
+  try {
+    animeHistory = await window.hanko.setAnimeHistoryProgress(payload);
+  } catch { /* история — best-effort, не мешаем просмотру, если не записалось */ }
+  if (!els.viewProfile.hidden) renderWatchHistory();
+  if (!els.viewAnime.hidden) renderAnimeLibrary();
 }
-
-els.addSiteBtn.addEventListener('click', () => {
-  els.siteNameInput.value = '';
-  els.siteUrlInput.value = '';
-  els.siteModalBackdrop.hidden = false;
-  els.siteNameInput.focus();
-});
-
-els.siteModalCancel.addEventListener('click', () => { els.siteModalBackdrop.hidden = true; });
-els.siteModalBackdrop.addEventListener('click', (e) => { if (e.target === els.siteModalBackdrop) els.siteModalBackdrop.hidden = true; });
-
-els.siteModalForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  let url = els.siteUrlInput.value.trim();
-  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
-  const site = { id: `s_${Date.now()}`, name: els.siteNameInput.value.trim(), url, note: '' };
-  await window.hanko.upsertSite(site);
-  sites = await window.hanko.loadSites();
-  renderSites();
-  els.siteModalBackdrop.hidden = true;
-});
-
-els.browserBack.addEventListener('click', () => els.siteWebview.canGoBack() && els.siteWebview.goBack());
-els.browserForward.addEventListener('click', () => els.siteWebview.canGoForward() && els.siteWebview.goForward());
-els.browserReload.addEventListener('click', () => els.siteWebview.reload());
-els.browserClose.addEventListener('click', () => { els.browserPane.hidden = true; currentSiteId = null; });
-
-els.siteWebview.addEventListener('did-navigate', (e) => { els.browserUrl.textContent = e.url; });
-els.siteWebview.addEventListener('did-navigate-in-page', (e) => { els.browserUrl.textContent = e.url; });
-
-let noteSaveTimer = null;
-els.siteNote.addEventListener('input', () => {
-  clearTimeout(noteSaveTimer);
-  noteSaveTimer = setTimeout(async () => {
-    if (!currentSiteId) return;
-    await window.hanko.setSiteNote({ id: currentSiteId, note: els.siteNote.value });
-    sites = await window.hanko.loadSites();
-    renderSites();
-  }, 500);
-});
 
 // ---------------- профиль ----------------
 
@@ -1694,6 +1654,7 @@ async function loadProfileView() {
   renderProfileHeader();
   renderProfileBookmarks();
   renderReadingHistory();
+  renderWatchHistory();
   renderProfileStats();
   await refreshOnline();
   await loadMyComments();
@@ -1719,9 +1680,9 @@ function renderProfileBookmarks() {
   for (const item of library) {
     els.profileMangaGrid.appendChild(mangaCard(item, { inLibrary: true }));
   }
-  els.profileSitesGrid.innerHTML = '';
-  els.profileSitesEmpty.hidden = sites.length > 0;
-  for (const s of sites) els.profileSitesGrid.appendChild(siteTile(s));
+  els.profileAnimeGrid.innerHTML = '';
+  els.profileAnimeEmpty.hidden = animeLibrary.length > 0;
+  for (const item of animeLibrary) els.profileAnimeGrid.appendChild(animeLibraryCard(item));
 }
 
 // показывает ВСЕ тайтлы, где есть сохранённый прогресс чтения — из отдельной
@@ -1746,6 +1707,28 @@ function renderReadingHistory() {
     `;
     row.addEventListener('click', () => openTitleModal({ id: h.mangaId, title: h.title, coverUrl: h.coverUrl }));
     els.readingHistoryList.appendChild(row);
+  }
+}
+
+// то же самое, но для просмотра аниме — из anime-history.json, тоже для
+// ЛЮБОГО открытого тайтла, не только из аниме-закладок.
+function renderWatchHistory() {
+  const items = animeHistory.slice().sort((a, b) => b.updatedAt - a.updatedAt);
+  els.watchHistoryEmpty.hidden = items.length > 0;
+  els.watchHistoryList.innerHTML = '';
+  for (const h of items) {
+    const row = document.createElement('div');
+    row.className = 'history-row';
+    const date = new Date(h.updatedAt).toLocaleDateString('ru-RU');
+    row.innerHTML = `
+      <img class="history-row-cover" src="${h.coverUrl || ''}" alt="" onerror="this.style.opacity=0" />
+      <div class="history-row-info">
+        <span class="history-row-title">${escapeHtml(h.title)}</span>
+        <span class="history-row-chapter">${escapeHtml(h.episodeLabel || '')} · ${escapeHtml(date)}</span>
+      </div>
+    `;
+    row.addEventListener('click', () => openAnimeTitleModal({ id: h.releaseId, title: h.title, coverUrl: h.coverUrl }));
+    els.watchHistoryList.appendChild(row);
   }
 }
 
@@ -2389,10 +2372,51 @@ async function openSharedContent(rich) {
   }
 }
 
+// показывает "Сегодня"/"Вчера"/дату — разделитель между сообщениями разных
+// дней, чтобы не подписывать дату на каждом сообщении (время у сообщений и так
+// есть), но было видно, где заканчивается один день переписки и начинается
+// другой. dateKey — результат Date.prototype.toDateString(), его же можно
+// скормить обратно в `new Date()`, поэтому он и используется как ключ, и как
+// исходные данные для человекочитаемой метки
+function chatDateLabel(dateKey) {
+  const d = new Date(dateKey);
+  const now = new Date();
+  const startOfDay = (dt) => new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime();
+  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86400000);
+  if (diffDays === 0) return 'Сегодня';
+  if (diffDays === 1) return 'Вчера';
+  return d.toLocaleDateString('ru-RU', {
+    day: '2-digit', month: 'long',
+    year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
+  });
+}
+
+function chatDateDivider(dateKey) {
+  const div = document.createElement('div');
+  div.className = 'chat-date-divider';
+  div.dataset.dateKey = dateKey;
+  div.innerHTML = `<span>${escapeHtml(chatDateLabel(dateKey))}</span>`;
+  return div;
+}
+
+// добавляет сообщение в чат, вставляя перед ним разделитель даты, если день
+// сменился по сравнению с последним элементом в чате (сообщением или уже
+// стоящим разделителем)
+function appendChatMessage(msg, container = els.chatBody) {
+  const bubble = chatBubble(msg);
+  const lastEl = container.lastElementChild;
+  if (!lastEl || lastEl.dataset.dateKey !== bubble.dataset.dateKey) {
+    container.appendChild(chatDateDivider(bubble.dataset.dateKey));
+  }
+  container.appendChild(bubble);
+  return bubble;
+}
+
 function chatBubble(msg) {
   const mine = msg.from_id === onlineState.myId;
   const bubble = document.createElement('div');
   bubble.dataset.msgId = msg.id;
+  bubble.dataset.dateKey = new Date(msg.created_at).toDateString();
   const time = new Date(msg.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   // галочки показываем только на своих сообщениях — на чужих "прочитано"
   // смотреть нечего, это состояние видно только отправителю
@@ -2469,14 +2493,20 @@ function isChatPaneVisible() {
 }
 
 function renderChatMessages(messages) {
-  // если пока шёл этот самый REST-запрos, по realtime уже прилетело более
+  // если пока шёл этот самый REST-запрос, по realtime уже прилетело более
   // новое сообщение и попало в DOM — не теряем его при полной перерисовке
   const incomingIds = new Set(messages.map((m) => m.id));
   const liveExtras = Array.from(els.chatBody.querySelectorAll('[data-msg-id]'))
     .filter((el) => !incomingIds.has(el.dataset.msgId));
   els.chatBody.innerHTML = '';
-  for (const m of messages) els.chatBody.appendChild(chatBubble(m));
-  for (const el of liveExtras) els.chatBody.appendChild(el);
+  for (const m of messages) appendChatMessage(m);
+  for (const el of liveExtras) {
+    const lastEl = els.chatBody.lastElementChild;
+    if (!lastEl || lastEl.dataset.dateKey !== el.dataset.dateKey) {
+      els.chatBody.appendChild(chatDateDivider(el.dataset.dateKey));
+    }
+    els.chatBody.appendChild(el);
+  }
   els.chatBody.scrollTop = els.chatBody.scrollHeight;
 }
 
@@ -2488,7 +2518,7 @@ async function sendChatPayload(body) {
   if (!activeChat) return;
   try {
     const msg = await window.hanko.onlineSendMessage({ friendId: activeChat.friendId, body });
-    els.chatBody.appendChild(chatBubble(msg));
+    appendChatMessage(msg);
     els.chatBody.scrollTop = els.chatBody.scrollHeight;
   } catch (err) {
     alert(err.message);
@@ -2621,6 +2651,10 @@ function friendBookmarkCard(item) {
       <p class="card-meta">${item.status ? escapeHtml(item.status) : ''}</p>
     </div>
   `;
+  // раньше карточка ничего не делала по клику — теперь открывает тайтл в
+  // своей библиотеке (та же логика, что и у истории прочтения): manga_id
+  // общий для всех, id тайтла не привязан к конкретному пользователю
+  card.addEventListener('click', () => openTitleModal({ id: item.manga_id, title: item.title, coverUrl: item.cover_url }));
   return card;
 }
 
@@ -2850,7 +2884,7 @@ window.hanko.onOnlineEvent(async (event) => {
       // сообщение уже могло попасть в DOM через REST-подгрузку истории в
       // openChat() (гонка запросов) — не дублируем бабл, если он уже есть
       if (!els.chatBody.querySelector(`[data-msg-id="${CSS.escape(msg.id)}"]`)) {
-        els.chatBody.appendChild(chatBubble(msg));
+        appendChatMessage(msg);
         els.chatBody.scrollTop = els.chatBody.scrollHeight;
       }
       window.hanko.onlineMarkMessagesRead(msg.from_id).catch(() => {});
@@ -2884,21 +2918,23 @@ window.hanko.onOnlineEvent(async (event) => {
 // ---------------- старт ----------------
 
 async function init() {
-  const [settings, lib, sitesList, downloadsList, historyList] = await Promise.all([
+  const [settings, lib, downloadsList, historyList, animeLibList, animeHistList] = await Promise.all([
     window.hanko.loadSettings(),
     window.hanko.loadLibrary(),
-    window.hanko.loadSites(),
     window.hanko.listDownloads(),
     window.hanko.loadHistory(),
+    window.hanko.loadAnimeLibrary(),
+    window.hanko.loadAnimeHistory(),
   ]);
   isDevMode = await window.hanko.isDev();
   library = lib;
-  sites = sitesList;
   downloads = downloadsList;
   readingHistory = historyList;
+  animeLibrary = animeLibList;
+  animeHistory = animeHistList;
   applyTheme(settings.theme);
   renderLibrary();
-  renderSites();
+  renderAnimeLibrary();
   renderDownloads();
   const lastTab = ['anime', 'home', 'profile', 'friends'].includes(settings.lastTab) ? settings.lastTab : 'manga';
   showView(lastTab);
@@ -3235,6 +3271,7 @@ els.animeFiltersResetBtn.addEventListener('click', () => {
 });
 
 async function openAnimeTitleModal(item) {
+  const inLibrary = animeLibrary.some((l) => l.id === item.id);
   els.animeTitleModalBackdrop.hidden = false;
   els.animeTitleModalBody.innerHTML = `
     <div class="title-modal-header">
@@ -3242,11 +3279,24 @@ async function openAnimeTitleModal(item) {
       <div>
         <h2>${escapeHtml(item.title)}</h2>
         <p>${escapeHtml(item.description || '')}</p>
+        <button class="btn-secondary" id="animeLibToggleBtn" style="margin-top:10px;">
+          ${inLibrary ? 'Убрать из закладок' : 'Добавить в закладки'}
+        </button>
       </div>
     </div>
     <h3 class="section-title">Серии</h3>
     <div class="chapter-list" id="animeEpisodeList"><p class="empty-hint">Загружаю…</p></div>
   `;
+  document.getElementById('animeLibToggleBtn').addEventListener('click', async () => {
+    if (animeLibrary.some((l) => l.id === item.id)) {
+      await window.hanko.removeAnimeLibraryItem(item.id);
+    } else {
+      await window.hanko.upsertAnimeLibraryItem({ id: item.id, title: item.title, coverUrl: item.coverUrl });
+    }
+    animeLibrary = await window.hanko.loadAnimeLibrary();
+    renderAnimeLibrary();
+    openAnimeTitleModal(item);
+  });
   try {
     const episodes = await window.hanko.anilibriaEpisodes(item.id);
     const list = document.getElementById('animeEpisodeList');
@@ -3298,6 +3348,11 @@ function openAnimePlayer(item, episodes, index) {
   els.animeEpLabel.textContent = `${index + 1} / ${episodes.length}`;
   els.animeEpPrevBtn.disabled = index <= 0;
   els.animeEpNextBtn.disabled = index >= episodes.length - 1;
+
+  recordAnimeHistoryProgress({
+    releaseId: item.id, title: item.title, coverUrl: item.coverUrl || '',
+    episodeIndex: index, episodeLabel: `Серия ${ep.chapter}`,
+  });
 
   els.animeQualitySelect.innerHTML = ep.qualities
     .map((q, i) => `<option value="${i}">${escapeHtml(q.label)}</option>`).join('');
