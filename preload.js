@@ -17,12 +17,16 @@ contextBridge.exposeInMainWorld('hanko', {
 
   loadHistory: () => ipcRenderer.invoke('history:load'),
   setHistoryProgress: (payload) => ipcRenderer.invoke('history:progress', payload),
+  removeHistoryItem: (mangaId) => ipcRenderer.invoke('history:remove', mangaId),
+  clearHistory: () => ipcRenderer.invoke('history:clear'),
 
   loadAnimeLibrary: () => ipcRenderer.invoke('anime-library:load'),
   upsertAnimeLibraryItem: (item) => ipcRenderer.invoke('anime-library:upsert', item),
   removeAnimeLibraryItem: (id) => ipcRenderer.invoke('anime-library:remove', id),
   loadAnimeHistory: () => ipcRenderer.invoke('anime-history:load'),
   setAnimeHistoryProgress: (payload) => ipcRenderer.invoke('anime-history:progress', payload),
+  removeAnimeHistoryItem: (releaseId) => ipcRenderer.invoke('anime-history:remove', releaseId),
+  clearAnimeHistory: () => ipcRenderer.invoke('anime-history:clear'),
 
   loadSites: () => ipcRenderer.invoke('sites:load'),
   upsertSite: (site) => ipcRenderer.invoke('sites:upsert', site),

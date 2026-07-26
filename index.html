@@ -205,26 +205,38 @@
 
     <div class="profile-blocks">
       <section class="section profile-block">
-        <h2 class="section-title">Закладки — манга</h2>
+        <div class="profile-block-header">
+          <h2 class="section-title">Закладки — манга</h2>
+          <button class="section-action-btn" id="profileMangaShowAllBtn" type="button" hidden>Показать все</button>
+        </div>
         <p class="empty-hint" data-icon="book" id="profileMangaEmpty">Пока пусто — добавь тайтл в библиотеку в разделе «Манга».</p>
         <div class="grid grid--compact" id="profileMangaGrid"></div>
       </section>
 
       <section class="section profile-block">
-        <h2 class="section-title">Закладки — аниме</h2>
+        <div class="profile-block-header">
+          <h2 class="section-title">Закладки — аниме</h2>
+          <button class="section-action-btn" id="profileAnimeShowAllBtn" type="button" hidden>Показать все</button>
+        </div>
         <p class="empty-hint" data-icon="book" id="profileAnimeEmpty">Пока пусто — добавь тайтл в закладки в разделе «Аниме».</p>
         <div class="grid grid--compact" id="profileAnimeGrid"></div>
       </section>
 
       <section class="section profile-block profile-block--wide">
-        <h2 class="section-title">История прочтения</h2>
+        <div class="profile-block-header">
+          <h2 class="section-title">История прочтения</h2>
+          <button class="section-action-btn" id="readingHistoryClearBtn" type="button" hidden>Очистить всё</button>
+        </div>
         <p class="view-sub" style="margin: -6px 0 10px;">Видно только тебе — здесь список тайтлов с последней открытой главой.</p>
         <p class="empty-hint" data-icon="book" id="readingHistoryEmpty">Пока пусто — начни читать что-нибудь, и здесь появится последняя открытая глава.</p>
         <div class="history-list" id="readingHistoryList"></div>
       </section>
 
       <section class="section profile-block profile-block--wide">
-        <h2 class="section-title">История просмотров</h2>
+        <div class="profile-block-header">
+          <h2 class="section-title">История просмотров</h2>
+          <button class="section-action-btn" id="watchHistoryClearBtn" type="button" hidden>Очистить всё</button>
+        </div>
         <p class="view-sub" style="margin: -6px 0 10px;">Видно только тебе — здесь список аниме с последней открытой серией.</p>
         <p class="empty-hint" data-icon="book" id="watchHistoryEmpty">Пока пусто — начни смотреть что-нибудь, и здесь появится последняя открытая серия.</p>
         <div class="history-list" id="watchHistoryList"></div>
@@ -574,6 +586,15 @@
           </div>
         </footer>
       </div>
+    </div>
+  </div>
+
+  <!-- ===================== ОКНО "ВСЕ ЗАКЛАДКИ" (манга/аниме, когда их много) ===================== -->
+  <div class="modal-backdrop" id="bookmarksModalBackdrop" hidden>
+    <div class="modal modal--wide" id="bookmarksModal">
+      <button class="icon-btn modal-close" id="bookmarksModalClose" type="button">✕</button>
+      <h3 id="bookmarksModalTitle">Закладки</h3>
+      <div class="grid grid--compact" id="bookmarksModalGrid"></div>
     </div>
   </div>
 

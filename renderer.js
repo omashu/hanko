@@ -22,12 +22,20 @@ const els = {
   profileBioInput: document.getElementById('profileBioInput'),
   profileMangaGrid: document.getElementById('profileMangaGrid'),
   profileMangaEmpty: document.getElementById('profileMangaEmpty'),
+  profileMangaShowAllBtn: document.getElementById('profileMangaShowAllBtn'),
   readingHistoryList: document.getElementById('readingHistoryList'),
   readingHistoryEmpty: document.getElementById('readingHistoryEmpty'),
-  profileAnimeGrid: document.getElementById('profileAnimeGrid'),
-  profileAnimeEmpty: document.getElementById('profileAnimeEmpty'),
+  readingHistoryClearBtn: document.getElementById('readingHistoryClearBtn'),
   watchHistoryList: document.getElementById('watchHistoryList'),
   watchHistoryEmpty: document.getElementById('watchHistoryEmpty'),
+  watchHistoryClearBtn: document.getElementById('watchHistoryClearBtn'),
+  bookmarksModalBackdrop: document.getElementById('bookmarksModalBackdrop'),
+  bookmarksModalClose: document.getElementById('bookmarksModalClose'),
+  bookmarksModalTitle: document.getElementById('bookmarksModalTitle'),
+  bookmarksModalGrid: document.getElementById('bookmarksModalGrid'),
+  profileAnimeGrid: document.getElementById('profileAnimeGrid'),
+  profileAnimeEmpty: document.getElementById('profileAnimeEmpty'),
+  profileAnimeShowAllBtn: document.getElementById('profileAnimeShowAllBtn'),
   statBooks: document.getElementById('statBooks'),
   statFriendsBlock: document.getElementById('statFriendsBlock'),
   statFriends: document.getElementById('statFriends'),
@@ -1674,16 +1682,45 @@ function renderProfileHeader() {
   }
 }
 
+// сколько карточек показываем прямо в профиле, прежде чем предлагать открыть
+// полный список отдельным окном — иначе у тех, кто добавил много тайтлов,
+// профиль превращается в бесконечную простыню карточек
+const BOOKMARKS_PREVIEW_LIMIT = 12;
+
 function renderProfileBookmarks() {
   els.profileMangaGrid.innerHTML = '';
   els.profileMangaEmpty.hidden = library.length > 0;
-  for (const item of library) {
+  for (const item of library.slice(0, BOOKMARKS_PREVIEW_LIMIT)) {
     els.profileMangaGrid.appendChild(mangaCard(item, { inLibrary: true }));
   }
+  els.profileMangaShowAllBtn.hidden = library.length <= BOOKMARKS_PREVIEW_LIMIT;
+  els.profileMangaShowAllBtn.textContent = `Показать все (${library.length})`;
+
   els.profileAnimeGrid.innerHTML = '';
   els.profileAnimeEmpty.hidden = animeLibrary.length > 0;
-  for (const item of animeLibrary) els.profileAnimeGrid.appendChild(animeLibraryCard(item));
+  for (const item of animeLibrary.slice(0, BOOKMARKS_PREVIEW_LIMIT)) {
+    els.profileAnimeGrid.appendChild(animeLibraryCard(item));
+  }
+  els.profileAnimeShowAllBtn.hidden = animeLibrary.length <= BOOKMARKS_PREVIEW_LIMIT;
+  els.profileAnimeShowAllBtn.textContent = `Показать все (${animeLibrary.length})`;
 }
+
+function openBookmarksModal(kind) {
+  const isManga = kind === 'manga';
+  els.bookmarksModalTitle.textContent = isManga ? 'Закладки — манга' : 'Закладки — аниме';
+  els.bookmarksModalGrid.innerHTML = '';
+  const items = isManga ? library : animeLibrary;
+  for (const item of items) {
+    els.bookmarksModalGrid.appendChild(isManga ? mangaCard(item, { inLibrary: true }) : animeLibraryCard(item));
+  }
+  els.bookmarksModalBackdrop.hidden = false;
+}
+els.profileMangaShowAllBtn.addEventListener('click', () => openBookmarksModal('manga'));
+els.profileAnimeShowAllBtn.addEventListener('click', () => openBookmarksModal('anime'));
+els.bookmarksModalClose.addEventListener('click', () => { els.bookmarksModalBackdrop.hidden = true; });
+els.bookmarksModalBackdrop.addEventListener('click', (e) => {
+  if (e.target === els.bookmarksModalBackdrop) els.bookmarksModalBackdrop.hidden = true;
+});
 
 // показывает ВСЕ тайтлы, где есть сохранённый прогресс чтения — из отдельной
 // истории (history.json, см. main.js), не из library.json, поэтому сюда
@@ -1693,6 +1730,7 @@ function renderProfileBookmarks() {
 function renderReadingHistory() {
   const items = readingHistory.slice().sort((a, b) => b.updatedAt - a.updatedAt);
   els.readingHistoryEmpty.hidden = items.length > 0;
+  els.readingHistoryClearBtn.hidden = items.length === 0;
   els.readingHistoryList.innerHTML = '';
   for (const h of items) {
     const row = document.createElement('div');
@@ -1704,17 +1742,30 @@ function renderReadingHistory() {
         <span class="history-row-title">${escapeHtml(h.title)}</span>
         <span class="history-row-chapter">${escapeHtml(h.chapterLabel || '')} · ${escapeHtml(date)}</span>
       </div>
+      <button class="history-row-remove" type="button" title="Удалить из истории">✕</button>
     `;
     row.addEventListener('click', () => openTitleModal({ id: h.mangaId, title: h.title, coverUrl: h.coverUrl }));
+    row.querySelector('.history-row-remove').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      readingHistory = await window.hanko.removeHistoryItem(h.mangaId);
+      renderReadingHistory();
+    });
     els.readingHistoryList.appendChild(row);
   }
 }
+els.readingHistoryClearBtn.addEventListener('click', async () => {
+  const ok = await showAppConfirm('Удалить всю историю прочтения? Отменить это будет нельзя.', { title: 'Очистить историю', okText: 'Очистить' });
+  if (!ok) return;
+  readingHistory = await window.hanko.clearHistory();
+  renderReadingHistory();
+});
 
 // то же самое, но для просмотра аниме — из anime-history.json, тоже для
 // ЛЮБОГО открытого тайтла, не только из аниме-закладок.
 function renderWatchHistory() {
   const items = animeHistory.slice().sort((a, b) => b.updatedAt - a.updatedAt);
   els.watchHistoryEmpty.hidden = items.length > 0;
+  els.watchHistoryClearBtn.hidden = items.length === 0;
   els.watchHistoryList.innerHTML = '';
   for (const h of items) {
     const row = document.createElement('div');
@@ -1726,11 +1777,23 @@ function renderWatchHistory() {
         <span class="history-row-title">${escapeHtml(h.title)}</span>
         <span class="history-row-chapter">${escapeHtml(h.episodeLabel || '')} · ${escapeHtml(date)}</span>
       </div>
+      <button class="history-row-remove" type="button" title="Удалить из истории">✕</button>
     `;
     row.addEventListener('click', () => openAnimeTitleModal({ id: h.releaseId, title: h.title, coverUrl: h.coverUrl }));
+    row.querySelector('.history-row-remove').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      animeHistory = await window.hanko.removeAnimeHistoryItem(h.releaseId);
+      renderWatchHistory();
+    });
     els.watchHistoryList.appendChild(row);
   }
 }
+els.watchHistoryClearBtn.addEventListener('click', async () => {
+  const ok = await showAppConfirm('Удалить всю историю просмотров? Отменить это будет нельзя.', { title: 'Очистить историю', okText: 'Очистить' });
+  if (!ok) return;
+  animeHistory = await window.hanko.clearAnimeHistory();
+  renderWatchHistory();
+});
 
 els.profileAvatarBtn.addEventListener('click', async () => {
   const updated = await window.hanko.pickAvatar();
@@ -2861,6 +2924,12 @@ function notifyIncomingMessage(msg) {
       showView('friends');
       openChat(msg.from_id, name);
     };
+    // Windows сам решает, когда убрать всплывающий баннер — и после этого
+    // уведомление просто оседает в Центре уведомлений насовсем. Явный close()
+    // до этого момента убирает его целиком, а не только сам баннер, поэтому
+    // всплывающее окошко ты всё равно увидишь, но в истории уведомлений оно
+    // не останется.
+    setTimeout(() => { try { notif.close(); } catch {} }, 6000);
   } catch { /* нативные уведомления не критичны */ }
 }
 

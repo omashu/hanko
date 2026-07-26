@@ -915,16 +915,56 @@ webview#siteWebview { flex: 1; width: 100%; }
 
 .history-list { display: flex; flex-direction: column; gap: 8px; }
 .history-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 12px;
+  padding: 8px 40px 8px 12px;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 8px;
   cursor: pointer;
 }
 .history-row:hover { border-color: var(--accent); }
+.history-row-remove {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.history-row-remove:hover { color: #fff; background: var(--accent-bright); }
+
+.profile-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+.profile-block-header .section-title { margin: 0; }
+
+.section-action-btn {
+  background: none;
+  border: none;
+  color: var(--accent-bright);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 2px;
+  flex-shrink: 0;
+}
+.section-action-btn:hover { text-decoration: underline; }
 .history-row-cover {
   width: 36px;
   height: 48px;

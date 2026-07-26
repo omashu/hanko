@@ -2,7 +2,7 @@
 // Тут и только тут есть доступ к файловой системе и сети.
 // Окно (renderer) ничего не может напрямую — только через preload.js + ipc.
 
-const { app, BrowserWindow, ipcMain, shell, dialog, Menu, session } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, Menu, Tray, session } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const { autoUpdater } = require('electron-updater');
@@ -264,6 +264,29 @@ function createWindow() {
   });
 }
 
+// ---------- иконка в системном трее ----------
+// Просто удобный доступ, пока приложение свёрнуто в панель задач: развернуть
+// его обратно или полностью закрыть, не разыскивая окно среди других задач.
+let tray = null;
+
+function restoreWindow() {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function setupTray() {
+  tray = new Tray(path.join(__dirname, 'assets', 'icon.png'));
+  tray.setToolTip('Hanko');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Открыть Hanko', click: restoreWindow },
+    { type: 'separator' },
+    { label: 'Закрыть', click: () => app.quit() },
+  ]));
+  tray.on('click', restoreWindow);
+}
+
 // ---------- флаг dev-режима для renderer ----------
 // Нужен, чтобы часть отладочной информации (например, бейдж "источник: ...")
 // показывалась только при запуске через `npm start`, а не в собранном .exe,
@@ -355,6 +378,7 @@ app.whenReady().then(() => {
   setupRequestHeaders();
   setupAutoUpdate();
   startHealthMonitor();
+  setupTray();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -414,6 +438,13 @@ ipcMain.handle('history:progress', async (_e, { mangaId, title, coverUrl, chapte
   return saveHistory(filtered);
 });
 
+ipcMain.handle('history:remove', async (_e, mangaId) => {
+  const items = (await loadHistory()).filter((i) => i.mangaId !== mangaId);
+  return saveHistory(items);
+});
+
+ipcMain.handle('history:clear', () => saveHistory([]));
+
 ipcMain.handle('anime-library:load', () => loadAnimeLibrary());
 
 ipcMain.handle('anime-library:upsert', async (_e, item) => {
@@ -437,6 +468,13 @@ ipcMain.handle('anime-history:progress', async (_e, { releaseId, title, coverUrl
   filtered.unshift({ releaseId, title, coverUrl, episodeIndex, episodeLabel, updatedAt: Date.now() });
   return saveAnimeHistory(filtered);
 });
+
+ipcMain.handle('anime-history:remove', async (_e, releaseId) => {
+  const items = (await loadAnimeHistory()).filter((i) => i.releaseId !== releaseId);
+  return saveAnimeHistory(items);
+});
+
+ipcMain.handle('anime-history:clear', () => saveAnimeHistory([]));
 
 ipcMain.handle('library:note', async (_e, { id, note }) => {
   const items = await loadLibrary();
