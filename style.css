@@ -1108,8 +1108,180 @@ webview#siteWebview { flex: 1; width: 100%; }
   justify-content: center;
   overflow: hidden;
   background: #000;
+  position: relative;
 }
 .anime-player-body video { max-width: 100%; max-height: 100%; }
+
+/* ---------- кастомный плеер аниме ---------- */
+
+/* большая кнопка play по центру — видна только на паузе, клик по видео
+   тоже переключает play/pause (см. renderer.js) */
+.anime-center-btn {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(10, 12, 17, 0.55);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: opacity .18s ease, transform .18s ease;
+  z-index: 2;
+}
+.anime-center-btn svg { margin-left: 3px; } /* оптическая центровка play-треугольника */
+.anime-center-btn:hover { background: rgba(10, 12, 17, 0.72); transform: scale(1.05); }
+.anime-center-btn[hidden] { display: none; }
+
+.anime-controls {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity .25s ease;
+  z-index: 3;
+}
+.anime-controls > * { pointer-events: auto; }
+
+/* во время проигрывания и без движения мыши панель прячется целиком —
+   тот же принцип, что у обычных видеоплееров (YouTube/Netflix) */
+.anime-player.is-idle .anime-controls { opacity: 0; pointer-events: none; }
+.anime-player.is-idle { cursor: none; }
+
+.anime-controls-top {
+  background: linear-gradient(180deg, rgba(6, 7, 12, 0.82) 0%, rgba(6, 7, 12, 0) 100%);
+  border-bottom: none;
+  padding-bottom: 28px;
+}
+
+.anime-controls-bottom {
+  background: linear-gradient(0deg, rgba(6, 7, 12, 0.88) 10%, rgba(6, 7, 12, 0) 100%);
+  padding: 32px 20px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.anime-controls .icon-btn {
+  color: #eef0ff;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+}
+.anime-controls .icon-btn:hover { background: rgba(255, 255, 255, 0.14); }
+
+.anime-seek-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.anime-time {
+  font-size: 12px;
+  color: #c8ccec;
+  min-width: 42px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.anime-seek-track {
+  position: relative;
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+  transition: height .12s ease;
+}
+.anime-seek-track:hover { height: 6px; }
+
+.anime-seek-buffered, .anime-seek-fill {
+  position: absolute;
+  top: 0; left: 0; height: 100%;
+  border-radius: 999px;
+  pointer-events: none;
+}
+.anime-seek-buffered { background: rgba(255, 255, 255, 0.32); width: 0%; }
+.anime-seek-fill { background: var(--accent); width: 0%; }
+
+.anime-seek-thumb {
+  position: absolute;
+  top: 50%;
+  left: 0%;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255, 138, 122, 0.25);
+  transform: translate(-50%, -50%) scale(0);
+  transition: transform .12s ease;
+  pointer-events: none;
+}
+.anime-seek-track:hover .anime-seek-thumb,
+.anime-seek-track.is-dragging .anime-seek-thumb { transform: translate(-50%, -50%) scale(1); }
+
+.anime-buttons-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.anime-buttons-left, .anime-buttons-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.anime-buttons-right .chapter-nav-btn {
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #c8ccec;
+}
+.anime-buttons-right .chapter-nav-btn:hover:not(:disabled) { color: #eef0ff; }
+
+.anime-volume {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.anime-volume-slider {
+  width: 0;
+  opacity: 0;
+  transition: width .18s ease, opacity .18s ease, margin .18s ease;
+  accent-color: var(--accent);
+  cursor: pointer;
+  height: 4px;
+}
+.anime-volume:hover .anime-volume-slider,
+.anime-volume:focus-within .anime-volume-slider {
+  width: 70px;
+  opacity: 1;
+  margin-left: 4px;
+}
+
+.anime-speed-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #eef0ff;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  min-width: 42px;
+}
+.anime-speed-btn:hover { border-color: var(--accent); }
+
+@media (max-width: 720px) {
+  .anime-buttons-right .chapter-nav-btn span,
+  .anime-buttons-right .chapter-nav-btn { padding: 9px 12px; font-size: 11px; }
+  .anime-buttons-row { flex-wrap: wrap; row-gap: 8px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .reader-body img { transition: none; }

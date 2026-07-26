@@ -486,6 +486,13 @@ begin
 end;
 $$;
 
+-- ВАЖНО: раньше было "order by created_at asc limit N" — если в переписке
+-- накопилось больше N сообщений, это отдавало N САМЫХ СТАРЫХ сообщений, а не
+-- последние N. Новые сообщения (в т.ч. то, из-за которого только что пришло
+-- уведомление) в такой переписке просто никогда не попадали в ответ — не
+-- гонка запросов и не баг рендера в JS, а сама выборка отрезала свежее.
+-- Теперь: берём последние N по времени (order by desc + limit), а затем уже
+-- разворачиваем в правильный порядок (старые сверху, новые снизу) для показа.
 drop function if exists public.rpc_list_messages(uuid, int);
 create or replace function public.rpc_list_messages(p_friend_id uuid, p_limit int default 200)
 returns setof public.messages
@@ -493,11 +500,14 @@ language sql
 security definer
 set search_path = public
 as $$
-  select * from public.messages
-  where (from_id = auth.uid() and to_id = p_friend_id)
-     or (from_id = p_friend_id and to_id = auth.uid())
-  order by created_at asc
-  limit greatest(1, least(p_limit, 500));
+  select * from (
+    select * from public.messages
+    where (from_id = auth.uid() and to_id = p_friend_id)
+       or (from_id = p_friend_id and to_id = auth.uid())
+    order by created_at desc
+    limit greatest(1, least(p_limit, 500))
+  ) sub
+  order by created_at asc;
 $$;
 
 -- отмечает прочитанными все входящие от p_friend_id сообщения (только те, что

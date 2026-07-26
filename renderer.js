@@ -222,6 +222,24 @@ const els = {
   animeEpPrevBtn: document.getElementById('animeEpPrevBtn'),
   animeEpNextBtn: document.getElementById('animeEpNextBtn'),
   animeEpLabel: document.getElementById('animeEpLabel'),
+  animePlayerBody: document.getElementById('animePlayerBody'),
+  animeControls: document.getElementById('animeControls'),
+  animeCenterBtn: document.getElementById('animeCenterBtn'),
+  animePlayPauseBtn: document.getElementById('animePlayPauseBtn'),
+  animeSkipBackBtn: document.getElementById('animeSkipBackBtn'),
+  animeSkipFwdBtn: document.getElementById('animeSkipFwdBtn'),
+  animeMuteBtn: document.getElementById('animeMuteBtn'),
+  animeVolumeIcon: document.getElementById('animeVolumeIcon'),
+  animeVolumeSlider: document.getElementById('animeVolumeSlider'),
+  animeSpeedBtn: document.getElementById('animeSpeedBtn'),
+  animeFullscreenBtn: document.getElementById('animeFullscreenBtn'),
+  animeFullscreenIcon: document.getElementById('animeFullscreenIcon'),
+  animeSeekTrack: document.getElementById('animeSeekTrack'),
+  animeSeekFill: document.getElementById('animeSeekFill'),
+  animeSeekBuffered: document.getElementById('animeSeekBuffered'),
+  animeSeekThumb: document.getElementById('animeSeekThumb'),
+  animeTimeCurrent: document.getElementById('animeTimeCurrent'),
+  animeTimeDuration: document.getElementById('animeTimeDuration'),
 
   appConfirmBackdrop: document.getElementById('appConfirmBackdrop'),
   appConfirmTitle: document.getElementById('appConfirmTitle'),
@@ -309,6 +327,11 @@ let friendsList = [];
 const unreadFriendIds = new Set();
 let onlineFriendIds = new Set();
 let activeChat = null; // { friendId, name }
+// счётчик "актуальности" загрузки чата — см. openChat(): нужен, чтобы устаревший
+// (запоздавший) ответ сервера от предыдущего открытия чата не перезаписал
+// свежую переписку, если пользователь успел переключиться на другой диалог
+// быстрее, чем пришёл первый ответ
+let chatLoadToken = 0;
 let activeFriendProfile = null; // { friendId, name }
 
 let reader = {
@@ -350,7 +373,18 @@ function showView(name) {
   if (isManga) loadMangaPopular();
   if (isAnime) loadAnimePopular();
   if (isProfile) loadProfileView();
-  if (isFriends) loadFriendsView();
+  // если чат с кем-то уже был открыт раньше, а пользователь был на другой
+  // вкладке (Манга/Аниме/Профиль) — сообщения, пришедшие в это время, не
+  // попадали в DOM и не сбрасывали бейдж непрочитанных (isChatPaneVisible()
+  // была false, пока вкладка "Друзья" не активна). Раньше при возврате на
+  // вкладку чат просто оставался с устаревшим содержимым и висящим "1" на
+  // иконке, пока пользователь вручную не открывал этот же чат заново.
+  // Теперь просто перезагружаем открытый чат при каждом возврате на вкладку —
+  // это заодно и подтягивает пропущенные сообщения, и сбрасывает бейдж.
+  if (isFriends) {
+    loadFriendsView();
+    if (activeChat) openChat(activeChat.friendId, activeChat.name);
+  }
 }
 
 els.navHome.addEventListener('click', () => showView('home'));
@@ -2399,6 +2433,7 @@ function chatBubble(msg) {
 }
 
 async function openChat(friendId, name) {
+  const myToken = ++chatLoadToken;
   activeChat = { friendId, name };
   unreadFriendIds.delete(friendId);
   renderFriendsList();
@@ -2411,17 +2446,37 @@ async function openChat(friendId, name) {
   els.chatBody.innerHTML = '<p class="empty-hint" style="padding:20px;">Загружаю сообщения…</p>';
   try {
     const messages = await window.hanko.onlineListMessages(friendId);
+    // за время запроса пользователь мог открыть другой чат (или заново этот же) —
+    // тогда этот, уже устаревший, ответ ничего не должен перезаписывать
+    if (myToken !== chatLoadToken) return;
     renderChatMessages(messages);
     window.hanko.onlineMarkMessagesRead(friendId).catch(() => {});
   } catch (err) {
+    if (myToken !== chatLoadToken) return;
     els.chatBody.innerHTML = `<p class="empty-hint" style="padding:20px;">Не удалось загрузить: ${escapeHtml(err.message)}</p>`;
   }
   els.chatInput.focus();
 }
 
+// true только когда переписка реально показана на экране прямо сейчас (вкладка
+// "Друзья" открыта И конкретный диалог отрисован) — раньше проверяли только
+// els.chatPaneActive.hidden, а он не сбрасывается при уходе на другую вкладку
+// приложения, из-за чего новые сообщения от последнего открытого собеседника
+// молча добавлялись в невидимый DOM: не звенел бейдж, не показывалось
+// уведомление, и казалось, что сообщения "пропадают"
+function isChatPaneVisible() {
+  return !els.viewFriends.hidden && !els.chatPaneActive.hidden;
+}
+
 function renderChatMessages(messages) {
+  // если пока шёл этот самый REST-запрos, по realtime уже прилетело более
+  // новое сообщение и попало в DOM — не теряем его при полной перерисовке
+  const incomingIds = new Set(messages.map((m) => m.id));
+  const liveExtras = Array.from(els.chatBody.querySelectorAll('[data-msg-id]'))
+    .filter((el) => !incomingIds.has(el.dataset.msgId));
   els.chatBody.innerHTML = '';
   for (const m of messages) els.chatBody.appendChild(chatBubble(m));
+  for (const el of liveExtras) els.chatBody.appendChild(el);
   els.chatBody.scrollTop = els.chatBody.scrollHeight;
 }
 
@@ -2762,7 +2817,11 @@ function notifyIncomingMessage(msg) {
     if (bodyText.startsWith(RICH_PREFIX)) {
       try { bodyText = richPreviewText(JSON.parse(bodyText.slice(RICH_PREFIX.length))); } catch { bodyText = 'Сообщение'; }
     }
-    const notif = new Notification(name, { body: bodyText, icon: notificationIconPath || 'assets/icon.png' });
+    const notif = new Notification(name, {
+      body: bodyText,
+      icon: notificationIconPath || 'assets/icon.png',
+      silent: true, // звук уже играем сами через playNotificationSound() — свой звук приятнее и тише, чем системный виндовый
+    });
     notif.onclick = async () => {
       await window.hanko.focusApp();
       showView('friends');
@@ -2786,7 +2845,7 @@ window.hanko.onOnlineEvent(async (event) => {
     updateFriendProfileOnlineLabel();
   } else if (event.type === 'message') {
     const msg = event.message;
-    const isActiveChatOpen = activeChat && msg.from_id === activeChat.friendId && !els.chatPaneActive.hidden;
+    const isActiveChatOpen = activeChat && msg.from_id === activeChat.friendId && isChatPaneVisible();
     if (isActiveChatOpen) {
       // сообщение уже могло попасть в DOM через REST-подгрузку истории в
       // openChat() (гонка запросов) — не дублируем бабл, если он уже есть
@@ -3244,6 +3303,8 @@ function openAnimePlayer(item, episodes, index) {
     .map((q, i) => `<option value="${i}">${escapeHtml(q.label)}</option>`).join('');
   const best = ep.qualities[0];
   if (best) attachAnimeSource(best.url);
+  syncAnimeControlsUI();
+  showAnimeControls({ keepVisible: true });
 }
 
 els.animeQualitySelect.addEventListener('change', () => {
@@ -3262,6 +3323,9 @@ function closeAnimePlayer() {
   els.animeVideo.pause();
   els.animeVideo.removeAttribute('src');
   if (hlsPlayer) { hlsPlayer.detachMedia(); }
+  animePlayerState = null;
+  clearTimeout(animeIdleTimer);
+  els.animePlayerOverlay.classList.remove('is-idle');
 }
 els.animePlayerBack.addEventListener('click', closeAnimePlayer);
 
@@ -3274,6 +3338,208 @@ els.animeEpNextBtn.addEventListener('click', () => {
   if (!animePlayerState || animePlayerState.index >= animePlayerState.episodes.length - 1) return;
   const { item, episodes, index } = animePlayerState;
   openAnimePlayer(item, episodes, index + 1);
+});
+
+// ---------------- кастомные контролы плеера аниме ----------------
+// раньше был обычный <video controls> — теперь свой набор в стиле ридера
+// манги (тёмный оверлей, стеклянные панели, коралловый акцент), с
+// автоскрытием панели во время просмотра, как у обычных видеоплееров.
+
+const ANIME_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+let animeIdleTimer = null;
+let animeIsDraggingSeek = false;
+let animeVolumeBeforeMute = 1;
+
+function formatAnimeTime(sec) {
+  if (!Number.isFinite(sec) || sec < 0) sec = 0;
+  sec = Math.floor(sec);
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  const mm = h > 0 ? String(m).padStart(2, '0') : String(m);
+  const ss = String(s).padStart(2, '0');
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+const ANIME_PLAY_ICON = '<path d="M8 5v14l12-7L8 5z" fill="currentColor"/>';
+const ANIME_PAUSE_ICON = '<path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor"/>';
+
+function updateAnimePlayIcon() {
+  const paused = els.animeVideo.paused || els.animeVideo.ended;
+  els.animePlayPauseBtn.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20">${paused ? ANIME_PLAY_ICON : ANIME_PAUSE_ICON}</svg>`;
+  els.animeCenterBtn.hidden = !paused;
+}
+
+function toggleAnimePlayback() {
+  if (els.animeVideo.paused || els.animeVideo.ended) els.animeVideo.play().catch(() => {});
+  else els.animeVideo.pause();
+}
+
+function syncAnimeControlsUI() {
+  const video = els.animeVideo;
+  updateAnimePlayIcon();
+  els.animeVolumeSlider.value = video.muted ? 0 : video.volume;
+  updateAnimeVolumeIcon();
+  const speedIndex = ANIME_SPEEDS.indexOf(video.playbackRate);
+  els.animeSpeedBtn.textContent = `${ANIME_SPEEDS[speedIndex] ?? video.playbackRate ?? 1}x`;
+  els.animeTimeCurrent.textContent = formatAnimeTime(video.currentTime);
+  els.animeTimeDuration.textContent = formatAnimeTime(video.duration);
+}
+
+function updateAnimeVolumeIcon() {
+  const video = els.animeVideo;
+  const level = video.muted || video.volume === 0 ? 'muted' : video.volume < 0.5 ? 'low' : 'high';
+  const icons = {
+    muted: '<path d="M4 9v6h4l5 5V4L8 9H4z" fill="currentColor"/><path d="M18 9l5 6M23 9l-5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+    low: '<path d="M4 9v6h4l5 5V4L8 9H4z" fill="currentColor"/><path d="M16.5 8.5a4 4 0 0 1 0 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+    high: '<path d="M4 9v6h4l5 5V4L8 9H4z" fill="currentColor"/><path d="M16.5 8.5a4 4 0 0 1 0 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M19 6a7.5 7.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+  };
+  els.animeVolumeIcon.innerHTML = icons[level];
+}
+
+// ---- play/pause ----
+els.animePlayPauseBtn.addEventListener('click', toggleAnimePlayback);
+els.animeCenterBtn.addEventListener('click', toggleAnimePlayback);
+els.animeVideo.addEventListener('click', toggleAnimePlayback);
+els.animeVideo.addEventListener('play', () => { updateAnimePlayIcon(); armAnimeIdleTimer(); });
+els.animeVideo.addEventListener('pause', () => { updateAnimePlayIcon(); showAnimeControls({ keepVisible: true }); });
+els.animeVideo.addEventListener('ended', () => { updateAnimePlayIcon(); showAnimeControls({ keepVisible: true }); });
+
+// ---- перемотка ±10 сек ----
+els.animeSkipBackBtn.addEventListener('click', () => {
+  els.animeVideo.currentTime = Math.max(0, els.animeVideo.currentTime - 10);
+});
+els.animeSkipFwdBtn.addEventListener('click', () => {
+  const dur = els.animeVideo.duration;
+  els.animeVideo.currentTime = Number.isFinite(dur) ? Math.min(dur, els.animeVideo.currentTime + 10) : els.animeVideo.currentTime + 10;
+});
+
+// ---- прогресс-бар: клик и перетаскивание ----
+function animeSeekRatioFromEvent(e) {
+  const rect = els.animeSeekTrack.getBoundingClientRect();
+  const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+  return Math.min(1, Math.max(0, x / rect.width));
+}
+function renderAnimeSeekUI(ratio) {
+  els.animeSeekFill.style.width = `${ratio * 100}%`;
+  els.animeSeekThumb.style.left = `${ratio * 100}%`;
+}
+els.animeSeekTrack.addEventListener('mousedown', (e) => {
+  animeIsDraggingSeek = true;
+  els.animeSeekTrack.classList.add('is-dragging');
+  const ratio = animeSeekRatioFromEvent(e);
+  renderAnimeSeekUI(ratio);
+  if (Number.isFinite(els.animeVideo.duration)) els.animeVideo.currentTime = ratio * els.animeVideo.duration;
+  showAnimeControls({ keepVisible: true });
+});
+document.addEventListener('mousemove', (e) => {
+  if (!animeIsDraggingSeek) return;
+  const ratio = animeSeekRatioFromEvent(e);
+  renderAnimeSeekUI(ratio);
+  if (Number.isFinite(els.animeVideo.duration)) els.animeVideo.currentTime = ratio * els.animeVideo.duration;
+});
+document.addEventListener('mouseup', () => {
+  if (!animeIsDraggingSeek) return;
+  animeIsDraggingSeek = false;
+  els.animeSeekTrack.classList.remove('is-dragging');
+  armAnimeIdleTimer();
+});
+
+els.animeVideo.addEventListener('timeupdate', () => {
+  if (animeIsDraggingSeek) return;
+  const ratio = els.animeVideo.duration ? els.animeVideo.currentTime / els.animeVideo.duration : 0;
+  renderAnimeSeekUI(ratio);
+  els.animeTimeCurrent.textContent = formatAnimeTime(els.animeVideo.currentTime);
+});
+els.animeVideo.addEventListener('loadedmetadata', () => {
+  els.animeTimeDuration.textContent = formatAnimeTime(els.animeVideo.duration);
+});
+els.animeVideo.addEventListener('progress', () => {
+  const video = els.animeVideo;
+  if (!video.buffered.length || !video.duration) return;
+  const end = video.buffered.end(video.buffered.length - 1);
+  els.animeSeekBuffered.style.width = `${Math.min(100, (end / video.duration) * 100)}%`;
+});
+
+// ---- громкость ----
+els.animeVolumeSlider.addEventListener('input', () => {
+  const v = Number(els.animeVolumeSlider.value);
+  els.animeVideo.volume = v;
+  els.animeVideo.muted = v === 0;
+  if (v > 0) animeVolumeBeforeMute = v;
+  updateAnimeVolumeIcon();
+});
+els.animeMuteBtn.addEventListener('click', () => {
+  const video = els.animeVideo;
+  if (video.muted || video.volume === 0) {
+    video.muted = false;
+    video.volume = animeVolumeBeforeMute || 1;
+    els.animeVolumeSlider.value = video.volume;
+  } else {
+    animeVolumeBeforeMute = video.volume;
+    video.muted = true;
+    els.animeVolumeSlider.value = 0;
+  }
+  updateAnimeVolumeIcon();
+});
+
+// ---- скорость воспроизведения ----
+els.animeSpeedBtn.addEventListener('click', () => {
+  const current = ANIME_SPEEDS.indexOf(els.animeVideo.playbackRate);
+  const next = ANIME_SPEEDS[(current + 1 + ANIME_SPEEDS.length) % ANIME_SPEEDS.length] ?? 1;
+  els.animeVideo.playbackRate = next;
+  els.animeSpeedBtn.textContent = `${next}x`;
+});
+
+// ---- полноэкранный режим ----
+function isAnimeFullscreen() { return document.fullscreenElement === els.animePlayerBody; }
+els.animeFullscreenBtn.addEventListener('click', () => {
+  if (isAnimeFullscreen()) document.exitFullscreen();
+  else els.animePlayerBody.requestFullscreen().catch(() => {});
+});
+document.addEventListener('fullscreenchange', () => {
+  if (els.animePlayerOverlay.hidden) return;
+  els.animeFullscreenIcon.innerHTML = isAnimeFullscreen()
+    ? '<path d="M9 3v4a2 2 0 0 1-2 2H3M15 3v4a2 2 0 0 0 2 2h4M9 21v-4a2 2 0 0 0-2-2H3M15 21v-4a2 2 0 0 1 2-2h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+    : '<path d="M8 3H4v4M16 3h4v4M8 21H4v-4M16 21h4v-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
+});
+
+// ---- автоскрытие панели управления во время просмотра ----
+function showAnimeControls({ keepVisible = false } = {}) {
+  els.animePlayerOverlay.classList.remove('is-idle');
+  clearTimeout(animeIdleTimer);
+  if (!keepVisible) armAnimeIdleTimer();
+}
+function armAnimeIdleTimer() {
+  clearTimeout(animeIdleTimer);
+  if (els.animeVideo.paused) return; // на паузе панель не прячем
+  animeIdleTimer = setTimeout(() => {
+    if (!animeIsDraggingSeek) els.animePlayerOverlay.classList.add('is-idle');
+  }, 3000);
+}
+els.animePlayerBody.addEventListener('mousemove', () => showAnimeControls());
+els.animePlayerBody.addEventListener('mouseleave', () => { if (!els.animeVideo.paused) armAnimeIdleTimer(); });
+
+// ---- клавиатура (только пока плеер аниме открыт) ----
+document.addEventListener('keydown', (e) => {
+  if (els.animePlayerOverlay.hidden) return;
+  if (['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'KeyM', 'KeyF'].includes(e.code)) e.preventDefault();
+  showAnimeControls();
+  if (e.code === 'Space') toggleAnimePlayback();
+  else if (e.code === 'ArrowLeft') els.animeSkipBackBtn.click();
+  else if (e.code === 'ArrowRight') els.animeSkipFwdBtn.click();
+  else if (e.code === 'ArrowUp') {
+    els.animeVideo.volume = Math.min(1, els.animeVideo.volume + 0.05);
+    els.animeVideo.muted = false;
+    els.animeVolumeSlider.value = els.animeVideo.volume;
+    updateAnimeVolumeIcon();
+  } else if (e.code === 'ArrowDown') {
+    els.animeVideo.volume = Math.max(0, els.animeVideo.volume - 0.05);
+    els.animeVolumeSlider.value = els.animeVideo.volume;
+    updateAnimeVolumeIcon();
+  } else if (e.code === 'KeyM') els.animeMuteBtn.click();
+  else if (e.code === 'KeyF') els.animeFullscreenBtn.click();
+  else if (e.key === 'Escape' && !isAnimeFullscreen()) closeAnimePlayer();
 });
 
 init();

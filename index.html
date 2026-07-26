@@ -533,24 +533,67 @@
   </div>
 
   <!-- ===================== ПЛЕЕР АНИМЕ (оверлей) ===================== -->
-  <div class="reader-overlay" id="animePlayerOverlay" hidden>
-    <header class="reader-top">
-      <button id="animePlayerBack" class="icon-btn" title="Назад к тайтлу">
-        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
-      <span id="animePlayerTitle" class="reader-title"></span>
-      <div class="reader-actions">
-        <select id="animeQualitySelect" class="filter-select" style="width:auto;"></select>
-      </div>
-    </header>
+  <div class="reader-overlay anime-player" id="animePlayerOverlay" hidden>
     <div class="anime-player-body" id="animePlayerBody">
-      <video id="animeVideo" controls autoplay style="width:100%; height:100%; background:#000;"></video>
+      <video id="animeVideo" autoplay></video>
+
+      <button class="anime-center-btn" id="animeCenterBtn" title="Воспроизвести" type="button">
+        <svg viewBox="0 0 24 24" width="30" height="30"><path d="M8 5v14l12-7L8 5z" fill="currentColor"/></svg>
+      </button>
+
+      <div class="anime-controls" id="animeControls">
+        <header class="reader-top anime-controls-top">
+          <button id="animePlayerBack" class="icon-btn" title="Назад к тайтлу">
+            <svg viewBox="0 0 24 24" width="20" height="20"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <span id="animePlayerTitle" class="reader-title"></span>
+          <div class="reader-actions">
+            <select id="animeQualitySelect" class="filter-select" style="width:auto;"></select>
+          </div>
+        </header>
+
+        <footer class="anime-controls-bottom">
+          <div class="anime-seek-row">
+            <span class="anime-time" id="animeTimeCurrent">0:00</span>
+            <div class="anime-seek-track" id="animeSeekTrack">
+              <div class="anime-seek-buffered" id="animeSeekBuffered"></div>
+              <div class="anime-seek-fill" id="animeSeekFill"></div>
+              <div class="anime-seek-thumb" id="animeSeekThumb"></div>
+            </div>
+            <span class="anime-time" id="animeTimeDuration">0:00</span>
+          </div>
+
+          <div class="anime-buttons-row">
+            <div class="anime-buttons-left">
+              <button id="animePlayPauseBtn" class="icon-btn" title="Пауза / воспроизведение (Пробел)" type="button">
+                <svg viewBox="0 0 24 24" width="20" height="20"><path d="M8 5v14l12-7L8 5z" fill="currentColor"/></svg>
+              </button>
+              <button id="animeSkipBackBtn" class="icon-btn" title="-10 сек (←)" type="button">
+                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M11 5V1L6 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H3c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" fill="currentColor"/></svg>
+              </button>
+              <button id="animeSkipFwdBtn" class="icon-btn" title="+10 сек (→)" type="button">
+                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M13 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8z" fill="currentColor"/></svg>
+              </button>
+              <div class="anime-volume">
+                <button id="animeMuteBtn" class="icon-btn" title="Звук (M)" type="button">
+                  <svg id="animeVolumeIcon" viewBox="0 0 24 24" width="18" height="18"><path d="M4 9v6h4l5 5V4L8 9H4z" fill="currentColor"/><path d="M16.5 8.5a4 4 0 0 1 0 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M19 6a7.5 7.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                </button>
+                <input type="range" id="animeVolumeSlider" class="anime-volume-slider" min="0" max="1" step="0.01" value="1" />
+              </div>
+              <span class="reader-page-controls" id="animeEpLabel"></span>
+            </div>
+            <div class="anime-buttons-right">
+              <button id="animeEpPrevBtn" class="chapter-nav-btn" type="button">‹ Пред. серия</button>
+              <button id="animeEpNextBtn" class="chapter-nav-btn" type="button">След. серия ›</button>
+              <button id="animeSpeedBtn" class="anime-speed-btn" title="Скорость воспроизведения" type="button">1x</button>
+              <button id="animeFullscreenBtn" class="icon-btn" title="На весь экран (F)" type="button">
+                <svg id="animeFullscreenIcon" viewBox="0 0 24 24" width="18" height="18"><path d="M8 3H4v4M16 3h4v4M8 21H4v-4M16 21h4v-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </div>
+          </div>
+        </footer>
+      </div>
     </div>
-    <footer class="reader-bottom">
-      <button id="animeEpPrevBtn" class="chapter-nav-btn" type="button">‹ Пред. серия</button>
-      <span id="animeEpLabel" class="reader-page-controls"></span>
-      <button id="animeEpNextBtn" class="chapter-nav-btn" type="button">След. серия ›</button>
-    </footer>
   </div>
 
   <!-- ===================== ОКНО ПОДТВЕРЖДЕНИЯ (замена системного confirm) ===================== -->
