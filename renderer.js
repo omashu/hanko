@@ -8,6 +8,7 @@ const els = {
   navProfile: document.getElementById('navProfile'),
   navFriends: document.getElementById('navFriends'),
   friendsNavBadge: document.getElementById('friendsNavBadge'),
+  railOnlineFriends: document.getElementById('railOnlineFriends'),
   viewHome: document.getElementById('viewHome'),
   viewManga: document.getElementById('viewManga'),
   viewAnime: document.getElementById('viewAnime'),
@@ -21,6 +22,8 @@ const els = {
   profileBioInput: document.getElementById('profileBioInput'),
   profileMangaGrid: document.getElementById('profileMangaGrid'),
   profileMangaEmpty: document.getElementById('profileMangaEmpty'),
+  readingHistoryList: document.getElementById('readingHistoryList'),
+  readingHistoryEmpty: document.getElementById('readingHistoryEmpty'),
   profileSitesGrid: document.getElementById('profileSitesGrid'),
   profileSitesEmpty: document.getElementById('profileSitesEmpty'),
   statBooks: document.getElementById('statBooks'),
@@ -113,8 +116,18 @@ const els = {
   friendProfileAvatar: document.getElementById('friendProfileAvatar'),
   friendProfileName: document.getElementById('friendProfileName'),
   friendProfileOnlineLabel: document.getElementById('friendProfileOnlineLabel'),
+  friendProfileTabProfile: document.getElementById('friendProfileTabProfile'),
+  friendProfileTabBookmarks: document.getElementById('friendProfileTabBookmarks'),
+  friendProfileTabProfilePanel: document.getElementById('friendProfileTabProfilePanel'),
+  friendProfileTabBookmarksPanel: document.getElementById('friendProfileTabBookmarksPanel'),
   friendProfileBio: document.getElementById('friendProfileBio'),
   friendProfileError: document.getElementById('friendProfileError'),
+  friendStatViews: document.getElementById('friendStatViews'),
+  friendStatLikeBlock: document.getElementById('friendStatLikeBlock'),
+  friendStatLikes: document.getElementById('friendStatLikes'),
+  friendStatLikesLabel: document.getElementById('friendStatLikesLabel'),
+  friendStatFriends: document.getElementById('friendStatFriends'),
+  friendStatComments: document.getElementById('friendStatComments'),
   friendProfileUnfriendBtn: document.getElementById('friendProfileUnfriendBtn'),
   friendBookmarksEmpty: document.getElementById('friendBookmarksEmpty'),
   friendBookmarksGrid: document.getElementById('friendBookmarksGrid'),
@@ -126,15 +139,42 @@ const els = {
 
   downloadsRemoveAllBtn: document.getElementById('downloadsRemoveAllBtn'),
 
+  themeToggleBtn: document.getElementById('themeToggleBtn'),
+
+  homeContinueSection: document.getElementById('homeContinueSection'),
+  homeContinueGrid: document.getElementById('homeContinueGrid'),
   homeMangaGrid: document.getElementById('homeMangaGrid'),
   homeMangaHint: document.getElementById('homeMangaHint'),
   homeAnimeGrid: document.getElementById('homeAnimeGrid'),
+  homeMangaSection: document.getElementById('homeMangaSection'),
+  homeAnimeSection: document.getElementById('homeAnimeSection'),
+  homeTabAll: document.getElementById('homeTabAll'),
+  homeTabManga: document.getElementById('homeTabManga'),
+  homeTabAnime: document.getElementById('homeTabAnime'),
   homeAnimeHint: document.getElementById('homeAnimeHint'),
 
   mangaSearchForm: document.getElementById('mangaSearchForm'),
   mangaSearchInput: document.getElementById('mangaSearchInput'),
   mangaSearchSection: document.getElementById('mangaSearchSection'),
+  mangaPopularSection: document.getElementById('mangaPopularSection'),
+  mangaSearchPagination: document.getElementById('mangaSearchPagination'),
+  mangaSearchPageLabel: document.getElementById('mangaSearchPageLabel'),
+  mangaSearchPrevBtn: document.getElementById('mangaSearchPrevBtn'),
+  mangaSearchNextBtn: document.getElementById('mangaSearchNextBtn'),
   mangaSearchGrid: document.getElementById('mangaSearchGrid'),
+  mangaPopularHint: document.getElementById('mangaPopularHint'),
+  mangaPopularGrid: document.getElementById('mangaPopularGrid'),
+  mangaFiltersBtn: document.getElementById('mangaFiltersBtn'),
+  mangaFiltersModalBackdrop: document.getElementById('mangaFiltersModalBackdrop'),
+  mangaFiltersModalClose: document.getElementById('mangaFiltersModalClose'),
+  formatFilterRow: document.getElementById('formatFilterRow'),
+  mangaSortSelect: document.getElementById('mangaSortSelect'),
+  statusFilterRow: document.getElementById('statusFilterRow'),
+  genreFilterHint: document.getElementById('genreFilterHint'),
+  genreFilterRow: document.getElementById('genreFilterRow'),
+  themeFilterRow: document.getElementById('themeFilterRow'),
+  mangaFiltersResetBtn: document.getElementById('mangaFiltersResetBtn'),
+  mangaFiltersApplyBtn: document.getElementById('mangaFiltersApplyBtn'),
   mangaLibraryGrid: document.getElementById('mangaLibraryGrid'),
   mangaLibraryEmpty: document.getElementById('mangaLibraryEmpty'),
 
@@ -151,6 +191,43 @@ const els = {
   browserClose: document.getElementById('browserClose'),
   siteWebview: document.getElementById('siteWebview'),
   siteNote: document.getElementById('siteNote'),
+
+  animeSearchForm: document.getElementById('animeSearchForm'),
+  animeSearchInput: document.getElementById('animeSearchInput'),
+  animeSearchSection: document.getElementById('animeSearchSection'),
+  animeSearchGrid: document.getElementById('animeSearchGrid'),
+  animeSearchPagination: document.getElementById('animeSearchPagination'),
+  animeSearchPrevBtn: document.getElementById('animeSearchPrevBtn'),
+  animeSearchPageLabel: document.getElementById('animeSearchPageLabel'),
+  animeSearchNextBtn: document.getElementById('animeSearchNextBtn'),
+  animePopularSection: document.getElementById('animePopularSection'),
+  animePopularHint: document.getElementById('animePopularHint'),
+  animePopularGrid: document.getElementById('animePopularGrid'),
+  animeFiltersBtn: document.getElementById('animeFiltersBtn'),
+  animeFiltersModalBackdrop: document.getElementById('animeFiltersModalBackdrop'),
+  animeFiltersModalClose: document.getElementById('animeFiltersModalClose'),
+  animeTypeFilterRow: document.getElementById('animeTypeFilterRow'),
+  animeStatusFilterRow: document.getElementById('animeStatusFilterRow'),
+  animeGenreFilterRow: document.getElementById('animeGenreFilterRow'),
+  animeFiltersResetBtn: document.getElementById('animeFiltersResetBtn'),
+  animeFiltersApplyBtn: document.getElementById('animeFiltersApplyBtn'),
+  animeTitleModalBackdrop: document.getElementById('animeTitleModalBackdrop'),
+  animeTitleModalClose: document.getElementById('animeTitleModalClose'),
+  animeTitleModalBody: document.getElementById('animeTitleModalBody'),
+  animePlayerOverlay: document.getElementById('animePlayerOverlay'),
+  animePlayerBack: document.getElementById('animePlayerBack'),
+  animePlayerTitle: document.getElementById('animePlayerTitle'),
+  animeQualitySelect: document.getElementById('animeQualitySelect'),
+  animeVideo: document.getElementById('animeVideo'),
+  animeEpPrevBtn: document.getElementById('animeEpPrevBtn'),
+  animeEpNextBtn: document.getElementById('animeEpNextBtn'),
+  animeEpLabel: document.getElementById('animeEpLabel'),
+
+  appConfirmBackdrop: document.getElementById('appConfirmBackdrop'),
+  appConfirmTitle: document.getElementById('appConfirmTitle'),
+  appConfirmMessage: document.getElementById('appConfirmMessage'),
+  appConfirmCancelBtn: document.getElementById('appConfirmCancelBtn'),
+  appConfirmOkBtn: document.getElementById('appConfirmOkBtn'),
 
   siteModalBackdrop: document.getElementById('siteModalBackdrop'),
   siteModalForm: document.getElementById('siteModalForm'),
@@ -177,13 +254,50 @@ const els = {
   zoomInBtn: document.getElementById('zoomInBtn'),
   zoomOutBtn: document.getElementById('zoomOutBtn'),
   zoomLabel: document.getElementById('zoomLabel'),
+  readerProgressFill: document.getElementById('readerProgressFill'),
   chapterPrevBtn: document.getElementById('chapterPrevBtn'),
   chapterNextBtn: document.getElementById('chapterNextBtn'),
 };
 
+// ---------- окно подтверждения (замена системного window.confirm) ----------
+// Возвращает Promise<boolean>: true — нажали основную кнопку, false — отмена/Esc/клик по фону.
+let appConfirmResolve = null;
+
+function showAppConfirm(message, opts = {}) {
+  const { title = 'Подтверждение', okText = 'Удалить', cancelText = 'Отмена', danger = true } = opts;
+  els.appConfirmTitle.textContent = title;
+  els.appConfirmMessage.textContent = message;
+  els.appConfirmOkBtn.textContent = okText;
+  els.appConfirmCancelBtn.textContent = cancelText;
+  els.appConfirmOkBtn.classList.toggle('btn-primary--danger', danger);
+  els.appConfirmBackdrop.hidden = false;
+  return new Promise((resolve) => {
+    appConfirmResolve = resolve;
+  });
+}
+
+function closeAppConfirm(result) {
+  els.appConfirmBackdrop.hidden = true;
+  if (appConfirmResolve) {
+    const resolve = appConfirmResolve;
+    appConfirmResolve = null;
+    resolve(result);
+  }
+}
+
+els.appConfirmOkBtn.addEventListener('click', () => closeAppConfirm(true));
+els.appConfirmCancelBtn.addEventListener('click', () => closeAppConfirm(false));
+els.appConfirmBackdrop.addEventListener('click', (e) => {
+  if (e.target === els.appConfirmBackdrop) closeAppConfirm(false);
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !els.appConfirmBackdrop.hidden) closeAppConfirm(false);
+});
+
 let library = [];
 let sites = [];
 let downloads = [];
+let readingHistory = [];
 let profile = null;
 let currentSiteId = null;
 
@@ -232,7 +346,9 @@ function showView(name) {
   els.navProfile.classList.toggle('is-active', isProfile);
   els.navFriends.classList.toggle('is-active', isFriends);
   window.hanko.saveSettings({ lastTab: name });
-  if (isHome) loadHomeContent();
+  if (isHome) { renderHomeContinue(); loadHomeContent(); }
+  if (isManga) loadMangaPopular();
+  if (isAnime) loadAnimePopular();
   if (isProfile) loadProfileView();
   if (isFriends) loadFriendsView();
 }
@@ -243,12 +359,42 @@ els.navAnime.addEventListener('click', () => showView('anime'));
 els.navProfile.addEventListener('click', () => showView('profile'));
 els.navFriends.addEventListener('click', () => showView('friends'));
 
+function applyTheme(theme) {
+  document.body.dataset.theme = theme === 'dark' ? 'dark' : 'light';
+}
+
+els.themeToggleBtn.addEventListener('click', () => {
+  const next = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  window.hanko.saveSettings({ theme: next });
+});
+
 // ---------------- главная: витрина популярного ----------------
+
+// показывает на главной то, что реально читалось последним — сортировка
+// по library[].progress.updatedAt, локально, без сети, поэтому обновляем
+// это каждый раз при заходе на «Главную», а не один раз как витрину популярного
+function renderHomeContinue() {
+  const items = library
+    .filter((item) => item.progress && item.progress.updatedAt)
+    .sort((a, b) => b.progress.updatedAt - a.progress.updatedAt)
+    .slice(0, 8);
+  els.homeContinueSection.hidden = items.length === 0;
+  els.homeContinueGrid.innerHTML = '';
+  for (const item of items) {
+    els.homeContinueGrid.appendChild(mangaCard(item, { inLibrary: true }));
+  }
+}
 
 let homeLoaded = false;
 async function loadHomeContent() {
   if (homeLoaded) return;
   homeLoaded = true;
+
+  els.homeMangaHint.hidden = true;
+  els.homeAnimeHint.hidden = true;
+  renderSkeletons(els.homeMangaGrid);
+  renderSkeletons(els.homeAnimeGrid);
 
   try {
     const items = await window.hanko.mangadexPopular();
@@ -264,18 +410,49 @@ async function loadHomeContent() {
   }
 
   try {
-    const items = await window.hanko.anilistTrending();
+    const { items } = await window.hanko.anilibriaPopular();
     els.homeAnimeHint.hidden = items.length > 0;
     els.homeAnimeHint.textContent = 'Пусто.';
     els.homeAnimeGrid.innerHTML = '';
     for (const item of items) {
-      els.homeAnimeGrid.appendChild(animeCard(item));
+      els.homeAnimeGrid.appendChild(anilibriaCard(item));
     }
   } catch (err) {
     els.homeAnimeHint.hidden = false;
     els.homeAnimeHint.textContent = `Не удалось загрузить: ${err.message}`;
   }
 }
+
+let mangaPopularLoaded = false;
+async function loadMangaPopular() {
+  if (mangaPopularLoaded) return;
+  mangaPopularLoaded = true;
+  els.mangaPopularHint.hidden = true;
+  renderSkeletons(els.mangaPopularGrid);
+  try {
+    const items = await window.hanko.mangadexPopular();
+    els.mangaPopularHint.hidden = items.length > 0;
+    els.mangaPopularHint.textContent = 'Пусто.';
+    els.mangaPopularGrid.innerHTML = '';
+    for (const item of items) {
+      els.mangaPopularGrid.appendChild(mangaCard(item, { inLibrary: library.some((l) => l.id === item.id) }));
+    }
+  } catch (err) {
+    els.mangaPopularHint.hidden = false;
+    els.mangaPopularHint.textContent = `Не удалось загрузить: ${err.message}`;
+  }
+}
+
+function switchHomeCategory(cat) {
+  els.homeTabAll.classList.toggle('is-active', cat === 'all');
+  els.homeTabManga.classList.toggle('is-active', cat === 'manga');
+  els.homeTabAnime.classList.toggle('is-active', cat === 'anime');
+  els.homeMangaSection.hidden = cat === 'anime';
+  els.homeAnimeSection.hidden = cat === 'manga';
+}
+els.homeTabAll.addEventListener('click', () => switchHomeCategory('all'));
+els.homeTabManga.addEventListener('click', () => switchHomeCategory('manga'));
+els.homeTabAnime.addEventListener('click', () => switchHomeCategory('anime'));
 
 function animeCard(item) {
   const card = document.createElement('div');
@@ -325,6 +502,13 @@ function openAnimeInfoModal(item) {
 
 // ---------------- манга: поиск ----------------
 
+const MANGA_STATUS_RU = {
+  ongoing: 'Онгоинг',
+  completed: 'Завершено',
+  hiatus: 'Приостановлено',
+  cancelled: 'Отменено',
+};
+
 function mangaCard(item, { inLibrary }) {
   const card = document.createElement('div');
   card.className = 'card';
@@ -335,14 +519,22 @@ function mangaCard(item, { inLibrary }) {
   const note = item.note
     ? `<p class="card-note">${escapeHtml(item.note)}</p>`
     : '';
+  const statusRu = item.status ? (MANGA_STATUS_RU[item.status] || item.status) : '';
+  const ratingBadge = typeof item.rating === 'number' && item.rating > 0
+    ? `<span class="card-rating">★ ${item.rating.toFixed(1)}</span>`
+    : '';
 
   card.innerHTML = `
     ${fold}
     <img class="card-cover" src="${item.coverUrl || ''}" alt="" loading="lazy" onerror="this.style.opacity=0" />
     <div class="card-body">
-      <p class="card-title">${escapeHtml(item.title)}</p>
-      <p class="card-meta">${item.status ? escapeHtml(item.status) : ''}</p>
+      <div class="card-title-row">
+        <p class="card-title">${escapeHtml(item.title)}</p>
+        ${ratingBadge}
+      </div>
+      <p class="card-meta">${escapeHtml(statusRu)}</p>
       ${note}
+      <div class="card-progress-track"><div class="card-progress-fill" id="progress-${item.id}"></div></div>
     </div>
     ${inLibrary ? '' : '<button class="card-add" title="В библиотеку">+</button>'}
   `;
@@ -366,11 +558,61 @@ function mangaCard(item, { inLibrary }) {
     });
   }
 
+  // если по тайтлу уже есть прогресс чтения — досчитываем реальную долю
+  // прочитанных глав (не для каждой карточки подряд, а только для тех, где
+  // это вообще имеет смысл, чтобы не заваливать MangaDex запросами)
+  if (item.progress) {
+    window.hanko.mangadexChapters(item.id, item.title).then((chapters) => {
+      if (!chapters || !chapters.length) return;
+      const idx = chapters.findIndex((c) => c.id === item.progress.chapterId);
+      const percent = idx >= 0 ? Math.round(((idx + 1) / chapters.length) * 100) : 0;
+      const fill = card.querySelector(`#progress-${CSS.escape(item.id)}`);
+      if (fill) fill.style.width = `${Math.min(100, Math.max(2, percent))}%`;
+    }).catch(() => {});
+  }
+
   return card;
+}
+
+function skeletonCard() {
+  const card = document.createElement('div');
+  card.className = 'card skeleton-card';
+  card.innerHTML = `
+    <div class="skeleton-cover"></div>
+    <div class="card-body">
+      <div class="skeleton-line"></div>
+      <div class="skeleton-line skeleton-line--short"></div>
+    </div>
+  `;
+  return card;
+}
+
+function renderSkeletons(grid, count = 6) {
+  if (!grid) return;
+  grid.innerHTML = '';
+  for (let i = 0; i < count; i++) grid.appendChild(skeletonCard());
 }
 
 function escapeHtml(s) {
   return String(s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// по префиксу id главы (rm:/wa:/mb:/без префикса — MangaDex) определяем,
+// с какого сайта реально пришли показанные главы — раньше это можно было
+// только гадать (у WaManga/MangaBuff у глав нет названий), теперь показываем
+// явно рядом со списком глав, чтобы было видно, что именно "легло", если
+// какие-то главы вдруг не грузятся.
+// Показываем ТОЛЬКО в dev-режиме (запуск через `npm start`) — обычным
+// пользователям в собранном .exe эта отладочная информация не нужна и не видна.
+let isDevMode = false;
+function chapterSourceLabel(chapters) {
+  if (!isDevMode) return null;
+  if (!chapters || !chapters.length) return null;
+  const id = chapters[0].id;
+  if (id.startsWith('rm:')) return 'ReManga';
+  if (id.startsWith('wa:')) return 'WaManga';
+  if (id.startsWith('mb:')) return 'MangaBuff';
+  return 'MangaDex';
 }
 
 // синхронизация закладок с Supabase — best-effort, чтобы друзья видели
@@ -384,26 +626,187 @@ function syncBookmarkRemove(id) {
   window.hanko.onlineSyncBookmarkRemove(id).catch(() => {});
 }
 
-els.mangaSearchForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
+const STATUS_FILTER_OPTIONS = [
+  { value: 'ongoing', label: 'Онгоинг' },
+  { value: 'completed', label: 'Завершено' },
+  { value: 'hiatus', label: 'Приостановлено' },
+  { value: 'cancelled', label: 'Отменено' },
+];
+const FORMAT_FILTER_OPTIONS = [
+  { label: 'Манга', langs: ['ja'] },
+  { label: 'Манхва', langs: ['ko'] },
+  { label: 'Маньхуа', langs: ['zh', 'zh-hk'] },
+  { label: 'Западный комикс', langs: ['en'] },
+  { label: 'Индонезийский комикс', langs: ['id'] },
+];
+const mangaFilters = { tagIds: new Set(), status: new Set(), origin: new Set(), order: 'relevance' };
+let mangaTagsCache = null;
+const MANGA_PAGE_SIZE = 24;
+let mangaSearchOffset = 0;
+let mangaSearchTotal = 0;
+
+async function runMangaSearch({ resetPage = true } = {}) {
   const q = els.mangaSearchInput.value.trim();
-  if (!q) return;
+  if (!q && mangaFilters.tagIds.size === 0 && mangaFilters.status.size === 0 && mangaFilters.origin.size === 0) {
+    els.mangaSearchSection.hidden = true;
+    els.mangaPopularSection.hidden = false;
+    return;
+  }
+  if (resetPage) mangaSearchOffset = 0;
   els.mangaSearchGrid.innerHTML = '<p class="empty-hint">Ищу…</p>';
   els.mangaSearchSection.hidden = false;
+  els.mangaPopularSection.hidden = true;
+  els.mangaSearchPagination.hidden = true;
   try {
-    const results = await window.hanko.mangadexSearch(q);
+    const { items, total } = await window.hanko.mangadexSearch({
+      query: q,
+      tagIds: [...mangaFilters.tagIds],
+      status: [...mangaFilters.status],
+      originalLanguage: [...mangaFilters.origin],
+      order: mangaFilters.order,
+      offset: mangaSearchOffset,
+    });
+    mangaSearchTotal = total;
     els.mangaSearchGrid.innerHTML = '';
-    if (!results.length) {
+    if (!items.length) {
       els.mangaSearchGrid.innerHTML = '<p class="empty-hint">Ничего не нашлось.</p>';
       return;
     }
-    for (const item of results) {
+    for (const item of items) {
       const inLibrary = library.some((l) => l.id === item.id);
       els.mangaSearchGrid.appendChild(mangaCard(item, { inLibrary }));
     }
+    renderMangaSearchPagination();
   } catch (err) {
     els.mangaSearchGrid.innerHTML = `<p class="empty-hint">Не удалось получить результаты: ${escapeHtml(err.message)}</p>`;
   }
+}
+
+// показывает "Назад / Страница X из Y / Вперёд" под результатами поиска манги
+// и включает/выключает кнопки по краям диапазона
+function renderMangaSearchPagination() {
+  const totalPages = Math.max(1, Math.ceil(mangaSearchTotal / MANGA_PAGE_SIZE));
+  const currentPage = Math.floor(mangaSearchOffset / MANGA_PAGE_SIZE) + 1;
+  els.mangaSearchPagination.hidden = totalPages <= 1;
+  els.mangaSearchPageLabel.textContent = `Страница ${currentPage} из ${totalPages}`;
+  els.mangaSearchPrevBtn.disabled = mangaSearchOffset <= 0;
+  els.mangaSearchNextBtn.disabled = mangaSearchOffset + MANGA_PAGE_SIZE >= mangaSearchTotal;
+}
+
+els.mangaSearchPrevBtn.addEventListener('click', () => {
+  if (mangaSearchOffset <= 0) return;
+  mangaSearchOffset = Math.max(0, mangaSearchOffset - MANGA_PAGE_SIZE);
+  runMangaSearch({ resetPage: false });
+  els.mangaSearchSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+els.mangaSearchNextBtn.addEventListener('click', () => {
+  if (mangaSearchOffset + MANGA_PAGE_SIZE >= mangaSearchTotal) return;
+  mangaSearchOffset += MANGA_PAGE_SIZE;
+  runMangaSearch({ resetPage: false });
+  els.mangaSearchSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
+els.mangaSearchForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  runMangaSearch();
+});
+
+function updateMangaFiltersBtnLabel() {
+  const count = mangaFilters.tagIds.size + mangaFilters.status.size + mangaFilters.origin.size + (mangaFilters.order !== 'relevance' ? 1 : 0);
+  els.mangaFiltersBtn.textContent = count > 0 ? `Фильтры (${count})` : 'Фильтры';
+}
+
+function filterChip(label, isActive, onToggle) {
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = 'filter-chip' + (isActive ? ' is-active' : '');
+  chip.textContent = label;
+  chip.addEventListener('click', () => {
+    chip.classList.toggle('is-active');
+    onToggle(chip.classList.contains('is-active'));
+  });
+  return chip;
+}
+
+function renderStatusChips() {
+  els.statusFilterRow.innerHTML = '';
+  for (const opt of STATUS_FILTER_OPTIONS) {
+    els.statusFilterRow.appendChild(filterChip(opt.label, mangaFilters.status.has(opt.value), (active) => {
+      if (active) mangaFilters.status.add(opt.value); else mangaFilters.status.delete(opt.value);
+    }));
+  }
+}
+
+function renderFormatChips() {
+  els.formatFilterRow.innerHTML = '';
+  for (const opt of FORMAT_FILTER_OPTIONS) {
+    const isActive = opt.langs.every((l) => mangaFilters.origin.has(l));
+    els.formatFilterRow.appendChild(filterChip(opt.label, isActive, (active) => {
+      for (const l of opt.langs) {
+        if (active) mangaFilters.origin.add(l); else mangaFilters.origin.delete(l);
+      }
+    }));
+  }
+}
+
+function renderTagChips(container, tags) {
+  container.innerHTML = '';
+  for (const tag of tags) {
+    container.appendChild(filterChip(tag.name, mangaFilters.tagIds.has(tag.id), (active) => {
+      if (active) mangaFilters.tagIds.add(tag.id); else mangaFilters.tagIds.delete(tag.id);
+    }));
+  }
+}
+
+async function openMangaFiltersModal() {
+  renderStatusChips();
+  renderFormatChips();
+  els.mangaSortSelect.value = mangaFilters.order;
+  els.mangaFiltersModalBackdrop.hidden = false;
+
+  if (!mangaTagsCache) {
+    try {
+      mangaTagsCache = await window.hanko.mangadexTags();
+      els.genreFilterHint.hidden = true;
+      renderTagChips(els.genreFilterRow, mangaTagsCache.genre || []);
+      renderTagChips(els.themeFilterRow, mangaTagsCache.theme || []);
+    } catch (err) {
+      els.genreFilterHint.textContent = `Не удалось загрузить жанры: ${err.message}`;
+    }
+  } else {
+    renderTagChips(els.genreFilterRow, mangaTagsCache.genre || []);
+    renderTagChips(els.themeFilterRow, mangaTagsCache.theme || []);
+  }
+}
+
+els.mangaFiltersBtn.addEventListener('click', openMangaFiltersModal);
+els.mangaFiltersModalClose.addEventListener('click', () => { els.mangaFiltersModalBackdrop.hidden = true; });
+els.mangaFiltersModalBackdrop.addEventListener('click', (e) => {
+  if (e.target === els.mangaFiltersModalBackdrop) els.mangaFiltersModalBackdrop.hidden = true;
+});
+
+els.mangaFiltersApplyBtn.addEventListener('click', () => {
+  mangaFilters.order = els.mangaSortSelect.value;
+  updateMangaFiltersBtnLabel();
+  els.mangaFiltersModalBackdrop.hidden = true;
+  runMangaSearch();
+});
+
+els.mangaFiltersResetBtn.addEventListener('click', () => {
+  mangaFilters.tagIds.clear();
+  mangaFilters.status.clear();
+  mangaFilters.origin.clear();
+  mangaFilters.order = 'relevance';
+  els.mangaSortSelect.value = 'relevance';
+  renderStatusChips();
+  renderFormatChips();
+  if (mangaTagsCache) {
+    renderTagChips(els.genreFilterRow, mangaTagsCache.genre || []);
+    renderTagChips(els.themeFilterRow, mangaTagsCache.theme || []);
+  }
+  updateMangaFiltersBtnLabel();
+  els.mangaFiltersModalBackdrop.hidden = true;
+  runMangaSearch();
 });
 
 function renderLibrary() {
@@ -448,7 +851,7 @@ function renderDownloads() {
 
 els.downloadsRemoveAllBtn.addEventListener('click', async () => {
   if (!downloads.length) return;
-  if (!confirm(`Удалить все скачанные главы (${downloads.length})? Это освободит место на диске.`)) return;
+  if (!(await showAppConfirm(`Удалить все скачанные главы (${downloads.length})? Это освободит место на диске.`, { title: 'Удалить все главы?', okText: 'Удалить все' }))) return;
   els.downloadsRemoveAllBtn.disabled = true;
   els.downloadsRemoveAllBtn.textContent = 'Удаляю…';
   await window.hanko.removeAllDownloads();
@@ -470,9 +873,20 @@ async function openTitleModal(item) {
   els.titleModalBackdrop.hidden = false;
   els.titleModalBody.innerHTML = '<p class="empty-hint">Загружаю главы…</p>';
   try {
-    const allChapters = await window.hanko.mangadexChapters(item.id);
+    // карточки ReManga из поиска приходят без описания/статуса (их нет в ответе
+    // каталога) — подгружаем один раз при открытии, до отрисовки модалки
+    if (item.id.startsWith('rm:') && !item.description) {
+      try {
+        const details = await window.hanko.remangaDetails(item.id);
+        if (details) {
+          item = { ...item, description: details.description, status: details.status || item.status };
+        }
+      } catch { /* тихо остаёмся без описания, если ReManga недоступен */ }
+    }
+    const allChapters = await window.hanko.mangadexChapters(item.id, item.title);
     const inLibrary = library.some((l) => l.id === item.id);
     const libItem = library.find((l) => l.id === item.id);
+    const historyEntry = readingHistory.find((h) => h.mangaId === item.id);
 
     // по умолчанию показываем русские главы; если их нет вообще — берём первый
     // доступный язык. Переключатель ниже позволяет посмотреть остальные языки,
@@ -520,11 +934,19 @@ async function openTitleModal(item) {
       ${commentsBlock}
       <div class="chapter-list-header">
         <h3 class="section-title">Главы</h3>
+        <span class="chapter-source-badge" id="chapterSourceBadge"></span>
         ${langToggleBlock}
+        <button class="btn-secondary" id="chapterSortBtn" type="button">Сначала новые</button>
         <div class="chapter-list-actions" id="chapterListActions"></div>
       </div>
       <div class="chapter-list" id="chapterList"></div>
     `;
+
+    document.getElementById('chapterSortBtn').addEventListener('click', () => {
+      chapterSortDesc = !chapterSortDesc;
+      document.getElementById('chapterSortBtn').textContent = chapterSortDesc ? 'Сначала старые' : 'Сначала новые';
+      renderChapterRows(currentChapters());
+    });
 
     document.getElementById('libToggleBtn').addEventListener('click', async () => {
       if (library.some((l) => l.id === item.id)) {
@@ -599,12 +1021,21 @@ async function openTitleModal(item) {
       renderComments();
     }
 
+    let chapterSortDesc = false;
     function currentChapters() {
-      return activeLang ? allChapters.filter((c) => c.lang === activeLang) : allChapters;
+      const list = activeLang ? allChapters.filter((c) => c.lang === activeLang) : allChapters;
+      // allChapters уже отсортирован по возрастанию номера главы — тут только
+      // переворачиваем при необходимости, не пересортировываем заново
+      return chapterSortDesc ? list.slice().reverse() : list;
     }
 
     function renderChapterRows(chapters) {
       const list = document.getElementById('chapterList');
+      const badge = document.getElementById('chapterSourceBadge');
+      if (badge) {
+        const label = chapterSourceLabel(chapters);
+        badge.textContent = label ? `источник: ${label}` : '';
+      }
       list.innerHTML = '';
       if (!chapters.length) {
         list.innerHTML = allChapters.length
@@ -614,11 +1045,16 @@ async function openTitleModal(item) {
       }
       for (const ch of chapters) {
         const dl = downloads.some((d) => d.mangaId === item.id && d.chapterId === ch.id);
+        // если по этой главе сохранён прогресс чтения (сохраняется в openReader
+        // при просмотре страниц) — подсвечиваем строку и добавляем бейдж, чтобы
+        // было видно, где именно человек остановился, не открывая ридер заново
+        const isCurrent = historyEntry?.chapterId === ch.id;
         const row = document.createElement('div');
-        row.className = 'chapter-row';
+        row.className = `chapter-row${isCurrent ? ' chapter-row--current' : ''}`;
         row.innerHTML = `
           <div class="chapter-row-main">
             <span class="chapter-row-label">Глава ${escapeHtml(ch.chapter ?? '?')}${ch.title ? ' — ' + escapeHtml(ch.title) : ''}</span>
+            ${isCurrent ? '<span class="chapter-row-current-badge">Читаешь</span>' : ''}
             <span class="lang-tag">${escapeHtml(ch.lang || '')}</span>
           </div>
           <button class="chapter-download-btn ${dl ? 'is-done' : ''}" data-chapter="${escapeHtml(ch.id)}" ${dl ? 'disabled' : ''}>
@@ -670,16 +1106,18 @@ async function openTitleModal(item) {
       if (downloadAllBtn) {
         // состояние текущей массовой закачки — нужно, чтобы повторный клик по
         // той же кнопке во время закачки означал «отменить», а не «начать заново»
-        const bulk = { running: false, cancelRequested: false, currentChapterId: null };
+        const bulk = { running: false, cancelRequested: false, currentChapterIds: new Set() };
 
         downloadAllBtn.addEventListener('click', async () => {
           if (bulk.running) {
             bulk.cancelRequested = true;
             downloadAllBtn.disabled = true;
             downloadAllBtn.textContent = 'Останавливаю…';
-            if (bulk.currentChapterId) {
-              await window.hanko.cancelDownload({ mangaId: item.id, chapterId: bulk.currentChapterId });
-            }
+            await Promise.all(
+              Array.from(bulk.currentChapterIds).map((chId) =>
+                window.hanko.cancelDownload({ mangaId: item.id, chapterId: chId })
+              ),
+            );
             return;
           }
 
@@ -690,32 +1128,50 @@ async function openTitleModal(item) {
 
           bulk.running = true;
           bulk.cancelRequested = false;
+          bulk.currentChapterIds = new Set();
           downloadAllBtn.disabled = false;
           let done = 0;
           let failed = 0;
-          // качаем главы одну за другой (не параллельно) — по той же причине,
-          // что и страницы внутри главы: разом сервер обрывает часть запросов
-          for (const ch of pending) {
-            if (bulk.cancelRequested) break;
-            bulk.currentChapterId = ch.id;
-            downloadAllBtn.textContent = `Отменить (${done + failed + 1} / ${pending.length})`;
-            const dlBtn = document.querySelector(`.chapter-download-btn[data-chapter="${ch.id}"]`);
-            if (dlBtn && !dlBtn.disabled) { dlBtn.disabled = true; dlBtn.textContent = '0%'; }
-            const result = await window.hanko.startDownload({
-              mangaId: item.id, title: item.title, coverUrl: item.coverUrl, chapter: ch,
-            });
-            if (result && result.ok !== false) {
-              done++;
-            } else if (result && result.cancelled) {
-              bulk.cancelRequested = true;
-              if (dlBtn) { dlBtn.disabled = false; dlBtn.textContent = 'Скачать'; }
-            } else {
-              failed++;
-              if (dlBtn) { dlBtn.disabled = false; dlBtn.textContent = 'Ошибка, повторить?'; }
+          let nextIdx = 0;
+          const updateLabel = () => {
+            downloadAllBtn.textContent = `Отменить (${done + failed} / ${pending.length})`;
+          };
+          updateLabel();
+
+          // Несколько глав качаем одновременно, а не строго одну за другой —
+          // внутри каждой главы страницы и так уже качаются пулом по 5 штук
+          // (см. downloads:start в main.js), так что здесь достаточно небольшой
+          // параллельности по главам, чтобы не разгонять суммарное число
+          // одновременных запросов к сайту-источнику слишком сильно.
+          const CHAPTER_CONCURRENCY = 2;
+          async function chapterWorker() {
+            while (nextIdx < pending.length && !bulk.cancelRequested) {
+              const ch = pending[nextIdx++];
+              bulk.currentChapterIds.add(ch.id);
+              const dlBtn = document.querySelector(`.chapter-download-btn[data-chapter="${ch.id}"]`);
+              if (dlBtn && !dlBtn.disabled) { dlBtn.disabled = true; dlBtn.textContent = '0%'; }
+              const result = await window.hanko.startDownload({
+                mangaId: item.id, title: item.title, coverUrl: item.coverUrl, chapter: ch,
+              });
+              bulk.currentChapterIds.delete(ch.id);
+              if (result && result.ok !== false) {
+                done++;
+              } else if (result && result.cancelled) {
+                bulk.cancelRequested = true;
+                if (dlBtn) { dlBtn.disabled = false; dlBtn.textContent = 'Скачать'; }
+              } else {
+                failed++;
+                if (dlBtn) { dlBtn.disabled = false; dlBtn.textContent = 'Ошибка, повторить?'; }
+              }
+              updateLabel();
             }
           }
+
+          const workerCount = Math.min(CHAPTER_CONCURRENCY, pending.length);
+          await Promise.all(Array.from({ length: workerCount }, () => chapterWorker()));
+
           bulk.running = false;
-          bulk.currentChapterId = null;
+          bulk.currentChapterIds = new Set();
           downloadAllBtn.disabled = false;
           downloadAllBtn.textContent = bulk.cancelRequested
             ? `Остановлено: скачано ${done}`
@@ -728,7 +1184,7 @@ async function openTitleModal(item) {
       const removeAllBtn = document.getElementById('removeAllBtn');
       if (removeAllBtn) {
         removeAllBtn.addEventListener('click', async () => {
-          if (!confirm(`Удалить скачанные главы (${downloadedCount}) для «${item.title}»?`)) return;
+          if (!(await showAppConfirm(`Удалить скачанные главы (${downloadedCount}) для «${item.title}»?`, { title: 'Удалить главы?' }))) return;
           removeAllBtn.disabled = true;
           removeAllBtn.textContent = 'Удаляю…';
           for (const ch of chapters) {
@@ -797,7 +1253,7 @@ async function openReader(item, chapter, opts = {}) {
   };
   els.readerOverlay.hidden = false;
   els.readerTitle.textContent = reader.title + (reader.offline ? ' (офлайн)' : '');
-  els.readerBody.innerHTML = '<p class="empty-hint" style="padding:40px;">Загружаю страницы…</p>';
+  els.readerBody.innerHTML = '<div class="reader-loading-skeleton"></div><div class="reader-loading-skeleton"></div>';
   setZoom(reader.zoom);
   updateChapterNavButtons();
 
@@ -805,15 +1261,25 @@ async function openReader(item, chapter, opts = {}) {
     const pages = reader.offline
       ? await window.hanko.downloadedPages({ mangaId: item.id, chapterId: chapter.id })
       : await window.hanko.mangadexPages(chapter.id);
+    if (!pages.length) {
+      els.readerBody.innerHTML = '<p class="empty-hint" style="padding:40px;">Страницы этой главы не найдены у источника (возможно, глава платная или структура ответа сайта отличается от обычной).</p>';
+      return;
+    }
     reader.pages = pages;
     renderReaderPages();
     setReaderMode(reader.mode);
-    if (!reader.offline && library.some((l) => l.id === item.id)) {
-      await window.hanko.setProgress({
-        id: item.id, chapterId: chapter.id, chapterLabel: reader.chapterLabel, page: 0,
+    if (!reader.offline) {
+      recordHistoryProgress({
+        mangaId: item.id, title: item.title, coverUrl: item.coverUrl || '',
+        chapterId: chapter.id, chapterLabel: reader.chapterLabel, page: 0,
       });
-      library = await window.hanko.loadLibrary();
-      renderLibrary();
+      if (library.some((l) => l.id === item.id)) {
+        await window.hanko.setProgress({
+          id: item.id, chapterId: chapter.id, chapterLabel: reader.chapterLabel, page: 0,
+        });
+        library = await window.hanko.loadLibrary();
+        renderLibrary();
+      }
     }
   } catch (err) {
     els.readerBody.innerHTML = `<p class="empty-hint" style="padding:40px;">Не удалось загрузить страницы: ${escapeHtml(err.message)}</p>`;
@@ -842,7 +1308,10 @@ function makeRetryButton(img, url) {
   const retry = document.createElement('button');
   retry.type = 'button';
   retry.className = 'page-retry';
-  retry.textContent = 'Страница не загрузилась — нажми, чтобы попробовать снова';
+  retry.innerHTML = `
+    <svg viewBox="0 0 24 24" width="16" height="16"><path d="M17.65 6.35A8 8 0 106 18.35L4 20M6.35 17.65A8 8 0 0018 6.35L20 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    <span>Страница не загрузилась — нажми, чтобы попробовать снова</span>
+  `;
   retry.addEventListener('click', () => {
     retry.remove();
     img.classList.remove('is-broken');
@@ -855,6 +1324,7 @@ function makeRetryButton(img, url) {
 function attachPageErrorHandling(wrap, img, url) {
   img.addEventListener('load', () => {
     img.classList.remove('is-broken');
+    img.classList.add('is-loaded');
     const retryBtn = wrap.querySelector('.page-retry');
     if (retryBtn) retryBtn.remove();
   });
@@ -926,7 +1396,27 @@ function setReaderMode(mode) {
   els.readerModePaged.classList.toggle('is-active', mode === 'paged');
   els.readerModeScroll.classList.toggle('is-active', mode === 'scroll');
   if (mode === 'paged') showPage(reader.page);
+  updateReaderProgress();
 }
+
+// в постраничном режиме прогресс — по номеру страницы, в вебтун-скролле —
+// по фактической прокрутке холста (там нет понятия "текущая страница")
+function updateReaderProgress() {
+  if (!els.readerProgressFill) return;
+  let pct = 0;
+  if (reader.mode === 'paged') {
+    pct = reader.pages.length ? ((reader.page + 1) / reader.pages.length) * 100 : 0;
+  } else {
+    const el = els.readerBody;
+    const max = el.scrollHeight - el.clientHeight;
+    pct = max > 0 ? (el.scrollTop / max) * 100 : 0;
+  }
+  els.readerProgressFill.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+}
+
+els.readerBody.addEventListener('scroll', () => {
+  if (reader.mode === 'scroll') updateReaderProgress();
+});
 
 // масштаб страниц — общий для обоих режимов чтения (постранично и скролл),
 // т.к. и там, и там размер картинки задаётся одним и тем же CSS-правилом
@@ -945,6 +1435,13 @@ els.zoomInBtn.addEventListener('click', () => setZoom((reader.zoom || 1) + ZOOM_
 els.zoomOutBtn.addEventListener('click', () => setZoom((reader.zoom || 1) - ZOOM_STEP));
 els.zoomLabel.addEventListener('click', () => setZoom(1));
 
+// Ctrl/Cmd + колесо мыши — быстрый зум, как в большинстве просмотрщиков изображений
+els.readerBody.addEventListener('wheel', (e) => {
+  if (!e.ctrlKey && !e.metaKey) return;
+  e.preventDefault();
+  setZoom((reader.zoom || 1) + (e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
+}, { passive: false });
+
 function showPage(idx) {
   const pages = els.readerBody.querySelectorAll('.reader-page');
   if (!pages.length) return;
@@ -958,18 +1455,36 @@ function updatePageLabel() {
   els.readerPageLabel.textContent = reader.pages.length
     ? `${reader.page + 1} / ${reader.pages.length}`
     : '';
+  updateReaderProgress();
+}
+
+// Сохраняет прогресс в отдельную историю прочтения (history.json, см. main.js) —
+// работает для ЛЮБОГО тайтла, не только из библиотеки. debounce тут не нужен,
+// вызывающий код уже сам решает, когда дёргать (один раз при открытии главы,
+// раз в 500мс при листании страниц — см. saveReaderProgress ниже).
+async function recordHistoryProgress(payload) {
+  try {
+    readingHistory = await window.hanko.setHistoryProgress(payload);
+  } catch { /* история — best-effort, не мешаем чтению, если вдруг не записалось */ }
+  if (!els.viewProfile.hidden) renderReadingHistory();
 }
 
 let progressSaveTimer = null;
 function saveReaderProgress() {
-  if (reader.offline || !reader.mangaId || !library.some((l) => l.id === reader.mangaId)) return;
+  if (reader.offline || !reader.mangaId) return;
   clearTimeout(progressSaveTimer);
   progressSaveTimer = setTimeout(async () => {
-    await window.hanko.setProgress({
-      id: reader.mangaId, chapterId: reader.chapterId, chapterLabel: reader.chapterLabel, page: reader.page,
+    recordHistoryProgress({
+      mangaId: reader.mangaId, title: reader.mangaTitle, coverUrl: reader.coverUrl || '',
+      chapterId: reader.chapterId, chapterLabel: reader.chapterLabel, page: reader.page,
     });
-    library = await window.hanko.loadLibrary();
-    renderLibrary();
+    if (library.some((l) => l.id === reader.mangaId)) {
+      await window.hanko.setProgress({
+        id: reader.mangaId, chapterId: reader.chapterId, chapterLabel: reader.chapterLabel, page: reader.page,
+      });
+      library = await window.hanko.loadLibrary();
+      renderLibrary();
+    }
   }, 500);
 }
 
@@ -994,6 +1509,10 @@ els.readerRefresh.addEventListener('click', async () => {
     const pages = reader.offline
       ? await window.hanko.downloadedPages({ mangaId: reader.mangaId, chapterId: reader.chapterId })
       : await window.hanko.mangadexPages(reader.chapterId);
+    if (!pages.length) {
+      els.readerBody.innerHTML = '<p class="empty-hint" style="padding:40px;">Страницы этой главы не найдены у источника (возможно, глава платная или структура ответа сайта отличается от обычной).</p>';
+      return;
+    }
     reader.pages = pages;
     renderReaderPages();
     setReaderMode(reader.mode);
@@ -1007,6 +1526,13 @@ els.readerRefresh.addEventListener('click', async () => {
 document.addEventListener('keydown', (e) => {
   if (els.readerOverlay.hidden) return;
   if (e.key === 'Escape') { els.readerOverlay.hidden = true; return; }
+
+  if (e.ctrlKey || e.metaKey) {
+    if (e.key === '+' || e.key === '=') { e.preventDefault(); setZoom((reader.zoom || 1) + ZOOM_STEP); return; }
+    if (e.key === '-') { e.preventDefault(); setZoom((reader.zoom || 1) - ZOOM_STEP); return; }
+    if (e.key === '0') { e.preventDefault(); setZoom(1); return; }
+  }
+
   if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
 
   if (reader.mode !== 'paged') {
@@ -1133,6 +1659,7 @@ async function loadProfileView() {
   profile = await window.hanko.loadProfile();
   renderProfileHeader();
   renderProfileBookmarks();
+  renderReadingHistory();
   renderProfileStats();
   await refreshOnline();
   await loadMyComments();
@@ -1161,6 +1688,31 @@ function renderProfileBookmarks() {
   els.profileSitesGrid.innerHTML = '';
   els.profileSitesEmpty.hidden = sites.length > 0;
   for (const s of sites) els.profileSitesGrid.appendChild(siteTile(s));
+}
+
+// показывает ВСЕ тайтлы, где есть сохранённый прогресс чтения — из отдельной
+// истории (history.json, см. main.js), не из library.json, поэтому сюда
+// попадает вообще любой открытый тайтл, а не только добавленные в библиотеку.
+// Видно только на этом компьютере — раздел никак не связан с friendProfile*,
+// который видят друзья, там этого списка нет и не будет.
+function renderReadingHistory() {
+  const items = readingHistory.slice().sort((a, b) => b.updatedAt - a.updatedAt);
+  els.readingHistoryEmpty.hidden = items.length > 0;
+  els.readingHistoryList.innerHTML = '';
+  for (const h of items) {
+    const row = document.createElement('div');
+    row.className = 'history-row';
+    const date = new Date(h.updatedAt).toLocaleDateString('ru-RU');
+    row.innerHTML = `
+      <img class="history-row-cover" src="${h.coverUrl || ''}" alt="" onerror="this.style.opacity=0" />
+      <div class="history-row-info">
+        <span class="history-row-title">${escapeHtml(h.title)}</span>
+        <span class="history-row-chapter">${escapeHtml(h.chapterLabel || '')} · ${escapeHtml(date)}</span>
+      </div>
+    `;
+    row.addEventListener('click', () => openTitleModal({ id: h.mangaId, title: h.title, coverUrl: h.coverUrl }));
+    els.readingHistoryList.appendChild(row);
+  }
 }
 
 els.profileAvatarBtn.addEventListener('click', async () => {
@@ -1299,7 +1851,7 @@ els.friendActionMessageBtn.addEventListener('click', () => {
 els.friendActionRemoveBtn.addEventListener('click', async () => {
   if (!quickActionFriend) return;
   const f = quickActionFriend;
-  if (!confirm(`Удалить «${f.display_name || 'без имени'}» из друзей?`)) return;
+  if (!(await showAppConfirm(`Удалить «${f.display_name || 'без имени'}» из друзей?`, { title: 'Удалить из друзей?' }))) return;
   try {
     await window.hanko.onlineUnfriend(f.friend_id);
     closeFriendActionModal();
@@ -1473,7 +2025,7 @@ els.loginForm.addEventListener('submit', async (e) => {
 });
 
 els.logoutBtn.addEventListener('click', async () => {
-  if (!confirm('Выйти из аккаунта? На этом компьютере снова станет анонимный (гостевой) профиль.')) return;
+  if (!(await showAppConfirm('Выйти из аккаунта? На этом компьютере снова станет анонимный (гостевой) профиль.', { title: 'Выйти из аккаунта?', okText: 'Выйти', danger: false }))) return;
   onlineState = await window.hanko.onlineLogout();
   renderOnlineStatus();
   if (onlineState.ready) await Promise.all([refreshIncoming(), refreshOutgoing(), refreshFriends()]);
@@ -1740,6 +2292,36 @@ function renderFriendsList() {
   els.friendsList.innerHTML = '';
   els.friendsListEmpty.hidden = friendsList.length > 0;
   for (const f of filtered) els.friendsList.appendChild(friendRow(f));
+  renderRailOnlineFriends();
+}
+
+// стопка мини-аватаров друзей, которые сейчас в сети — видна из любого раздела,
+// не только со вкладки «Друзья», клик сразу открывает переписку с этим другом
+const RAIL_ONLINE_MAX = 4;
+function renderRailOnlineFriends() {
+  if (!els.railOnlineFriends) return;
+  const online = friendsList.filter((f) => onlineFriendIds.has(f.friend_id));
+  els.railOnlineFriends.innerHTML = '';
+  for (const f of online.slice(0, RAIL_ONLINE_MAX)) {
+    const name = f.display_name || 'Без имени';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'rail-online-avatar';
+    btn.title = `${name} — в сети`;
+    btn.innerHTML = `${escapeHtml(name.trim().charAt(0).toUpperCase())}<span class="rail-online-avatar-dot"></span>`;
+    btn.addEventListener('click', () => {
+      showView('friends');
+      openChat(f.friend_id, name);
+    });
+    els.railOnlineFriends.appendChild(btn);
+  }
+  if (online.length > RAIL_ONLINE_MAX) {
+    const more = document.createElement('div');
+    more.className = 'rail-online-more';
+    more.title = `Ещё в сети: ${online.length - RAIL_ONLINE_MAX}`;
+    more.textContent = `+${online.length - RAIL_ONLINE_MAX}`;
+    els.railOnlineFriends.appendChild(more);
+  }
 }
 
 els.chatListSearch.addEventListener('input', () => {
@@ -1758,10 +2340,31 @@ function encodeRichMessage(payload) {
   return RICH_PREFIX + JSON.stringify(payload);
 }
 
+async function openSharedContent(rich) {
+  const item = { id: rich.mangaId, title: rich.title, coverUrl: rich.coverUrl, status: rich.status };
+  if (rich.kind === 'share_title' || !rich.chapterId) {
+    openTitleModal(item);
+    return;
+  }
+  try {
+    const chapters = await window.hanko.mangadexChapters(rich.mangaId, rich.title);
+    const chapter = chapters.find((c) => c.id === rich.chapterId) || { id: rich.chapterId, chapter: rich.chapterNum };
+    await openReader(item, chapter, { chapters });
+  } catch {
+    openTitleModal(item);
+  }
+}
+
 function chatBubble(msg) {
   const mine = msg.from_id === onlineState.myId;
   const bubble = document.createElement('div');
+  bubble.dataset.msgId = msg.id;
   const time = new Date(msg.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  // галочки показываем только на своих сообщениях — на чужих "прочитано"
+  // смотреть нечего, это состояние видно только отправителю
+  const readTick = mine
+    ? `<span class="chat-bubble-read ${msg.read_at ? 'is-read' : ''}" title="${msg.read_at ? 'Прочитано' : 'Отправлено'}">${msg.read_at ? '✓✓' : '✓'}</span>`
+    : '';
 
   let rich = null;
   if (msg.body && msg.body.startsWith(RICH_PREFIX)) {
@@ -1770,12 +2373,12 @@ function chatBubble(msg) {
 
   if (rich && rich.kind === 'sticker') {
     bubble.className = `chat-bubble chat-bubble--sticker ${mine ? 'is-mine' : 'is-theirs'}`;
-    bubble.innerHTML = `${escapeHtml(rich.emoji)}<span class="chat-bubble-time">${escapeHtml(time)}</span>`;
+    bubble.innerHTML = `${escapeHtml(rich.emoji)}<span class="chat-bubble-time">${escapeHtml(time)}${readTick}</span>`;
     return bubble;
   }
 
   if (rich && (rich.kind === 'share_title' || rich.kind === 'share_chapter')) {
-    bubble.className = `chat-bubble chat-bubble--card ${mine ? 'is-mine' : 'is-theirs'}`;
+    bubble.className = `chat-bubble chat-bubble--card is-clickable ${mine ? 'is-mine' : 'is-theirs'}`;
     const sub = rich.kind === 'share_chapter' ? (rich.chapterLabel || 'Глава') : (rich.status || '');
     bubble.innerHTML = `
       <img class="card-cover" src="${rich.coverUrl || ''}" alt="" loading="lazy" onerror="this.style.opacity=0" />
@@ -1783,14 +2386,15 @@ function chatBubble(msg) {
         <span class="chat-bubble--card-title">${escapeHtml(rich.title || '')}</span>
         ${sub ? `<span class="chat-bubble--card-sub">${escapeHtml(sub)}</span>` : ''}
         ${rich.note ? `<span class="chat-bubble--card-note">${escapeHtml(rich.note)}</span>` : ''}
-        <span class="chat-bubble-time">${escapeHtml(time)}</span>
+        <span class="chat-bubble-time">${escapeHtml(time)}${readTick}</span>
       </div>
     `;
+    bubble.addEventListener('click', () => openSharedContent(rich));
     return bubble;
   }
 
   bubble.className = `chat-bubble ${mine ? 'is-mine' : 'is-theirs'}`;
-  bubble.innerHTML = `${escapeHtml(msg.body)}<span class="chat-bubble-time">${escapeHtml(time)}</span>`;
+  bubble.innerHTML = `${escapeHtml(msg.body)}<span class="chat-bubble-time">${escapeHtml(time)}${readTick}</span>`;
   return bubble;
 }
 
@@ -1807,6 +2411,7 @@ async function openChat(friendId, name) {
   try {
     const messages = await window.hanko.onlineListMessages(friendId);
     renderChatMessages(messages);
+    window.hanko.onlineMarkMessagesRead(friendId).catch(() => {});
   } catch (err) {
     els.chatBody.innerHTML = `<p class="empty-hint" style="padding:20px;">Не удалось загрузить: ${escapeHtml(err.message)}</p>`;
   }
@@ -1905,6 +2510,8 @@ function shareTitleRow(item) {
       closeShareModal();
       await sendChatPayload(encodeRichMessage({
         kind: 'share_chapter', mangaId: item.id, title: item.title, coverUrl: item.coverUrl,
+        chapterId: item.progress.chapterId,
+        chapterNum: (item.progress.chapterLabel || '').replace(/^Гл\.\s*/, ''),
         chapterLabel: item.progress.chapterLabel, note,
       }));
     });
@@ -1978,6 +2585,7 @@ function friendCommentRow(c) {
       try {
         await window.hanko.onlineDeleteProfileComment(c.id);
         await loadFriendComments(activeFriendProfile.friendId);
+        els.friendStatComments.textContent = String(Math.max(0, (parseInt(els.friendStatComments.textContent, 10) || 1) - 1));
       } catch (err) {
         alert(err.message);
       }
@@ -1993,15 +2601,47 @@ async function loadFriendComments(friendId) {
   for (const c of comments) els.friendCommentsList.appendChild(friendCommentRow(c));
 }
 
+function switchFriendProfileTab(tab) {
+  const isProfile = tab === 'profile';
+  els.friendProfileTabProfile.classList.toggle('is-active', isProfile);
+  els.friendProfileTabBookmarks.classList.toggle('is-active', !isProfile);
+  els.friendProfileTabProfilePanel.hidden = !isProfile;
+  els.friendProfileTabBookmarksPanel.hidden = isProfile;
+}
+els.friendProfileTabProfile.addEventListener('click', () => switchFriendProfileTab('profile'));
+els.friendProfileTabBookmarks.addEventListener('click', () => switchFriendProfileTab('bookmarks'));
+
+function renderFriendLikeBlock(likesCount, likedByMe) {
+  els.friendStatLikes.textContent = String(likesCount);
+  els.friendStatLikeBlock.classList.toggle('is-liked', likedByMe);
+  els.friendStatLikesLabel.textContent = likedByMe ? 'лайкнуто' : 'лайков';
+}
+
+els.friendStatLikeBlock.addEventListener('click', async () => {
+  if (!activeFriendProfile) return;
+  try {
+    const likedNow = await window.hanko.onlineToggleProfileLike(activeFriendProfile.friendId);
+    const current = parseInt(els.friendStatLikes.textContent, 10) || 0;
+    renderFriendLikeBlock(likedNow ? current + 1 : Math.max(0, current - 1), likedNow);
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
 async function openFriendProfile(friendId, name) {
   activeFriendProfile = { friendId, name };
   els.friendProfileOverlay.hidden = false;
   els.friendProfileName.textContent = name;
   els.friendProfileAvatar.textContent = (name || '?').trim().charAt(0).toUpperCase();
   updateFriendProfileOnlineLabel();
+  switchFriendProfileTab('profile');
 
   els.friendProfileError.hidden = true;
   els.friendProfileBio.hidden = true;
+  els.friendStatViews.textContent = '0';
+  renderFriendLikeBlock(0, false);
+  els.friendStatFriends.textContent = '0';
+  els.friendStatComments.textContent = '0';
   els.friendBookmarksGrid.innerHTML = '';
   els.friendBookmarksEmpty.hidden = true;
   els.friendCommentsList.innerHTML = '';
@@ -2017,6 +2657,10 @@ async function openFriendProfile(friendId, name) {
         els.friendProfileBio.hidden = false;
         els.friendProfileBio.textContent = profileData.bio;
       }
+      els.friendStatViews.textContent = String(profileData.view_count ?? 0);
+      renderFriendLikeBlock(profileData.likes_count ?? 0, !!profileData.liked_by_me);
+      els.friendStatFriends.textContent = String(profileData.friends_count ?? 0);
+      els.friendStatComments.textContent = String(profileData.comments_count ?? 0);
     }
     const bookmarks = await window.hanko.onlineListBookmarks(friendId);
     els.friendBookmarksEmpty.hidden = bookmarks.length > 0;
@@ -2041,7 +2685,7 @@ els.friendProfileOverlay.addEventListener('click', (e) => {
 
 els.friendProfileUnfriendBtn.addEventListener('click', async () => {
   if (!activeFriendProfile) return;
-  if (!confirm(`Удалить «${activeFriendProfile.name}» из друзей?`)) return;
+  if (!(await showAppConfirm(`Удалить «${activeFriendProfile.name}» из друзей?`, { title: 'Удалить из друзей?' }))) return;
   try {
     await window.hanko.onlineUnfriend(activeFriendProfile.friendId);
     closeFriendProfile();
@@ -2066,30 +2710,98 @@ els.friendCommentForm.addEventListener('submit', async (e) => {
     els.friendCommentInput.value = '';
     els.friendCommentFeedback.hidden = true;
     await loadFriendComments(activeFriendProfile.friendId);
+    els.friendStatComments.textContent = String((parseInt(els.friendStatComments.textContent, 10) || 0) + 1);
   } catch (err) {
     showFriendCommentFeedback(err.message, true);
   }
 });
+
+// короткий двухтональный «дзынь» синтезируется на лету через Web Audio —
+// без внешнего mp3-файла, звучит одинаково в собранном и несобранном виде
+function playNotificationSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const now = ctx.currentTime;
+    [660, 880].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const t = now + i * 0.12;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.2, t + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.32);
+    });
+    setTimeout(() => ctx.close(), 800);
+  } catch { /* звук не критичен для работы чата */ }
+}
+
+function richPreviewText(rich) {
+  if (!rich) return '';
+  if (rich.kind === 'sticker') return rich.emoji;
+  if (rich.kind === 'share_title') return `Поделился(-ась) тайтлом «${rich.title}»`;
+  if (rich.kind === 'share_chapter') return `Поделился(-ась) главой «${rich.title}»`;
+  return 'Сообщение';
+}
+
+function notifyIncomingMessage(msg) {
+  playNotificationSound();
+  try {
+    const friend = friendsList.find((f) => f.friend_id === msg.from_id);
+    const name = friend?.display_name || 'Новое сообщение';
+    let bodyText = msg.body || '';
+    if (bodyText.startsWith(RICH_PREFIX)) {
+      try { bodyText = richPreviewText(JSON.parse(bodyText.slice(RICH_PREFIX.length))); } catch { bodyText = 'Сообщение'; }
+    }
+    const notif = new Notification(name, { body: bodyText, icon: 'assets/icon.png' });
+    notif.onclick = async () => {
+      await window.hanko.focusApp();
+      showView('friends');
+      openChat(msg.from_id, name);
+    };
+  } catch { /* нативные уведомления не критичны */ }
+}
 
 window.hanko.onOnlineEvent(async (event) => {
   if (event.type === 'friend-request-incoming') {
     if (!els.viewFriends.hidden) await refreshIncoming();
   } else if (event.type === 'friend-request-updated') {
     if (!els.viewFriends.hidden) await Promise.all([refreshOutgoing(), refreshFriends()]);
+    else friendsList = await window.hanko.onlineListFriends();
+    renderRailOnlineFriends();
   } else if (event.type === 'presence') {
     onlineFriendIds = new Set(event.onlineIds);
     if (!els.viewFriends.hidden) renderFriendsList();
+    else renderRailOnlineFriends();
     updateChatOnlineLabel();
     updateFriendProfileOnlineLabel();
   } else if (event.type === 'message') {
     const msg = event.message;
-    if (activeChat && msg.from_id === activeChat.friendId && !els.chatPaneActive.hidden) {
+    const isActiveChatOpen = activeChat && msg.from_id === activeChat.friendId && !els.chatPaneActive.hidden;
+    if (isActiveChatOpen && document.hasFocus()) {
       els.chatBody.appendChild(chatBubble(msg));
       els.chatBody.scrollTop = els.chatBody.scrollHeight;
+      window.hanko.onlineMarkMessagesRead(msg.from_id).catch(() => {});
     } else {
       unreadFriendIds.add(msg.from_id);
       updateFriendsNavBadge();
       if (!els.viewFriends.hidden) renderFriendsList();
+      notifyIncomingMessage(msg);
+    }
+  } else if (event.type === 'message-read') {
+    // друг прочитал одно из моих сообщений — если этот чат сейчас открыт,
+    // проставляем двойную галочку прямо в DOM, без перезагрузки всей истории
+    const msg = event.message;
+    if (activeChat && msg.to_id === activeChat.friendId) {
+      const bubble = els.chatBody.querySelector(`[data-msg-id="${CSS.escape(msg.id)}"] .chat-bubble-read`);
+      if (bubble) {
+        bubble.classList.add('is-read');
+        bubble.textContent = '✓✓';
+        bubble.title = 'Прочитано';
+      }
     }
   }
 });
@@ -2097,15 +2809,19 @@ window.hanko.onOnlineEvent(async (event) => {
 // ---------------- старт ----------------
 
 async function init() {
-  const [settings, lib, sitesList, downloadsList] = await Promise.all([
+  const [settings, lib, sitesList, downloadsList, historyList] = await Promise.all([
     window.hanko.loadSettings(),
     window.hanko.loadLibrary(),
     window.hanko.loadSites(),
     window.hanko.listDownloads(),
+    window.hanko.loadHistory(),
   ]);
+  isDevMode = await window.hanko.isDev();
   library = lib;
   sites = sitesList;
   downloads = downloadsList;
+  readingHistory = historyList;
+  applyTheme(settings.theme);
   renderLibrary();
   renderSites();
   renderDownloads();
@@ -2144,5 +2860,404 @@ function renderUpdateBanner(status) {
 window.hanko.onUpdateStatus(renderUpdateBanner);
 window.hanko.updateGetStatus().then(renderUpdateBanner);
 els.updateBannerBtn.addEventListener('click', () => window.hanko.updateInstall());
+
+// ---------------- фоновая сцена: город на заднем плане ----------------
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+function buildBackgroundSkyline() {
+  const far = document.getElementById('bgSkylineFar');
+  const near = document.getElementById('bgSkylineNear');
+  if (!far || !near) return;
+
+  const farLayout = [
+    { x: 0, w: 120, h: 280 }, { x: 140, w: 90, h: 320 }, { x: 260, w: 140, h: 250 },
+    { x: 430, w: 100, h: 300 }, { x: 560, w: 160, h: 270 }, { x: 760, w: 110, h: 330 },
+    { x: 900, w: 130, h: 260 }, { x: 1060, w: 95, h: 310 }, { x: 1190, w: 150, h: 250 },
+    { x: 1370, w: 110, h: 290 }, { x: 1510, w: 120, h: 240 },
+  ];
+  const grads = ['url(#bgA)', 'url(#bgB)', 'url(#bgC)', 'url(#bgD)'];
+  farLayout.forEach((b, i) => {
+    const rect = document.createElementNS(SVG_NS, 'rect');
+    rect.setAttribute('x', b.x);
+    rect.setAttribute('y', 420 - b.h);
+    rect.setAttribute('width', b.w);
+    rect.setAttribute('height', b.h);
+    rect.setAttribute('fill', grads[i % grads.length]);
+    far.appendChild(rect);
+  });
+
+  const nearLayout = [
+    { x: -20, w: 100, h: 260 }, { x: 70, w: 70, h: 200 }, { x: 150, w: 130, h: 320 }, { x: 290, w: 90, h: 230 },
+    { x: 390, w: 150, h: 290 }, { x: 550, w: 80, h: 210 }, { x: 640, w: 120, h: 350 }, { x: 770, w: 100, h: 250 },
+    { x: 880, w: 160, h: 300 }, { x: 1050, w: 90, h: 220 }, { x: 1150, w: 140, h: 340 }, { x: 1300, w: 100, h: 260 },
+    { x: 1410, w: 130, h: 310 }, { x: 1550, w: 80, h: 230 },
+  ];
+  nearLayout.forEach((b, i) => {
+    const y = 420 - b.h;
+    const fill = grads[i % grads.length];
+    const g = document.createElementNS(SVG_NS, 'g');
+
+    const rect = document.createElementNS(SVG_NS, 'rect');
+    rect.setAttribute('x', b.x); rect.setAttribute('y', y);
+    rect.setAttribute('width', b.w); rect.setAttribute('height', b.h);
+    rect.setAttribute('fill', fill);
+    rect.setAttribute('rx', 4);
+    g.appendChild(rect);
+
+    const roofType = i % 3;
+    if (roofType === 0) {
+      const antenna = document.createElementNS(SVG_NS, 'line');
+      antenna.setAttribute('x1', b.x + b.w / 2); antenna.setAttribute('y1', y - 34);
+      antenna.setAttribute('x2', b.x + b.w / 2); antenna.setAttribute('y2', y);
+      antenna.setAttribute('stroke', '#8a7aa8'); antenna.setAttribute('stroke-width', 2);
+      g.appendChild(antenna);
+      const dot = document.createElementNS(SVG_NS, 'circle');
+      dot.setAttribute('cx', b.x + b.w / 2); dot.setAttribute('cy', y - 34); dot.setAttribute('r', 4);
+      dot.setAttribute('fill', '#ff8a7a');
+      g.appendChild(dot);
+    } else if (roofType === 1) {
+      const box = document.createElementNS(SVG_NS, 'rect');
+      box.setAttribute('x', b.x + b.w * 0.25); box.setAttribute('y', y - 22);
+      box.setAttribute('width', b.w * 0.5); box.setAttribute('height', 22);
+      box.setAttribute('fill', fill); box.setAttribute('rx', 3);
+      g.appendChild(box);
+    } else {
+      const dome = document.createElementNS(SVG_NS, 'circle');
+      dome.setAttribute('cx', b.x + b.w / 2); dome.setAttribute('cy', y); dome.setAttribute('r', b.w * 0.22);
+      dome.setAttribute('fill', fill);
+      g.appendChild(dome);
+    }
+
+    const cols = Math.max(2, Math.floor(b.w / 18));
+    const rows = Math.max(3, Math.floor(b.h / 22));
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (Math.random() < 0.28) continue;
+        const win = document.createElementNS(SVG_NS, 'rect');
+        const wx = b.x + 8 + (c * (b.w - 16)) / cols;
+        const wy = y + 14 + (r * (b.h - 24)) / rows;
+        win.setAttribute('x', wx); win.setAttribute('y', wy);
+        win.setAttribute('width', 6); win.setAttribute('height', 8);
+        const lit = Math.random() < 0.35;
+        win.setAttribute('fill', lit ? '#ffe19a' : 'rgba(120,100,150,0.35)');
+        g.appendChild(win);
+      }
+    }
+    near.appendChild(g);
+  });
+
+  // «вайфай-башня» — фирменная деталь фона
+  const wifi = document.createElementNS(SVG_NS, 'g');
+  const wx0 = 700, wy0 = 200, ww = 90, wh = 220;
+  const wrect = document.createElementNS(SVG_NS, 'rect');
+  wrect.setAttribute('x', wx0); wrect.setAttribute('y', wy0);
+  wrect.setAttribute('width', ww); wrect.setAttribute('height', wh);
+  wrect.setAttribute('fill', '#5a6fb0'); wrect.setAttribute('rx', 4);
+  wifi.appendChild(wrect);
+  [0, 1, 2].forEach((bar) => {
+    const barEl = document.createElementNS(SVG_NS, 'path');
+    const r = 14 + bar * 12;
+    barEl.setAttribute('d', `M ${wx0 + ww / 2 - r} ${wy0 + 70} A ${r} ${r} 0 0 1 ${wx0 + ww / 2 + r} ${wy0 + 70}`);
+    barEl.setAttribute('stroke', '#fff'); barEl.setAttribute('stroke-width', 5);
+    barEl.setAttribute('fill', 'none'); barEl.setAttribute('stroke-linecap', 'round');
+    barEl.setAttribute('opacity', 0.9 - bar * 0.15);
+    wifi.appendChild(barEl);
+  });
+  near.appendChild(wifi);
+}
+buildBackgroundSkyline();
+
+// ---------- Аниме: поиск / карточка / список серий / плеер (AniLibria) ----------
+
+function anilibriaCard(item) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  const statusRu = item.status ? (MANGA_STATUS_RU[item.status] || item.status) : '';
+  card.innerHTML = `
+    <img class="card-cover" src="${item.coverUrl || ''}" alt="" loading="lazy" onerror="this.style.opacity=0" />
+    <div class="card-body">
+      <div class="card-title-row"><p class="card-title">${escapeHtml(item.title)}</p></div>
+      <p class="card-meta">${escapeHtml(statusRu)}</p>
+    </div>
+  `;
+  card.addEventListener('click', () => openAnimeTitleModal(item));
+  return card;
+}
+
+// Тип и жанры — из реальных ответов AniLibria API (не выдумано): id/название
+// жанров подтверждены напрямую из каталога, но это не полный список всех
+// жанров сайта, только те, что успели встретиться. Имя параметра фильтра
+// (f[type]/f[genres]/f[is_ongoing]) — по аналогии с подтверждённым f[search],
+// не проверено настолько же строго — если не совпадёт, фильтр просто не
+// сработает, само приложение не сломается.
+const ANIME_TYPE_OPTIONS = [
+  { value: 'TV', label: 'ТВ' },
+  { value: 'MOVIE', label: 'Фильм' },
+  { value: 'OVA', label: 'OVA' },
+  { value: 'ONA', label: 'ONA' },
+  { value: 'SPECIAL', label: 'Спешл' },
+];
+const ANIME_STATUS_OPTIONS = [
+  { value: 'ongoing', label: 'Онгоинг' },
+  { value: 'completed', label: 'Завершено' },
+];
+const ANIME_GENRE_OPTIONS = [
+  { id: 1, name: 'Комедия' }, { id: 4, name: 'Сёнен' }, { id: 5, name: 'Сейнен' },
+  { id: 8, name: 'Драма' }, { id: 11, name: 'Романтика' }, { id: 14, name: 'Экшен' },
+  { id: 15, name: 'Боевые искусства' }, { id: 20, name: 'Сёдзе' }, { id: 21, name: 'Супер сила' },
+  { id: 26, name: 'Исторический' }, { id: 27, name: 'Приключения' }, { id: 28, name: 'Сверхъестественное' },
+  { id: 29, name: 'Фэнтези' },
+];
+const animeFilters = { type: '', status: '', genreIds: new Set() };
+const ANIME_PAGE_SIZE = 24;
+let animeSearchPage = 1;
+let animeSearchTotal = 0;
+
+function buildAnimeSearchOpts(query) {
+  return {
+    query,
+    page: animeSearchPage,
+    limit: ANIME_PAGE_SIZE,
+    type: animeFilters.type,
+    isOngoing: animeFilters.status ? animeFilters.status === 'ongoing' : null,
+    genreIds: [...animeFilters.genreIds],
+  };
+}
+
+async function runAnimeSearch({ resetPage = true } = {}) {
+  const q = els.animeSearchInput.value.trim();
+  const hasFilters = animeFilters.type || animeFilters.status || animeFilters.genreIds.size > 0;
+  if (!q && !hasFilters) {
+    els.animeSearchSection.hidden = true;
+    els.animePopularSection.hidden = false;
+    return;
+  }
+  if (resetPage) animeSearchPage = 1;
+  els.animeSearchGrid.innerHTML = '<p class="empty-hint">Ищу…</p>';
+  els.animeSearchSection.hidden = false;
+  els.animePopularSection.hidden = true;
+  els.animeSearchPagination.hidden = true;
+  try {
+    const { items, total } = await window.hanko.anilibriaSearch(buildAnimeSearchOpts(q));
+    animeSearchTotal = total;
+    els.animeSearchGrid.innerHTML = '';
+    if (!items.length) {
+      els.animeSearchGrid.innerHTML = '<p class="empty-hint">Ничего не нашлось.</p>';
+      return;
+    }
+    for (const item of items) els.animeSearchGrid.appendChild(anilibriaCard(item));
+    renderAnimeSearchPagination();
+  } catch (err) {
+    els.animeSearchGrid.innerHTML = `<p class="empty-hint">Не удалось получить результаты: ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+function renderAnimeSearchPagination() {
+  const totalPages = Math.max(1, Math.ceil(animeSearchTotal / ANIME_PAGE_SIZE));
+  els.animeSearchPagination.hidden = totalPages <= 1;
+  els.animeSearchPageLabel.textContent = `Страница ${animeSearchPage} из ${totalPages}`;
+  els.animeSearchPrevBtn.disabled = animeSearchPage <= 1;
+  els.animeSearchNextBtn.disabled = animeSearchPage >= totalPages;
+}
+
+els.animeSearchPrevBtn.addEventListener('click', () => {
+  if (animeSearchPage <= 1) return;
+  animeSearchPage -= 1;
+  runAnimeSearch({ resetPage: false });
+  els.animeSearchSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+els.animeSearchNextBtn.addEventListener('click', () => {
+  const totalPages = Math.max(1, Math.ceil(animeSearchTotal / ANIME_PAGE_SIZE));
+  if (animeSearchPage >= totalPages) return;
+  animeSearchPage += 1;
+  runAnimeSearch({ resetPage: false });
+  els.animeSearchSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
+els.animeSearchForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  runAnimeSearch();
+});
+
+let animePopularLoaded = false;
+async function loadAnimePopular() {
+  if (animePopularLoaded) return;
+  animePopularLoaded = true;
+  els.animePopularHint.hidden = true;
+  renderSkeletons(els.animePopularGrid);
+  try {
+    const { items } = await window.hanko.anilibriaPopular();
+    els.animePopularHint.hidden = items.length > 0;
+    els.animePopularHint.textContent = 'Пусто.';
+    els.animePopularGrid.innerHTML = '';
+    for (const item of items) els.animePopularGrid.appendChild(anilibriaCard(item));
+  } catch (err) {
+    els.animePopularHint.hidden = false;
+    els.animePopularHint.textContent = `Не удалось загрузить: ${err.message}`;
+  }
+}
+
+function updateAnimeFiltersBtnLabel() {
+  const count = (animeFilters.type ? 1 : 0) + (animeFilters.status ? 1 : 0) + animeFilters.genreIds.size;
+  els.animeFiltersBtn.textContent = count > 0 ? `Фильтры (${count})` : 'Фильтры';
+}
+
+function renderAnimeTypeChips() {
+  els.animeTypeFilterRow.innerHTML = '';
+  for (const opt of ANIME_TYPE_OPTIONS) {
+    els.animeTypeFilterRow.appendChild(filterChip(opt.label, animeFilters.type === opt.value, (active) => {
+      animeFilters.type = active ? opt.value : '';
+      renderAnimeTypeChips();
+    }));
+  }
+}
+
+function renderAnimeStatusChips() {
+  els.animeStatusFilterRow.innerHTML = '';
+  for (const opt of ANIME_STATUS_OPTIONS) {
+    els.animeStatusFilterRow.appendChild(filterChip(opt.label, animeFilters.status === opt.value, (active) => {
+      animeFilters.status = active ? opt.value : '';
+      renderAnimeStatusChips();
+    }));
+  }
+}
+
+function renderAnimeGenreChips() {
+  els.animeGenreFilterRow.innerHTML = '';
+  for (const opt of ANIME_GENRE_OPTIONS) {
+    els.animeGenreFilterRow.appendChild(filterChip(opt.name, animeFilters.genreIds.has(opt.id), (active) => {
+      if (active) animeFilters.genreIds.add(opt.id); else animeFilters.genreIds.delete(opt.id);
+    }));
+  }
+}
+
+function openAnimeFiltersModal() {
+  renderAnimeTypeChips();
+  renderAnimeStatusChips();
+  renderAnimeGenreChips();
+  els.animeFiltersModalBackdrop.hidden = false;
+}
+els.animeFiltersBtn.addEventListener('click', openAnimeFiltersModal);
+els.animeFiltersModalClose.addEventListener('click', () => { els.animeFiltersModalBackdrop.hidden = true; });
+els.animeFiltersModalBackdrop.addEventListener('click', (e) => {
+  if (e.target === els.animeFiltersModalBackdrop) els.animeFiltersModalBackdrop.hidden = true;
+});
+els.animeFiltersApplyBtn.addEventListener('click', () => {
+  updateAnimeFiltersBtnLabel();
+  els.animeFiltersModalBackdrop.hidden = true;
+  runAnimeSearch();
+});
+els.animeFiltersResetBtn.addEventListener('click', () => {
+  animeFilters.type = '';
+  animeFilters.status = '';
+  animeFilters.genreIds.clear();
+  renderAnimeTypeChips();
+  renderAnimeStatusChips();
+  renderAnimeGenreChips();
+  updateAnimeFiltersBtnLabel();
+  els.animeFiltersModalBackdrop.hidden = true;
+  runAnimeSearch();
+});
+
+async function openAnimeTitleModal(item) {
+  els.animeTitleModalBackdrop.hidden = false;
+  els.animeTitleModalBody.innerHTML = `
+    <div class="title-modal-header">
+      <img src="${item.coverUrl || ''}" alt="" onerror="this.style.opacity=0" />
+      <div>
+        <h2>${escapeHtml(item.title)}</h2>
+        <p>${escapeHtml(item.description || '')}</p>
+      </div>
+    </div>
+    <h3 class="section-title">Серии</h3>
+    <div class="chapter-list" id="animeEpisodeList"><p class="empty-hint">Загружаю…</p></div>
+  `;
+  try {
+    const episodes = await window.hanko.anilibriaEpisodes(item.id);
+    const list = document.getElementById('animeEpisodeList');
+    if (!episodes.length) {
+      list.innerHTML = '<p class="empty-hint">Серий пока не нашлось.</p>';
+      return;
+    }
+    list.innerHTML = '';
+    for (let i = 0; i < episodes.length; i++) {
+      const ep = episodes[i];
+      const row = document.createElement('div');
+      row.className = 'chapter-row';
+      row.innerHTML = `<div class="chapter-row-main"><span class="chapter-row-label">Серия ${escapeHtml(ep.chapter)}${ep.title ? ' — ' + escapeHtml(ep.title) : ''}</span></div>`;
+      row.addEventListener('click', () => openAnimePlayer(item, episodes, i));
+      list.appendChild(row);
+    }
+  } catch (err) {
+    document.getElementById('animeEpisodeList').innerHTML = `<p class="empty-hint">Не удалось получить серии: ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+els.animeTitleModalClose.addEventListener('click', () => { els.animeTitleModalBackdrop.hidden = true; });
+els.animeTitleModalBackdrop.addEventListener('click', (e) => {
+  if (e.target === els.animeTitleModalBackdrop) els.animeTitleModalBackdrop.hidden = true;
+});
+
+// один общий экземпляр hls.js на всё приложение — пересоздавать его на каждую
+// серию не нужно, docs самого hls.js рекомендуют переиспользовать loadSource
+let hlsPlayer = null;
+let animePlayerState = null; // { item, episodes, index }
+
+function attachAnimeSource(url) {
+  const video = els.animeVideo;
+  if (window.Hls && window.Hls.isSupported()) {
+    if (!hlsPlayer) hlsPlayer = new window.Hls();
+    hlsPlayer.loadSource(url);
+    hlsPlayer.attachMedia(video);
+  } else {
+    // Safari и некоторые сборки Chromium умеют HLS нативно через <video src>
+    video.src = url;
+  }
+}
+
+function openAnimePlayer(item, episodes, index) {
+  animePlayerState = { item, episodes, index };
+  const ep = episodes[index];
+  els.animePlayerOverlay.hidden = false;
+  els.animePlayerTitle.textContent = `${item.title} — серия ${ep.chapter}`;
+  els.animeEpLabel.textContent = `${index + 1} / ${episodes.length}`;
+  els.animeEpPrevBtn.disabled = index <= 0;
+  els.animeEpNextBtn.disabled = index >= episodes.length - 1;
+
+  els.animeQualitySelect.innerHTML = ep.qualities
+    .map((q, i) => `<option value="${i}">${escapeHtml(q.label)}</option>`).join('');
+  const best = ep.qualities[0];
+  if (best) attachAnimeSource(best.url);
+}
+
+els.animeQualitySelect.addEventListener('change', () => {
+  if (!animePlayerState) return;
+  const { episodes, index } = animePlayerState;
+  const q = episodes[index].qualities[Number(els.animeQualitySelect.value)];
+  if (q) {
+    const time = els.animeVideo.currentTime;
+    attachAnimeSource(q.url);
+    els.animeVideo.addEventListener('loadedmetadata', () => { els.animeVideo.currentTime = time; }, { once: true });
+  }
+});
+
+function closeAnimePlayer() {
+  els.animePlayerOverlay.hidden = true;
+  els.animeVideo.pause();
+  els.animeVideo.removeAttribute('src');
+  if (hlsPlayer) { hlsPlayer.detachMedia(); }
+}
+els.animePlayerBack.addEventListener('click', closeAnimePlayer);
+
+els.animeEpPrevBtn.addEventListener('click', () => {
+  if (!animePlayerState || animePlayerState.index <= 0) return;
+  const { item, episodes, index } = animePlayerState;
+  openAnimePlayer(item, episodes, index - 1);
+});
+els.animeEpNextBtn.addEventListener('click', () => {
+  if (!animePlayerState || animePlayerState.index >= animePlayerState.episodes.length - 1) return;
+  const { item, episodes, index } = animePlayerState;
+  openAnimePlayer(item, episodes, index + 1);
+});
 
 init();
