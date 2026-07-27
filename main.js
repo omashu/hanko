@@ -565,6 +565,32 @@ ipcMain.handle('profile:pickAvatar', async () => {
 
   const fileName = `avatar_${Date.now()}${ext}`;
   await fs.copyFile(src, path.join(AVATAR_DIR(), fileName));
+
+  // Показываем этот же аватар друзьям — заливаем в публичный бакет Storage и
+  // сохраняем ссылку в profiles.avatar_url. Если онлайн не готов или заливка
+  // не удалась — не страшно, локальный аватар всё равно применится, просто
+  // друзья пока не увидят обновление (см. rpc_set_avatar_url в supabase_schema.sql).
+  if (onlineState.ready && onlineState.myId) {
+    try {
+      const bytes = await fs.readFile(src);
+      const contentType = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif' }[ext] || 'image/png';
+      const storagePath = `${onlineState.myId}/avatar${ext}`;
+      const { error: uploadErr } = await supabase.storage.from('avatars').upload(storagePath, bytes, { contentType, upsert: true });
+      if (uploadErr) {
+        console.error('Не удалось залить аватар в Supabase Storage:', uploadErr.message);
+      } else {
+        const { data: pub } = supabase.storage.from('avatars').getPublicUrl(storagePath);
+        // добавляем метку времени в URL — иначе у друзей, увидевших старую
+        // картинку раньше, браузерный/файловый кэш может её не обновить
+        const bustedUrl = `${pub.publicUrl}?t=${Date.now()}`;
+        const { error: rpcErr } = await supabase.rpc('rpc_set_avatar_url', { p_url: bustedUrl });
+        if (rpcErr) console.error('Не удалось сохранить ссылку на аватар:', rpcErr.message);
+      }
+    } catch (err) {
+      console.error('Синхронизация аватара с онлайн-профилем не удалась:', err?.message || err);
+    }
+  }
+
   return saveProfile({ avatarFile: fileName });
 });
 

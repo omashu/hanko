@@ -34,6 +34,9 @@ create unique index if not exists profiles_username_key on public.profiles (user
 alter table public.profiles add column if not exists bio text;
 -- счётчик просмотров профиля (растёт, когда друг открывает твой профиль)
 alter table public.profiles add column if not exists view_count bigint not null default 0;
+-- ссылка на аватар в Storage (бакет avatars, публичный) — видно друзьям, см.
+-- rpc_set_avatar_url / rpc_list_friends / rpc_get_profile
+alter table public.profiles add column if not exists avatar_url text;
 
 create table if not exists public.friend_requests (
   id uuid primary key default gen_random_uuid(),
@@ -98,6 +101,31 @@ create table if not exists public.profile_likes (
   created_at timestamptz not null default now(),
   primary key (profile_id, liker_id)
 );
+
+-- ---------- Storage: аватары ----------
+-- Публичный бакет — сами картинки не секрет, а чтение публичного файла по
+-- прямой ссылке не требует токена/сессии, поэтому такой URL можно просто
+-- отдавать друзьям как обычную картинку (см. rpc_set_avatar_url). Заливать/
+-- менять/удалять при этом можно только файлы в СВОЕЙ папке (папка = uid).
+insert into storage.buckets (id, name, public)
+values ('avatars', 'avatars', true)
+on conflict (id) do nothing;
+
+drop policy if exists "avatar public read" on storage.objects;
+create policy "avatar public read" on storage.objects
+  for select using (bucket_id = 'avatars');
+
+drop policy if exists "avatar own write" on storage.objects;
+create policy "avatar own write" on storage.objects
+  for insert with check (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "avatar own update" on storage.objects;
+create policy "avatar own update" on storage.objects
+  for update using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "avatar own delete" on storage.objects;
+create policy "avatar own delete" on storage.objects
+  for delete using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
 
 -- ---------- RLS ----------
 -- Прямой доступ к таблицам закрыт почти полностью: всё чтение/запись идёт
@@ -432,12 +460,12 @@ $$;
 
 drop function if exists public.rpc_list_friends();
 create or replace function public.rpc_list_friends()
-returns table(friend_id uuid, display_name text, friend_code text)
+returns table(friend_id uuid, display_name text, friend_code text, avatar_url text)
 language sql
 security definer
 set search_path = public
 as $$
-  select f.friend_id, coalesce(p.display_name, 'Без имени'), p.friend_code
+  select f.friend_id, coalesce(p.display_name, 'Без имени'), p.friend_code, p.avatar_url
   from public.friends f
   join public.profiles p on p.id = f.friend_id
   where f.user_id = auth.uid()
@@ -536,6 +564,20 @@ as $$
   update public.profiles set bio = nullif(left(trim(p_bio), 300), '') where id = auth.uid();
 $$;
 
+-- ---------- RPC: аватар ----------
+-- Саму заливку файла в Storage приложение делает отдельно (см. main.js) —
+-- эта функция только сохраняет итоговую публичную ссылку в профиль.
+
+drop function if exists public.rpc_set_avatar_url(text);
+create or replace function public.rpc_set_avatar_url(p_url text)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.profiles set avatar_url = nullif(trim(p_url), '') where id = auth.uid();
+$$;
+
 -- ---------- RPC: чужой профиль (сам себе тоже можно) ----------
 -- Открыть можно только свой профиль или профиль друга — иначе понятная ошибка
 -- (в интерфейсе профиль открывается только по клику на друга из списка друзей).
@@ -544,7 +586,8 @@ drop function if exists public.rpc_get_profile(uuid);
 create or replace function public.rpc_get_profile(p_user_id uuid)
 returns table(
   id uuid, username text, display_name text, bio text, friend_code text,
-  view_count bigint, friends_count bigint, comments_count bigint, likes_count bigint, liked_by_me boolean
+  view_count bigint, friends_count bigint, comments_count bigint, likes_count bigint, liked_by_me boolean,
+  avatar_url text
 )
 language plpgsql
 security definer
@@ -568,7 +611,8 @@ begin
       (select count(*) from public.friends f where f.user_id = p.id),
       (select count(*) from public.profile_comments c where c.profile_id = p.id),
       (select count(*) from public.profile_likes l where l.profile_id = p.id),
-      exists(select 1 from public.profile_likes l where l.profile_id = p.id and l.liker_id = auth.uid())
+      exists(select 1 from public.profile_likes l where l.profile_id = p.id and l.liker_id = auth.uid()),
+      p.avatar_url
     from public.profiles p
     where p.id = p_user_id;
 end;
@@ -744,6 +788,7 @@ revoke all on function public.rpc_send_message(uuid, text) from public;
 revoke all on function public.rpc_list_messages(uuid, int) from public;
 revoke all on function public.rpc_mark_messages_read(uuid) from public;
 revoke all on function public.rpc_set_bio(text) from public;
+revoke all on function public.rpc_set_avatar_url(text) from public;
 revoke all on function public.rpc_get_profile(uuid) from public;
 revoke all on function public.rpc_toggle_profile_like(uuid) from public;
 revoke all on function public.rpc_upsert_bookmark(text, text, text, text) from public;
@@ -771,6 +816,7 @@ grant execute on function public.rpc_send_message(uuid, text) to authenticated;
 grant execute on function public.rpc_list_messages(uuid, int) to authenticated;
 grant execute on function public.rpc_mark_messages_read(uuid) to authenticated;
 grant execute on function public.rpc_set_bio(text) to authenticated;
+grant execute on function public.rpc_set_avatar_url(text) to authenticated;
 grant execute on function public.rpc_get_profile(uuid) to authenticated;
 grant execute on function public.rpc_toggle_profile_like(uuid) to authenticated;
 grant execute on function public.rpc_upsert_bookmark(text, text, text, text) to authenticated;

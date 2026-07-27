@@ -627,6 +627,15 @@ function escapeHtml(s) {
   return String(s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// общий рендер аватарки друга — картинка, если она есть и загрузилась, иначе
+// буква имени (как было раньше). Используется везде, где показывается друг:
+// список друзей, стопка «в сети», шапка чата, окно профиля друга.
+function avatarInnerHtml(name, avatarUrl) {
+  const initial = escapeHtml((name || '?').trim().charAt(0).toUpperCase());
+  if (!avatarUrl) return initial;
+  return `<img class="avatar-img" src="${escapeHtml(avatarUrl)}" alt="" onerror="this.style.display='none'" />`;
+}
+
 // по префиксу id главы (rm:/wa:/mb:/без префикса — MangaDex) определяем,
 // с какого сайта реально пришли показанные главы — раньше это можно было
 // только гадать (у WaManga/MangaBuff у глав нет названий), теперь показываем
@@ -1857,11 +1866,10 @@ function friendQuickRow(f) {
   const row = document.createElement('div');
   row.className = 'chat-list-item';
   const name = f.display_name || 'Без имени';
-  const initial = name.trim().charAt(0).toUpperCase();
   const online = onlineFriendIds.has(f.friend_id);
   row.innerHTML = `
     <span class="chat-list-item-avatar">
-      ${escapeHtml(initial)}
+      ${avatarInnerHtml(name, f.avatar_url)}
       ${online ? '<span class="chat-list-item-online-dot" title="В сети"></span>' : ''}
     </span>
     <div class="chat-list-item-info">
@@ -2344,10 +2352,9 @@ function friendRow(f) {
   const unread = unreadFriendIds.has(f.friend_id);
   const online = onlineFriendIds.has(f.friend_id);
   const name = f.display_name || 'Без имени';
-  const initial = name.trim().charAt(0).toUpperCase();
   row.innerHTML = `
     <span class="chat-list-item-avatar">
-      ${escapeHtml(initial)}
+      ${avatarInnerHtml(name, f.avatar_url)}
       ${online ? '<span class="chat-list-item-online-dot" title="В сети"></span>' : ''}
       ${unread ? '<span class="chat-list-item-unread" title="Новое сообщение"></span>' : ''}
     </span>
@@ -2388,7 +2395,7 @@ function renderRailOnlineFriends() {
     btn.type = 'button';
     btn.className = 'rail-online-avatar';
     btn.title = `${name} — в сети`;
-    btn.innerHTML = `${escapeHtml(name.trim().charAt(0).toUpperCase())}<span class="rail-online-avatar-dot"></span>`;
+    btn.innerHTML = `${avatarInnerHtml(name, f.avatar_url)}<span class="rail-online-avatar-dot"></span>`;
     btn.addEventListener('click', () => {
       showView('friends');
       openChat(f.friend_id, name);
@@ -2528,7 +2535,7 @@ async function openChat(friendId, name) {
   els.chatPanePlaceholder.hidden = true;
   els.chatPaneActive.hidden = false;
   els.chatTitle.textContent = name;
-  els.chatAvatar.textContent = (name || '?').trim().charAt(0).toUpperCase();
+  els.chatAvatar.innerHTML = avatarInnerHtml(name, friendsList.find((f) => f.friend_id === friendId)?.avatar_url);
   updateChatOnlineLabel();
   els.chatBody.innerHTML = '<p class="empty-hint" style="padding:20px;">Загружаю сообщения…</p>';
   try {
@@ -2785,7 +2792,7 @@ async function openFriendProfile(friendId, name) {
   activeFriendProfile = { friendId, name };
   els.friendProfileOverlay.hidden = false;
   els.friendProfileName.textContent = name;
-  els.friendProfileAvatar.textContent = (name || '?').trim().charAt(0).toUpperCase();
+  els.friendProfileAvatar.innerHTML = avatarInnerHtml(name, friendsList.find((f) => f.friend_id === friendId)?.avatar_url);
   updateFriendProfileOnlineLabel();
   switchFriendProfileTab('profile');
 
@@ -2806,6 +2813,7 @@ async function openFriendProfile(friendId, name) {
     const profileData = await window.hanko.onlineGetProfile(friendId);
     if (profileData) {
       if (profileData.display_name) els.friendProfileName.textContent = profileData.display_name;
+      if (profileData.avatar_url) els.friendProfileAvatar.innerHTML = avatarInnerHtml(profileData.display_name || name, profileData.avatar_url);
       if (profileData.bio) {
         els.friendProfileBio.hidden = false;
         els.friendProfileBio.textContent = profileData.bio;
