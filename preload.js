@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('hanko', {
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
   focusApp: () => ipcRenderer.invoke('app:focus'),
   isDev: () => ipcRenderer.invoke('app:isDev'),
+  setFullScreen: (value) => ipcRenderer.invoke('app:setFullScreen', value),
   getNotificationIcon: () => ipcRenderer.invoke('app:notificationIcon'),
 
   listDownloads: () => ipcRenderer.invoke('downloads:list'),

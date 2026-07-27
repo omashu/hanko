@@ -213,6 +213,7 @@ const els = {
   animeGenreFilterRow: document.getElementById('animeGenreFilterRow'),
   animeFiltersResetBtn: document.getElementById('animeFiltersResetBtn'),
   animeFiltersApplyBtn: document.getElementById('animeFiltersApplyBtn'),
+  animeSourceAnilibria: document.getElementById('animeSourceAnilibria'),
   animeTitleModalBackdrop: document.getElementById('animeTitleModalBackdrop'),
   animeTitleModalClose: document.getElementById('animeTitleModalClose'),
   animeTitleModalBody: document.getElementById('animeTitleModalBody'),
@@ -1291,6 +1292,8 @@ async function openReader(item, chapter, opts = {}) {
     offline: !!opts.offline,
   };
   els.readerOverlay.hidden = false;
+  els.readerOverlay.classList.remove('is-chrome-hidden');
+  window.hanko.setFullScreen(true).catch(() => {});
   els.readerTitle.textContent = reader.title + (reader.offline ? ' (офлайн)' : '');
   els.readerBody.innerHTML = '<div class="reader-loading-skeleton"></div><div class="reader-loading-skeleton"></div>';
   setZoom(reader.zoom);
@@ -1428,6 +1431,13 @@ function renderReaderPages() {
   loadPagesQueued(tasks, PAGE_LOAD_CONCURRENCY);
 }
 
+// полноэкранное чтение: прячем/показываем шапку и подвал одним тапом по
+// странице — сама область чтения при этом не двигается, они просто плавающая
+// полупрозрачная панель поверх (см. #readerOverlay .reader-bottom в CSS)
+function setReaderChromeHidden(hidden) {
+  els.readerOverlay.classList.toggle('is-chrome-hidden', hidden);
+}
+
 function setReaderMode(mode) {
   reader.mode = mode;
   els.readerBody.classList.toggle('mode-paged', mode === 'paged');
@@ -1454,7 +1464,20 @@ function updateReaderProgress() {
 }
 
 els.readerBody.addEventListener('scroll', () => {
-  if (reader.mode === 'scroll') updateReaderProgress();
+  if (reader.mode !== 'scroll') return;
+  updateReaderProgress();
+  const el = els.readerBody;
+  // в самом низу главы (или почти) сами показываем шапку/подвал — иначе
+  // кнопку "следующая глава" было бы не достать без отдельного тапа
+  if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) setReaderChromeHidden(false);
+});
+
+// тап/клик по самой странице прячет или возвращает шапку и подвал — как в
+// большинстве читалок манги. Работает только по картинке страницы, а не по
+// пустому фону вокруг неё (иначе легко промахнуться мимо самого чтения).
+els.readerBody.addEventListener('click', (e) => {
+  if (!e.target.closest('.reader-page')) return;
+  setReaderChromeHidden(!els.readerOverlay.classList.contains('is-chrome-hidden'));
 });
 
 // масштаб страниц — общий для обоих режимов чтения (постранично и скролл),
@@ -1488,6 +1511,9 @@ function showPage(idx) {
   pages.forEach((p, i) => p.classList.toggle('is-current', i === reader.page));
   updatePageLabel();
   saveReaderProgress();
+  // на последней странице сама показываем шапку/подвал — иначе кнопку
+  // "следующая глава" было бы не достать, не тапнув по экрану отдельно
+  if (reader.page >= reader.pages.length - 1) setReaderChromeHidden(false);
 }
 
 function updatePageLabel() {
@@ -1539,7 +1565,11 @@ els.readerNext.addEventListener('click', () => {
 });
 els.readerModePaged.addEventListener('click', () => setReaderMode('paged'));
 els.readerModeScroll.addEventListener('click', () => setReaderMode('scroll'));
-els.readerBack.addEventListener('click', () => { els.readerOverlay.hidden = true; });
+function closeReader() {
+  els.readerOverlay.hidden = true;
+  window.hanko.setFullScreen(false).catch(() => {});
+}
+els.readerBack.addEventListener('click', closeReader);
 
 els.readerRefresh.addEventListener('click', async () => {
   if (!reader.chapterId || els.readerRefresh.classList.contains('is-loading')) return;
@@ -1564,7 +1594,7 @@ els.readerRefresh.addEventListener('click', async () => {
 
 document.addEventListener('keydown', (e) => {
   if (els.readerOverlay.hidden) return;
-  if (e.key === 'Escape') { els.readerOverlay.hidden = true; return; }
+  if (e.key === 'Escape') { closeReader(); return; }
 
   if (e.ctrlKey || e.metaKey) {
     if (e.key === '+' || e.key === '=') { e.preventDefault(); setZoom((reader.zoom || 1) + ZOOM_STEP); return; }
