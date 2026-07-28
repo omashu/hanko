@@ -54,7 +54,7 @@
     <header class="view-header">
       <div>
         <h1>Hanko</h1>
-        <p class="view-sub">Стартовая страница — что сейчас популярно на MangaDex и AniList.</p>
+        <p class="view-sub">Свежее и популярное — с чего можно начать прямо сейчас.</p>
       </div>
     </header>
 
@@ -87,7 +87,7 @@
     <header class="view-header">
       <div>
         <h1>Манга и манхва</h1>
-        <p class="view-sub">Поиск по открытому каталогу MangaDex — читаем прямо тут, ничего не скачивая насовсем.</p>
+        <p class="view-sub">Ищи любимую мангу и манхву и читай прямо здесь.</p>
       </div>
       <form id="mangaSearchForm" class="search-form">
         <input id="mangaSearchInput" type="text" placeholder="Название тайтла…" autocomplete="off" />
@@ -133,7 +133,7 @@
     <header class="view-header">
       <div>
         <h1>Аниме</h1>
-        <p class="view-sub">Поиск по открытому каталогу AniLibria — смотрим прямо тут, свой плеер, без рекламы.</p>
+        <p class="view-sub">Ищи аниме и смотри прямо здесь — свой плеер, без рекламы.</p>
       </div>
       <form id="animeSearchForm" class="search-form">
         <input id="animeSearchInput" type="text" placeholder="Название тайтла…" autocomplete="off" />
@@ -170,7 +170,7 @@
     <header class="view-header">
       <div>
         <h1>Профиль</h1>
-        <p class="view-sub">Имя, аватар и закладки — только на этом компьютере. Друзья и чат — через аккаунт (см. ниже).</p>
+        <p class="view-sub">Имя, аватар, закладки, история и друзья — всё в одном месте.</p>
       </div>
     </header>
 
@@ -337,6 +337,11 @@
             </button>
           </header>
           <div class="chat-body" id="chatBody"></div>
+          <div class="chat-sticker-attach" id="chatStickerAttach" hidden>
+            <img id="chatStickerAttachImg" alt="" />
+            <span>Стикер прикреплён — можно дописать сообщение и отправить вместе</span>
+            <button type="button" class="icon-btn" id="chatStickerAttachRemove" title="Убрать стикер">✕</button>
+          </div>
           <form class="chat-input-row" id="chatForm">
             <button type="button" class="icon-btn" id="chatShareBtn" title="Стикеры и тайтлы">
               <svg viewBox="0 0 24 24" width="19" height="19"><path d="M12 4v16M4 12h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
@@ -483,7 +488,11 @@
       </div>
 
       <div class="share-panel" id="shareStickerPanel">
-        <div class="sticker-grid" id="stickerGrid"></div>
+        <div class="sticker-categories" id="stickerCategories"></div>
+        <div id="stickerGridWrap" hidden>
+          <button type="button" class="btn-secondary sticker-back-btn" id="stickerBackBtn">← Категории</button>
+          <div class="sticker-grid" id="stickerGrid"></div>
+        </div>
       </div>
       <div class="share-panel" id="shareTitlesPanel" hidden>
         <p class="empty-hint" id="shareTitlesEmpty">В библиотеке пока пусто.</p>
@@ -543,6 +552,7 @@
           </button>
           <span id="animePlayerTitle" class="reader-title"></span>
           <div class="reader-actions">
+            <select id="animeTranslationSelect" class="filter-select" style="width:auto;"></select>
             <select id="animeQualitySelect" class="filter-select" style="width:auto;"></select>
           </div>
         </header>

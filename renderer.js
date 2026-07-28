@@ -98,6 +98,9 @@ const els = {
   shareNoteInput: document.getElementById('shareNoteInput'),
   shareStickerPanel: document.getElementById('shareStickerPanel'),
   shareTitlesPanel: document.getElementById('shareTitlesPanel'),
+  stickerCategories: document.getElementById('stickerCategories'),
+  stickerGridWrap: document.getElementById('stickerGridWrap'),
+  stickerBackBtn: document.getElementById('stickerBackBtn'),
   stickerGrid: document.getElementById('stickerGrid'),
   shareTitlesEmpty: document.getElementById('shareTitlesEmpty'),
   shareTitlesList: document.getElementById('shareTitlesList'),
@@ -118,6 +121,9 @@ const els = {
   chatTitle: document.getElementById('chatTitle'),
   chatOnlineLabel: document.getElementById('chatOnlineLabel'),
   chatBody: document.getElementById('chatBody'),
+  chatStickerAttach: document.getElementById('chatStickerAttach'),
+  chatStickerAttachImg: document.getElementById('chatStickerAttachImg'),
+  chatStickerAttachRemove: document.getElementById('chatStickerAttachRemove'),
   chatForm: document.getElementById('chatForm'),
   chatInput: document.getElementById('chatInput'),
 
@@ -221,6 +227,7 @@ const els = {
   animePlayerBack: document.getElementById('animePlayerBack'),
   animePlayerTitle: document.getElementById('animePlayerTitle'),
   animeQualitySelect: document.getElementById('animeQualitySelect'),
+  animeTranslationSelect: document.getElementById('animeTranslationSelect'),
   animeVideo: document.getElementById('animeVideo'),
   animeEpPrevBtn: document.getElementById('animeEpPrevBtn'),
   animeEpNextBtn: document.getElementById('animeEpNextBtn'),
@@ -314,6 +321,21 @@ let downloads = [];
 let readingHistory = [];
 let animeLibrary = [];
 let animeHistory = [];
+// список категорий/gif стикеров с диска (assets/stickers/), грузится один раз
+// при старте — нужен и для рендера уже полученных стикеров в чате (у обоих
+// собеседников один и тот же набор файлов в установке), и для самого пикера
+let stickerCategories = [];
+// стикер, выбранный в попапе "Поделиться", но ещё не отправленный — ждёт,
+// пока человек допишет текст (или сразу нажмёт "Отправить" без текста)
+let pendingSticker = null;
+
+function findStickerByKey(key) {
+  for (const cat of stickerCategories) {
+    const found = cat.stickers.find((s) => s.key === key);
+    if (found) return found;
+  }
+  return null;
+}
 let profile = null;
 
 let onlineState = { ready: false, connecting: true, error: null, myId: null, friendCode: null };
@@ -580,7 +602,7 @@ function mangaCard(item, { inLibrary }) {
     addBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       await window.hanko.upsertLibraryItem({
-        id: item.id, title: item.title, coverUrl: item.coverUrl, status: item.status,
+        id: item.id, title: item.title, coverUrl: item.coverUrl, status: item.status, description: item.description, rating: item.rating,
       });
       syncBookmarkUpsert(item);
       library = await window.hanko.loadLibrary();
@@ -913,15 +935,33 @@ async function openTitleModal(item) {
   els.titleModalBackdrop.hidden = false;
   els.titleModalBody.innerHTML = '<p class="empty-hint">Загружаю главы…</p>';
   try {
-    // карточки ReManga из поиска приходят без описания/статуса (их нет в ответе
-    // каталога) — подгружаем один раз при открытии, до отрисовки модалки
-    if (item.id.startsWith('rm:') && !item.description) {
+    // старые закладки/история могли сохраниться ещё до того, как описание
+    // вообще стало частью library-записи — а у ReManga/MangaBuff его вдобавок
+    // никогда не бывает в самом поиске. Молча подтягиваем один раз при открытии.
+    if (!item.description) {
       try {
-        const details = await window.hanko.remangaDetails(item.id);
-        if (details) {
-          item = { ...item, description: details.description, status: details.status || item.status };
+        if (item.id.startsWith('rm:')) {
+          const details = await window.hanko.remangaDetails(item.id);
+          if (details) item = { ...item, description: details.description, status: details.status || item.status };
+        } else if (item.id.startsWith('wa:')) {
+          const details = await window.hanko.wamangaDetails(item.title);
+          if (details?.description) item = { ...item, description: details.description };
+        } else if (!item.id.startsWith('mb:')) {
+          // обычный id MangaDex, без префикса
+          const details = await window.hanko.mangadexDetails(item.id);
+          if (details?.description) item = { ...item, description: details.description };
         }
-      } catch { /* тихо остаёмся без описания, если ReManga недоступен */ }
+        // у mb: (MangaBuff) описания сейчас нет и в самом поиске — оставляем
+        // пустым, отдельная доработка парсера самого сайта, не решается тут
+      } catch { /* тихо остаёмся без описания, если источник недоступен */ }
+      // всё ещё пусто (например, на MangaDex этот тайтл просто без русского
+      // описания) — последний шанс: поищем то же название на ReManga/WaManga
+      if (!item.description) {
+        try {
+          const found = await window.hanko.findRuDescription(item.title);
+          if (found?.description) item = { ...item, description: found.description };
+        } catch { /* и здесь не нашлось — значит просто нет */ }
+      }
     }
     const allChapters = await window.hanko.mangadexChapters(item.id, item.title);
     const inLibrary = library.some((l) => l.id === item.id);
@@ -993,7 +1033,7 @@ async function openTitleModal(item) {
         await window.hanko.removeLibraryItem(item.id);
         syncBookmarkRemove(item.id);
       } else {
-        await window.hanko.upsertLibraryItem({ id: item.id, title: item.title, coverUrl: item.coverUrl, status: item.status });
+        await window.hanko.upsertLibraryItem({ id: item.id, title: item.title, coverUrl: item.coverUrl, status: item.status, description: item.description, rating: item.rating });
         syncBookmarkUpsert(item);
       }
       library = await window.hanko.loadLibrary();
@@ -1656,11 +1696,13 @@ function animeLibraryCard(item) {
   const fold = hist
     ? `<div class="card-fold"></div><span class="card-fold-label">${escapeHtml(hist.episodeLabel || '')}</span>`
     : '';
+  const statusRu = item.status ? (MANGA_STATUS_RU[item.status] || item.status) : '';
   card.innerHTML = `
     ${fold}
     <img class="card-cover" src="${item.coverUrl || ''}" alt="" loading="lazy" onerror="this.style.opacity=0" />
     <div class="card-body">
       <p class="card-title">${escapeHtml(item.title)}</p>
+      <p class="card-meta">${escapeHtml(statusRu)}</p>
     </div>
     <button class="card-add" title="Убрать из закладок">✕</button>
   `;
@@ -2531,7 +2573,22 @@ function chatBubble(msg) {
 
   if (rich && rich.kind === 'sticker') {
     bubble.className = `chat-bubble chat-bubble--sticker ${mine ? 'is-mine' : 'is-theirs'}`;
-    bubble.innerHTML = `${escapeHtml(rich.emoji)}<span class="chat-bubble-time">${escapeHtml(time)}${readTick}</span>`;
+    // старые сообщения (до перехода на кастомные gif) хранили просто эмодзи —
+    // оставляем их отображение как было, чтобы история чата не сломалась
+    if (rich.emoji) {
+      bubble.innerHTML = `${escapeHtml(rich.emoji)}<span class="chat-bubble-time">${escapeHtml(time)}${readTick}</span>`;
+      return bubble;
+    }
+    const sticker = findStickerByKey(rich.key);
+    bubble.innerHTML = `
+      <div class="sticker-bubble-box">
+        ${sticker
+          ? `<img src="${sticker.url}" alt="" loading="lazy" />`
+          : '<span class="sticker-bubble-missing">🖼️<br>стикер недоступен</span>'}
+      </div>
+      ${rich.caption ? `<div class="sticker-bubble-caption">${escapeHtml(rich.caption)}</div>` : ''}
+      <span class="chat-bubble-time">${escapeHtml(time)}${readTick}</span>
+    `;
     return bubble;
   }
 
@@ -2625,21 +2682,42 @@ async function sendChatPayload(body) {
   }
 }
 
+// прикрепляет стикер к форме чата — сам ещё не отправляется, ждёт, пока
+// человек допишет текст (необязательно) и нажмёт "Отправить"
+function attachStickerToChat(sticker) {
+  pendingSticker = sticker;
+  els.chatStickerAttachImg.src = sticker.url;
+  els.chatStickerAttach.hidden = false;
+  els.chatInput.focus();
+}
+function clearAttachedSticker() {
+  pendingSticker = null;
+  els.chatStickerAttachImg.src = '';
+  els.chatStickerAttach.hidden = true;
+}
+els.chatStickerAttachRemove.addEventListener('click', clearAttachedSticker);
+
 els.chatForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const body = els.chatInput.value.trim();
-  if (!body || !activeChat) return;
+  if (!activeChat) return;
+  const text = els.chatInput.value.trim();
+  if (!text && !pendingSticker) return;
   els.chatInput.value = '';
-  await sendChatPayload(body);
+  if (pendingSticker) {
+    const sticker = pendingSticker;
+    clearAttachedSticker();
+    await sendChatPayload(encodeRichMessage({ kind: 'sticker', key: sticker.key, caption: text || undefined }));
+  } else {
+    await sendChatPayload(text);
+  }
 });
 
-// ---------------- попап «поделиться»: стикеры + тайтлы/главы из библиотеки ----------------
-
-const STICKER_SET = ['😀', '😂', '😍', '👍', '🔥', '😢', '😮', '🎉', '❤️', '😴', '🤔', '👀', '😭', '🥳', '🙏', '💀'];
+// ---------------- попап «поделиться»: стикеры (по категориям) + тайтлы/главы из библиотеки ----------------
 
 function openShareModal() {
   els.shareNoteInput.value = '';
-  renderStickerGrid();
+  renderStickerCategories();
+  showStickerCategories();
   renderShareTitlesList();
   switchShareTab('stickers');
   els.shareModalBackdrop.hidden = false;
@@ -2654,20 +2732,49 @@ function switchShareTab(tab) {
   els.shareTitlesPanel.hidden = isStickers;
 }
 
-function renderStickerGrid() {
+// шаг 1: плитки категорий (название папки = название категории)
+function showStickerCategories() {
+  els.stickerCategories.hidden = false;
+  els.stickerGridWrap.hidden = true;
+}
+function renderStickerCategories() {
+  els.stickerCategories.innerHTML = '';
+  if (!stickerCategories.length) {
+    els.stickerCategories.innerHTML = '<p class="empty-hint">Стикеры не найдены — положи gif-файлы в assets/stickers.</p>';
+    return;
+  }
+  for (const cat of stickerCategories) {
+    const tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = 'sticker-category-tile';
+    const preview = cat.stickers[0];
+    tile.innerHTML = `
+      <img src="${preview ? preview.url : ''}" alt="" loading="lazy" onerror="this.style.opacity=0" />
+      <span>${escapeHtml(cat.name)}</span>
+    `;
+    tile.addEventListener('click', () => openStickerCategory(cat));
+    els.stickerCategories.appendChild(tile);
+  }
+}
+
+// шаг 2: сетка стикеров внутри выбранной категории
+function openStickerCategory(cat) {
+  els.stickerCategories.hidden = true;
+  els.stickerGridWrap.hidden = false;
   els.stickerGrid.innerHTML = '';
-  for (const emoji of STICKER_SET) {
+  for (const sticker of cat.stickers) {
     const btn = document.createElement('button');
-    btn.className = 'sticker-btn';
     btn.type = 'button';
-    btn.textContent = emoji;
-    btn.addEventListener('click', async () => {
+    btn.className = 'sticker-btn';
+    btn.innerHTML = `<img src="${sticker.url}" alt="" loading="lazy" onerror="this.style.opacity=0" />`;
+    btn.addEventListener('click', () => {
       closeShareModal();
-      await sendChatPayload(encodeRichMessage({ kind: 'sticker', emoji }));
+      attachStickerToChat(sticker);
     });
     els.stickerGrid.appendChild(btn);
   }
 }
+els.stickerBackBtn.addEventListener('click', showStickerCategories);
 
 function shareTitleRow(item) {
   const row = document.createElement('div');
@@ -2744,11 +2851,12 @@ function updateFriendProfileOnlineLabel() {
 function friendBookmarkCard(item) {
   const card = document.createElement('div');
   card.className = 'card';
+  const statusRu = item.status ? (MANGA_STATUS_RU[item.status] || item.status) : '';
   card.innerHTML = `
     <img class="card-cover" src="${item.cover_url || ''}" alt="" loading="lazy" onerror="this.style.opacity=0" />
     <div class="card-body">
       <p class="card-title">${escapeHtml(item.title)}</p>
-      <p class="card-meta">${item.status ? escapeHtml(item.status) : ''}</p>
+      <p class="card-meta">${escapeHtml(statusRu)}</p>
     </div>
   `;
   // раньше карточка ничего не делала по клику — теперь открывает тайтл в
@@ -2932,7 +3040,7 @@ function playNotificationSound() {
 
 function richPreviewText(rich) {
   if (!rich) return '';
-  if (rich.kind === 'sticker') return rich.emoji;
+  if (rich.kind === 'sticker') return rich.emoji || `Стикер${rich.caption ? ': ' + rich.caption : ''}`;
   if (rich.kind === 'share_title') return `Поделился(-ась) тайтлом «${rich.title}»`;
   if (rich.kind === 'share_chapter') return `Поделился(-ась) главой «${rich.title}»`;
   return 'Сообщение';
@@ -3025,13 +3133,14 @@ window.hanko.onOnlineEvent(async (event) => {
 // ---------------- старт ----------------
 
 async function init() {
-  const [settings, lib, downloadsList, historyList, animeLibList, animeHistList] = await Promise.all([
+  const [settings, lib, downloadsList, historyList, animeLibList, animeHistList, stickersResult] = await Promise.all([
     window.hanko.loadSettings(),
     window.hanko.loadLibrary(),
     window.hanko.listDownloads(),
     window.hanko.loadHistory(),
     window.hanko.loadAnimeLibrary(),
     window.hanko.loadAnimeHistory(),
+    window.hanko.listStickers(),
   ]);
   isDevMode = await window.hanko.isDev();
   library = lib;
@@ -3039,6 +3148,7 @@ async function init() {
   readingHistory = historyList;
   animeLibrary = animeLibList;
   animeHistory = animeHistList;
+  stickerCategories = stickersResult.categories || [];
   applyTheme(settings.theme);
   renderLibrary();
   renderAnimeLibrary();
@@ -3378,7 +3488,34 @@ els.animeFiltersResetBtn.addEventListener('click', () => {
 });
 
 async function openAnimeTitleModal(item) {
+  if (!item.description && item.id.startsWith('al:')) {
+    try {
+      const details = await window.hanko.anilibriaDetails(item.id);
+      if (details?.description) item = { ...item, description: details.description };
+    } catch { /* тихо остаёмся без описания, если AniLibria недоступна */ }
+  }
   const inLibrary = animeLibrary.some((l) => l.id === item.id);
+  const libItem = animeLibrary.find((l) => l.id === item.id);
+  const historyEntry = animeHistory.find((h) => h.releaseId === item.id);
+
+  const noteBlock = inLibrary
+    ? `<div class="title-note">
+         <label for="animeTitleNoteInput">Заметка</label>
+         <input id="animeTitleNoteInput" type="text" placeholder="напр. жду новую озвучку" value="${escapeHtml(libItem?.note || '')}" />
+       </div>`
+    : '';
+
+  const commentsBlock = inLibrary
+    ? `<div class="title-comments">
+         <h3 class="section-title section-title--sub">Комментарии</h3>
+         <form class="comment-form" id="animeCommentForm">
+           <input id="animeCommentInput" type="text" placeholder="Написать мысль про тайтл…" autocomplete="off" maxlength="500" />
+           <button type="submit" class="btn-secondary">Добавить</button>
+         </form>
+         <div id="animeCommentsList"></div>
+       </div>`
+    : '';
+
   els.animeTitleModalBackdrop.hidden = false;
   els.animeTitleModalBody.innerHTML = `
     <div class="title-modal-header">
@@ -3391,41 +3528,165 @@ async function openAnimeTitleModal(item) {
         </button>
       </div>
     </div>
-    <h3 class="section-title">Серии</h3>
+    ${noteBlock}
+    ${commentsBlock}
+    <div class="chapter-list-header">
+      <h3 class="section-title">Серии</h3>
+      ${historyEntry ? `<button class="btn-secondary" id="animeContinueBtn" type="button">Продолжить — ${escapeHtml(historyEntry.episodeLabel || '')}</button>` : ''}
+    </div>
     <div class="chapter-list" id="animeEpisodeList"><p class="empty-hint">Загружаю…</p></div>
   `;
   document.getElementById('animeLibToggleBtn').addEventListener('click', async () => {
     if (animeLibrary.some((l) => l.id === item.id)) {
       await window.hanko.removeAnimeLibraryItem(item.id);
     } else {
-      await window.hanko.upsertAnimeLibraryItem({ id: item.id, title: item.title, coverUrl: item.coverUrl });
+      await window.hanko.upsertAnimeLibraryItem({ id: item.id, title: item.title, coverUrl: item.coverUrl, status: item.status, description: item.description });
     }
     animeLibrary = await window.hanko.loadAnimeLibrary();
     renderAnimeLibrary();
     openAnimeTitleModal(item);
   });
-  try {
-    const episodes = await window.hanko.anilibriaEpisodes(item.id);
-    const list = document.getElementById('animeEpisodeList');
-    if (!episodes.length) {
-      list.innerHTML = '<p class="empty-hint">Серий пока не нашлось.</p>';
-      return;
-    }
-    list.innerHTML = '';
-    for (let i = 0; i < episodes.length; i++) {
-      const ep = episodes[i];
-      const row = document.createElement('div');
-      row.className = 'chapter-row';
-      row.innerHTML = `<div class="chapter-row-main"><span class="chapter-row-label">Серия ${escapeHtml(ep.chapter)}${ep.title ? ' — ' + escapeHtml(ep.title) : ''}</span></div>`;
-      row.addEventListener('click', () => openAnimePlayer(item, episodes, i));
-      list.appendChild(row);
-    }
-  } catch (err) {
-    document.getElementById('animeEpisodeList').innerHTML = `<p class="empty-hint">Не удалось получить серии: ${escapeHtml(err.message)}</p>`;
+
+  const animeNoteInput = document.getElementById('animeTitleNoteInput');
+  if (animeNoteInput) {
+    let animeNoteTimer = null;
+    animeNoteInput.addEventListener('input', () => {
+      clearTimeout(animeNoteTimer);
+      animeNoteTimer = setTimeout(async () => {
+        await window.hanko.setAnimeLibraryNote({ id: item.id, note: animeNoteInput.value });
+        animeLibrary = await window.hanko.loadAnimeLibrary();
+        renderAnimeLibrary();
+      }, 500);
+    });
   }
+
+  const animeCommentForm = document.getElementById('animeCommentForm');
+  if (animeCommentForm) {
+    function renderAnimeComments() {
+      const listEl = document.getElementById('animeCommentsList');
+      const currentLib = animeLibrary.find((l) => l.id === item.id);
+      const comments = (currentLib && currentLib.comments) || [];
+      if (!comments.length) {
+        listEl.innerHTML = '<p class="empty-hint">Пока пусто — можешь оставить первую мысль о тайтле.</p>';
+        return;
+      }
+      listEl.innerHTML = '';
+      for (const c of comments) {
+        const row = document.createElement('div');
+        row.className = 'comment-row';
+        const date = new Date(c.createdAt).toLocaleString('ru-RU', {
+          day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+        });
+        row.innerHTML = `
+          <div class="comment-row-head">
+            <span class="comment-row-date">${escapeHtml(date)}</span>
+            <button class="friend-request-remove" title="Удалить">✕</button>
+          </div>
+          <div class="comment-row-text">${escapeHtml(c.text)}</div>
+        `;
+        row.querySelector('.friend-request-remove').addEventListener('click', async () => {
+          animeLibrary = await window.hanko.removeAnimeLibraryComment({ id: item.id, commentId: c.id });
+          renderAnimeLibrary();
+          renderAnimeComments();
+        });
+        listEl.appendChild(row);
+      }
+    }
+
+    animeCommentForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const input = document.getElementById('animeCommentInput');
+      const text = input.value.trim();
+      if (!text) return;
+      animeLibrary = await window.hanko.addAnimeLibraryComment({ id: item.id, text });
+      input.value = '';
+      renderAnimeLibrary();
+      renderAnimeComments();
+    });
+
+    renderAnimeComments();
+  }
+
+  const list = document.getElementById('animeEpisodeList');
+  // ждём оба источника сразу (Promise.allSettled — если один упал, не роняем второй)
+  const [aniResult, aoResult] = await Promise.allSettled([
+    window.hanko.anilibriaEpisodes(item.id),
+    window.hanko.animeonFindForTitle(item.title),
+  ]);
+  if (!list.isConnected) return; // модалку уже закрыли/сменили тайтл, пока ждали ответ
+
+  const aniEpisodes = aniResult.status === 'fulfilled' ? aniResult.value : [];
+  const aoTranslations = (aoResult.status === 'fulfilled' && aoResult.value) ? aoResult.value.translations : [];
+  const unified = buildUnifiedAnimeEpisodes(aniEpisodes, aoTranslations);
+
+  if (!unified.length) {
+    list.innerHTML = '<p class="empty-hint">Серий пока не нашлось ни на одном источнике.</p>';
+    return;
+  }
+  // ищем серию из истории просмотра не по сохранённому индексу (список мог
+  // измениться — вышли новые серии), а по номеру серии, как в подписи —
+  // так надёжнее
+  const continueIndex = historyEntry
+    ? unified.findIndex((ep) => `Серия ${ep.number}` === historyEntry.episodeLabel)
+    : -1;
+
+  list.innerHTML = '';
+  let continueRow = null;
+  for (let i = 0; i < unified.length; i++) {
+    const ep = unified[i];
+    const isCurrent = i === continueIndex;
+    const row = document.createElement('div');
+    row.className = `chapter-row${isCurrent ? ' chapter-row--current' : ''}`;
+    const word = ep.sources.length === 1 ? 'озвучка' : (ep.sources.length < 5 ? 'озвучки' : 'озвучек');
+    row.innerHTML = `<div class="chapter-row-main"><span class="chapter-row-label">Серия ${escapeHtml(ep.number)}</span>${isCurrent ? '<span class="chapter-row-current-badge">Смотришь</span>' : ''}<span class="lang-tag">${ep.sources.length} ${word}</span></div>`;
+    row.addEventListener('click', () => openAnimePlayer(item, unified, i));
+    list.appendChild(row);
+    if (isCurrent) continueRow = row;
+  }
+
+  const continueBtn = document.getElementById('animeContinueBtn');
+  if (continueBtn) {
+    continueBtn.addEventListener('click', () => {
+      openAnimePlayer(item, unified, continueIndex >= 0 ? continueIndex : historyEntry.episodeIndex);
+    });
+  }
+  // сразу проматываем список к той серии, на которой остановились — не нужно
+  // листать вручную, чтобы её найти
+  if (continueRow) continueRow.scrollIntoView({ block: 'center' });
+}
+
+// объединяем серии AniLibria (качества уже готовы) и всех студий AnimeOn
+// (качества добываются лениво через resolve, только когда реально откроют) в
+// единый список по номеру серии — у одной серии может быть сразу несколько
+// источников озвучки, и не у каждой серии их поровну (например у 9-й серии
+// озвучек может быть меньше, чем у более ранних, если не все студии её ещё
+// перевели) — это нормально, просто показываем сколько есть по факту
+function buildUnifiedAnimeEpisodes(aniEpisodes, aoTranslations) {
+  const byNumber = new Map();
+  const get = (num) => {
+    if (!byNumber.has(num)) byNumber.set(num, { number: num, sources: [] });
+    return byNumber.get(num);
+  };
+  for (const ep of aniEpisodes) {
+    get(ep.chapter).sources.push({ name: 'AniLibria', qualities: ep.qualities });
+  }
+  for (const t of aoTranslations) {
+    for (const ep of t.episodes) {
+      get(String(ep.number)).sources.push({
+        name: t.studio,
+        qualities: null,
+        resolveFn: async () => {
+          const result = await window.hanko.animeonResolve(ep.link);
+          return result ? result.qualities : [];
+        },
+      });
+    }
+  }
+  return [...byNumber.values()].sort((a, b) => parseFloat(a.number) - parseFloat(b.number));
 }
 
 els.animeTitleModalClose.addEventListener('click', () => { els.animeTitleModalBackdrop.hidden = true; });
+
 els.animeTitleModalBackdrop.addEventListener('click', (e) => {
   if (e.target === els.animeTitleModalBackdrop) els.animeTitleModalBackdrop.hidden = true;
 });
@@ -3434,6 +3695,11 @@ els.animeTitleModalBackdrop.addEventListener('click', (e) => {
 // серию не нужно, docs самого hls.js рекомендуют переиспользовать loadSource
 let hlsPlayer = null;
 let animePlayerState = null; // { item, episodes, index }
+// последняя сохранённая (в секундах видео) позиция просмотра — не пишем в
+// историю на каждый timeupdate (он стреляет по несколько раз в секунду), а
+// примерно раз в 5 реальных секунд просмотра; сбрасывается при открытии новой
+// серии в openAnimePlayer()
+let animeLastPositionSave = 0;
 
 function attachAnimeSource(url) {
   const video = els.animeVideo;
@@ -3447,32 +3713,83 @@ function attachAnimeSource(url) {
   }
 }
 
-function openAnimePlayer(item, episodes, index) {
-  animePlayerState = { item, episodes, index };
+async function openAnimePlayer(item, episodes, index, preferredSourceName = null) {
   const ep = episodes[index];
+  let sourceIndex = 0;
+  if (preferredSourceName) {
+    const found = ep.sources.findIndex((s) => s.name === preferredSourceName);
+    if (found !== -1) sourceIndex = found;
+  }
+  animePlayerState = { item, episodes, index, sourceIndex };
+  animeLastPositionSave = 0;
+
   els.animePlayerOverlay.hidden = false;
-  els.animePlayerTitle.textContent = `${item.title} — серия ${ep.chapter}`;
   els.animeEpLabel.textContent = `${index + 1} / ${episodes.length}`;
   els.animeEpPrevBtn.disabled = index <= 0;
   els.animeEpNextBtn.disabled = index >= episodes.length - 1;
 
-  recordAnimeHistoryProgress({
-    releaseId: item.id, title: item.title, coverUrl: item.coverUrl || '',
-    episodeIndex: index, episodeLabel: `Серия ${ep.chapter}`,
-  });
+  els.animeTranslationSelect.innerHTML = ep.sources
+    .map((s, i) => `<option value="${i}">${escapeHtml(s.name)}</option>`).join('');
+  els.animeTranslationSelect.value = String(sourceIndex);
 
-  els.animeQualitySelect.innerHTML = ep.qualities
+  await loadAnimeSource(item, ep, sourceIndex);
+}
+
+// подгружает конкретный источник (озвучку) для текущей серии — качества
+// AniLibria уже готовы заранее, у AnimeOn добываются лениво через resolveFn
+async function loadAnimeSource(item, ep, sourceIndex) {
+  const source = ep.sources[sourceIndex];
+  els.animePlayerTitle.textContent = `${item.title} — ${source.name} — серия ${ep.number}`;
+
+  if (item.id) {
+    await recordAnimeHistoryProgress({
+      releaseId: item.id, title: item.title, coverUrl: item.coverUrl || '',
+      episodeIndex: animePlayerState.index, episodeLabel: `Серия ${ep.number}`,
+    });
+  }
+
+  let qualities = source.qualities;
+  if (!qualities && source.resolveFn) {
+    els.animeQualitySelect.innerHTML = '<option>Загружаю…</option>';
+    els.animeCenterBtn.hidden = true;
+    qualities = await source.resolveFn();
+    source.qualities = qualities; // кэшируем — повторный выбор той же озвучки не резолвит заново
+    // пока ждали ответ, могли уже переключиться на другую серию/озвучку/закрыть плеер
+    if (!animePlayerState || animePlayerState.episodes[animePlayerState.index] !== ep) return;
+  }
+  if (!qualities || !qualities.length) {
+    els.animeQualitySelect.innerHTML = '<option>Нет источника</option>';
+    return;
+  }
+
+  els.animeQualitySelect.innerHTML = qualities
     .map((q, i) => `<option value="${i}">${escapeHtml(q.label)}</option>`).join('');
-  const best = ep.qualities[0];
-  if (best) attachAnimeSource(best.url);
+  attachAnimeSource(qualities[0].url);
+  // если для этой же серии уже есть сохранённая позиция просмотра (в истории,
+  // см. anime-history:setPosition) — продолжаем именно с неё, а не с начала;
+  // совсем маленькие значения (только открыли и почти сразу закрыли) не
+  // учитываем, чтобы не перескакивать на пару секунд вперёд без надобности
+  const historyForThis = animeHistory.find((h) => h.releaseId === item.id && h.episodeLabel === `Серия ${ep.number}`);
+  if (historyForThis && historyForThis.positionSec > 3) {
+    const resumeAt = historyForThis.positionSec;
+    els.animeVideo.addEventListener('loadedmetadata', () => { els.animeVideo.currentTime = resumeAt; }, { once: true });
+  }
   syncAnimeControlsUI();
   showAnimeControls({ keepVisible: true });
 }
 
+els.animeTranslationSelect.addEventListener('change', () => {
+  if (!animePlayerState) return;
+  const { item, episodes, index } = animePlayerState;
+  const sourceIndex = Number(els.animeTranslationSelect.value);
+  animePlayerState.sourceIndex = sourceIndex;
+  loadAnimeSource(item, episodes[index], sourceIndex);
+});
+
 els.animeQualitySelect.addEventListener('change', () => {
   if (!animePlayerState) return;
-  const { episodes, index } = animePlayerState;
-  const q = episodes[index].qualities[Number(els.animeQualitySelect.value)];
+  const { episodes, index, sourceIndex } = animePlayerState;
+  const q = episodes[index].sources[sourceIndex].qualities?.[Number(els.animeQualitySelect.value)];
   if (q) {
     const time = els.animeVideo.currentTime;
     attachAnimeSource(q.url);
@@ -3481,6 +3798,18 @@ els.animeQualitySelect.addEventListener('change', () => {
 });
 
 function closeAnimePlayer() {
+  // если закрываем плеер, пока он в настоящем полноэкранном режиме (Fullscreen
+  // API на els.animePlayerBody) — сначала обязательно выходим из fullscreen,
+  // иначе overlay прячется, а браузер продолжает считать его "полноэкранным
+  // элементом": ничего вне плеера не реагирует на клики, пока не нажать Esc
+  if (isAnimeFullscreen()) document.exitFullscreen().catch(() => {});
+  // финальный флаш позиции — периодическое сохранение раз в ~5 сек могло не
+  // успеть сработать перед закрытием, а терять последние секунды не хочется
+  if (animePlayerState && animePlayerState.item.id && els.animeVideo.currentTime > 3) {
+    window.hanko.setAnimeHistoryPosition({
+      releaseId: animePlayerState.item.id, positionSec: els.animeVideo.currentTime,
+    }).catch(() => {});
+  }
   els.animePlayerOverlay.hidden = true;
   els.animeVideo.pause();
   els.animeVideo.removeAttribute('src');
@@ -3491,15 +3820,20 @@ function closeAnimePlayer() {
 }
 els.animePlayerBack.addEventListener('click', closeAnimePlayer);
 
+// при листании серий стараемся сохранить ту же озвучку, если у следующей/
+// предыдущей серии она тоже есть — если нет, откроется первая по списку
+// (обычно AniLibria, раз она добавляется в список первой)
 els.animeEpPrevBtn.addEventListener('click', () => {
   if (!animePlayerState || animePlayerState.index <= 0) return;
-  const { item, episodes, index } = animePlayerState;
-  openAnimePlayer(item, episodes, index - 1);
+  const { item, episodes, index, sourceIndex } = animePlayerState;
+  const preferredName = episodes[index].sources[sourceIndex]?.name;
+  openAnimePlayer(item, episodes, index - 1, preferredName);
 });
 els.animeEpNextBtn.addEventListener('click', () => {
   if (!animePlayerState || animePlayerState.index >= animePlayerState.episodes.length - 1) return;
-  const { item, episodes, index } = animePlayerState;
-  openAnimePlayer(item, episodes, index + 1);
+  const { item, episodes, index, sourceIndex } = animePlayerState;
+  const preferredName = episodes[index].sources[sourceIndex]?.name;
+  openAnimePlayer(item, episodes, index + 1, preferredName);
 });
 
 // ---------------- кастомные контролы плеера аниме ----------------
@@ -3564,7 +3898,16 @@ els.animePlayPauseBtn.addEventListener('click', toggleAnimePlayback);
 els.animeCenterBtn.addEventListener('click', toggleAnimePlayback);
 els.animeVideo.addEventListener('click', toggleAnimePlayback);
 els.animeVideo.addEventListener('play', () => { updateAnimePlayIcon(); armAnimeIdleTimer(); });
-els.animeVideo.addEventListener('pause', () => { updateAnimePlayIcon(); showAnimeControls({ keepVisible: true }); });
+els.animeVideo.addEventListener('pause', () => {
+  updateAnimePlayIcon();
+  showAnimeControls({ keepVisible: true });
+  if (animePlayerState && animePlayerState.item.id && els.animeVideo.currentTime > 3) {
+    animeLastPositionSave = els.animeVideo.currentTime;
+    window.hanko.setAnimeHistoryPosition({
+      releaseId: animePlayerState.item.id, positionSec: els.animeVideo.currentTime,
+    }).catch(() => {});
+  }
+});
 els.animeVideo.addEventListener('ended', () => { updateAnimePlayIcon(); showAnimeControls({ keepVisible: true }); });
 
 // ---- перемотка ±10 сек ----
@@ -3612,6 +3955,16 @@ els.animeVideo.addEventListener('timeupdate', () => {
   const ratio = els.animeVideo.duration ? els.animeVideo.currentTime / els.animeVideo.duration : 0;
   renderAnimeSeekUI(ratio);
   els.animeTimeCurrent.textContent = formatAnimeTime(els.animeVideo.currentTime);
+
+  // сохраняем позицию в истории просмотров не на каждый tick — раз в ~5 сек
+  // реального времени просмотра, чтобы не долбить IPC/диск понапрасну
+  if (animePlayerState && animePlayerState.item.id) {
+    const t = els.animeVideo.currentTime;
+    if (t - animeLastPositionSave >= 5) {
+      animeLastPositionSave = t;
+      window.hanko.setAnimeHistoryPosition({ releaseId: animePlayerState.item.id, positionSec: t }).catch(() => {});
+    }
+  }
 });
 els.animeVideo.addEventListener('loadedmetadata', () => {
   els.animeTimeDuration.textContent = formatAnimeTime(els.animeVideo.duration);

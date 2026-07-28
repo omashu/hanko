@@ -252,7 +252,6 @@ function createWindow() {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
-      webviewTag: true, // нужен для встроенной вкладки-браузера в разделе "Аниме"
     },
     autoHideMenuBar: true,
   });
@@ -310,6 +309,69 @@ ipcMain.handle('app:notificationIcon', () => {
     ? path.join(process.resourcesPath, 'app.asar.unpacked')
     : __dirname;
   return path.join(base, 'assets', 'icon.png');
+});
+
+// ---------- стикеры (кастомные gif, по категориям-папкам) ----------
+// Та же логика unpacked-пути, что и у иконки уведомлений — assets/**
+// физически лежит рядом с asar (см. asarUnpack в package.json), так что
+// обычный fs.readdir и file:// прекрасно работают и в собранном .exe.
+// Структура: assets/stickers/<Категория>/<файл>.gif — подпапка = категория
+// в интерфейсе (название папки = название категории, без отдельного
+// маппинга). Gif-файлы прямо в assets/stickers/ (не в подпапке) попадают
+// в отдельную категорию "Разное". Список читается заново при каждом вызове
+// (не кэшируется в main) — так что закинуть новый gif в папку и перезапустить
+// приложение достаточно, код трогать не нужно.
+function stickersBaseDir() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'assets', 'stickers')
+    : path.join(__dirname, 'assets', 'stickers');
+}
+
+ipcMain.handle('stickers:list', async () => {
+  const base = stickersBaseDir();
+  let entries;
+  try {
+    entries = await fs.readdir(base, { withFileTypes: true });
+  } catch {
+    return { categories: [] };
+  }
+  const categories = [];
+  const loose = [];
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      const dir = path.join(base, entry.name);
+      let files;
+      try {
+        files = (await fs.readdir(dir)).filter((f) => f.toLowerCase().endsWith('.gif'));
+      } catch {
+        files = [];
+      }
+      if (!files.length) continue;
+      categories.push({
+        name: entry.name,
+        stickers: files.map((f) => ({
+          name: f,
+          url: `file://${path.join(dir, f)}`,
+          // стабильный ключ для передачи в чат — не зависит от абсолютного пути
+          // на конкретном компьютере (у собеседника установка в другой папке)
+          key: `${entry.name}/${f}`,
+        })),
+      });
+    } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.gif')) {
+      loose.push(entry.name);
+    }
+  }
+  if (loose.length) {
+    categories.push({
+      name: 'Разное',
+      stickers: loose.map((f) => ({
+        name: f,
+        url: `file://${path.join(base, f)}`,
+        key: `Разное/${f}`,
+      })),
+    });
+  }
+  return { categories };
 });
 
 // ---------- автообновление (GitHub Releases, через electron-updater) ----------
@@ -472,9 +534,31 @@ ipcMain.handle('anime-history:load', () => loadAnimeHistory());
 
 ipcMain.handle('anime-history:progress', async (_e, { releaseId, title, coverUrl, episodeIndex, episodeLabel }) => {
   const items = await loadAnimeHistory();
+  const existing = items.find((i) => i.releaseId === releaseId);
+  // если это та же самая серия, что уже была последней в истории — не сбрасываем
+  // накопленную позицию воспроизведения (иначе смена качества/озвучки внутри
+  // той же серии обнуляла бы её на каждый вызов); для действительно новой
+  // серии начинаем с нуля
+  const keepPosition = existing && existing.episodeLabel === episodeLabel ? (existing.positionSec || 0) : 0;
   const filtered = items.filter((i) => i.releaseId !== releaseId);
-  filtered.unshift({ releaseId, title, coverUrl, episodeIndex, episodeLabel, updatedAt: Date.now() });
+  filtered.unshift({
+    releaseId, title, coverUrl, episodeIndex, episodeLabel,
+    positionSec: keepPosition,
+    updatedAt: Date.now(),
+  });
   return saveAnimeHistory(filtered);
+});
+
+// лёгкое обновление только позиции — вызывается часто (раз в ~5 сек во время
+// просмотра), поэтому не трогает остальные поля записи
+ipcMain.handle('anime-history:setPosition', async (_e, { releaseId, positionSec }) => {
+  const items = await loadAnimeHistory();
+  const idx = items.findIndex((i) => i.releaseId === releaseId);
+  if (idx >= 0) {
+    items[idx].positionSec = positionSec;
+    await saveAnimeHistory(items);
+  }
+  return true;
 });
 
 ipcMain.handle('anime-history:remove', async (_e, releaseId) => {
@@ -516,6 +600,42 @@ ipcMain.handle('library:removeComment', async (_e, { id, commentId }) => {
       (c) => c.id !== commentId
     );
     await saveLibrary(items);
+  }
+  return items;
+});
+
+ipcMain.handle('anime-library:note', async (_e, { id, note }) => {
+  const items = await loadAnimeLibrary();
+  const idx = items.findIndex((i) => i.id === id);
+  if (idx >= 0) {
+    items[idx].note = note;
+    await saveAnimeLibrary(items);
+  }
+  return items;
+});
+
+ipcMain.handle('anime-library:addComment', async (_e, { id, text }) => {
+  const clean = String(text || '').trim().slice(0, 500);
+  if (!clean) return loadAnimeLibrary();
+  const items = await loadAnimeLibrary();
+  const idx = items.findIndex((i) => i.id === id);
+  if (idx >= 0) {
+    const comments = Array.isArray(items[idx].comments) ? items[idx].comments : [];
+    comments.unshift({ id: `cm_${Date.now()}`, text: clean, createdAt: Date.now() });
+    items[idx].comments = comments;
+    await saveAnimeLibrary(items);
+  }
+  return items;
+});
+
+ipcMain.handle('anime-library:removeComment', async (_e, { id, commentId }) => {
+  const items = await loadAnimeLibrary();
+  const idx = items.findIndex((i) => i.id === id);
+  if (idx >= 0) {
+    items[idx].comments = (Array.isArray(items[idx].comments) ? items[idx].comments : []).filter(
+      (c) => c.id !== commentId
+    );
+    await saveAnimeLibrary(items);
   }
   return items;
 });
@@ -661,6 +781,17 @@ async function fetchRatings(ids) {
   }
 }
 
+// на MangaDex у части тайтлов после самого синопсиса community-редакторы
+// дописывают технический блок вида "---\n**Links:**\n- [Aniti on ANN](url)"
+// (ссылки на другие каталоги) — это не часть описания, а метаданные их вики,
+// отрезаем всё начиная с первого разделителя или самого "**Links**"
+function cleanMangaDescription(text) {
+  if (!text) return '';
+  let cleaned = text.split(/\r?\n\s*-{3,}\s*\r?\n/)[0];
+  cleaned = cleaned.split(/\*\*\s*links?\s*:?\s*\*\*/i)[0];
+  return cleaned.trim();
+}
+
 async function mapMangaList(data) {
   const items = (data.data || []).map((m) => {
     const cover = (m.relationships || []).find((r) => r.type === 'cover_art');
@@ -668,7 +799,10 @@ async function mapMangaList(data) {
     return {
       id: m.id,
       title: pickTitle(m.attributes),
-      description: (m.attributes?.description?.ru || m.attributes?.description?.en || '').slice(0, 400),
+      // раньше при отсутствии русского описания молча подставлялся английский —
+      // получалась мешанина языков в каталоге. Теперь строго только русское;
+      // если его нет вообще, лучше пустое поле, чем перевод не на том языке.
+      description: cleanMangaDescription(m.attributes?.description?.ru).slice(0, 400),
       status: m.attributes?.status,
       coverUrl: fileName ? `${MANGADEX_UPLOADS}/covers/${m.id}/${fileName}.256.jpg` : null,
     };
@@ -847,6 +981,54 @@ ipcMain.handle('remanga:details', async (_e, id) => {
     description,
     status: REMANGA_STATUS_MAP[statusId] || null,
   };
+});
+
+// подтягивают описание задним числом для старых закладок/истории, сохранённых
+// до того, как описание вообще стало частью library-записи (см. mapMangaList/
+// mapWamangaListItem) — сам поиск/каталог всегда отдаёт его сразу, так что
+// нового кода парсинга тут нет, только повторный вызов уже рабочего поиска
+ipcMain.handle('mangadex:details', async (_e, id) => {
+  try {
+    const params = new URLSearchParams();
+    params.append('includes[]', 'cover_art');
+    const data = await mdFetch(`${MANGADEX_API}/manga/${id}?${params.toString()}`);
+    return { description: cleanMangaDescription(data.data?.attributes?.description?.ru).slice(0, 400) };
+  } catch {
+    return null;
+  }
+});
+
+// у части тайтлов на MangaDex русского описания нет вообще (см. mapMangaList) —
+// вместо пустой карточки ищем тот же тайтл на русскоязычных источниках и берём
+// описание оттуда. ReManga в поиске отдаёт описание пустым (см. mapRemangaListItem),
+// поэтому для неё нужен отдельный шаг remangaTitleDetails; у WaManga описание
+// уже приходит прямо в результатах поиска.
+ipcMain.handle('manga:findRuDescription', async (_e, title) => {
+  if (!title) return null;
+  try {
+    const rm = await findRemangaMatchForTitle(title);
+    if (rm?.id) {
+      const dir = rm.id.slice(REMANGA_PREFIX.length);
+      const content = await remangaTitleDetails(dir);
+      const description = String(content?.description || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      if (description) return { description };
+    }
+  } catch { /* пробуем следующий источник */ }
+  try {
+    const wa = await findWamangaMatchForTitle(title);
+    if (wa?.description) return { description: wa.description };
+  } catch { /* ни один источник не нашёлся — оставляем без описания */ }
+  return null;
+});
+
+ipcMain.handle('wamanga:details', async (_e, title) => {
+  try {
+    const { items } = await waSearch(title, { limit: 5 });
+    const match = pickBestTitleMatch(title, items, (it) => it.title);
+    return match ? { description: match.description } : null;
+  } catch {
+    return null;
+  }
 });
 
 async function remangaChapters(dir) {
@@ -1359,6 +1541,109 @@ ipcMain.handle('anilibria:popular', async () => {
 ipcMain.handle('anilibria:episodes', async (_e, animeId) => {
   const aniId = animeId.startsWith(ANILIBRIA_PREFIX) ? animeId.slice(ANILIBRIA_PREFIX.length) : animeId;
   return aniEpisodes(aniId);
+});
+
+// подтягивает описание задним числом для старых аниме-закладок, сохранённых
+// до того, как описание стало частью library-записи
+ipcMain.handle('anilibria:details', async (_e, animeId) => {
+  try {
+    const aniId = animeId.startsWith(ANILIBRIA_PREFIX) ? animeId.slice(ANILIBRIA_PREFIX.length) : animeId;
+    const data = await aniFetch(`${ANILIBRIA_API}/anime/releases/${encodeURIComponent(aniId)}`);
+    return { description: String(data.description || '').trim() };
+  } catch {
+    return null;
+  }
+});
+
+// ---------- AnimeOn (animeon.fun) — второй источник аниме. Своё видео на
+// своём CDN (cloud.solodcdn.com) — в отличие от YummyAnime, тут не нужен
+// webview: ссылка на серию хоть изначально и ведёт на Kodik, но у AnimeOn
+// есть свой бэкенд /api/stream/resolve, который сам её расшифровывает и
+// отдаёт чистый .m3u8 — проигрывается прямо в нашем собственном плеере,
+// как и AniLibria. Ни подписей запросов, ни anti-bot защиты на API нет
+// (в отличие от проверенного и отклонённого yamianime.com).
+const ANIMEON_API = 'https://animeon.fun/api';
+const ANIMEON_SITE = 'https://animeon.fun';
+
+async function aoFetch(path, options = {}, attempt = 1) {
+  try {
+    const res = await fetch(`${ANIMEON_API}${path}`, {
+      signal: AbortSignal.timeout(15000),
+      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT, ...(options.headers || {}) },
+      ...options,
+    });
+    if (!res.ok) throw new Error(`AnimeOn вернул HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    if (attempt < 2) return aoFetch(path, options, attempt + 1);
+    throw new Error(`AnimeOn не отвечает (${err.message})`);
+  }
+}
+
+function aoAbsoluteUrl(u) {
+  if (!u) return null;
+  if (u.startsWith('http')) return u;
+  if (u.startsWith('//')) return `https:${u}`;
+  return `${ANIMEON_SITE}${u}`;
+}
+
+// translations{studio}.episodes{"1":{link,screenshots,skipbuttons}} → плоская
+// структура "студия → отсортированный список серий", как у RU-манга-источников
+function groupAoTranslations(full) {
+  const translations = full.translations || {};
+  return Object.entries(translations)
+    .filter(([, t]) => t && t.episodes && Object.keys(t.episodes).length)
+    .map(([studio, t]) => {
+      const episodes = Object.entries(t.episodes)
+        .map(([number, ep]) => ({ number, link: ep.link }))
+        .sort((a, b) => parseFloat(a.number) - parseFloat(b.number));
+      return { studio, episodes };
+    });
+}
+
+async function aoFindForTitle(title) {
+  const search = await aoFetch(`/search?q=${encodeURIComponent(title)}&limit=20`);
+  const match = pickBestTitleMatch(title, search.results || [], (m) => m.title);
+  if (!match) return null;
+  const full = await aoFetch(`/anime/${encodeURIComponent(match.anime_url)}`);
+  const translations = groupAoTranslations(full);
+  if (!translations.length) return null;
+  return { title: full.title || match.title, translations };
+}
+
+ipcMain.handle('animeon:findForTitle', async (_e, title) => {
+  try {
+    return await aoFindForTitle(title);
+  } catch (err) {
+    console.error('AnimeOn: не удалось найти тайтл', title, err?.message || err);
+    return null;
+  }
+});
+
+ipcMain.handle('animeon:resolve', async (_e, link) => {
+  try {
+    const data = await aoFetch('/stream/resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ link, fresh: false }),
+    });
+    const links = data.links || {};
+    const order = ['1080', '720', '480', '360'];
+    const qualities = order
+      .filter((q) => links[q]?.Src)
+      .map((q) => ({ label: `${q}p`, url: aoAbsoluteUrl(links[q].Src) }));
+    if (!qualities.length) {
+      // на случай нестандартных ключей качества — берём любое, что нашлось
+      for (const v of Object.values(links)) {
+        if (v?.Src) qualities.push({ label: 'auto', url: aoAbsoluteUrl(v.Src) });
+      }
+    }
+    if (!qualities.length) throw new Error('пустой список качеств в ответе');
+    return { qualities };
+  } catch (err) {
+    console.error('AnimeOn: ошибка resolve', link, err?.message || err);
+    return null;
+  }
 });
 
 ipcMain.handle('mangadex:search', async (_e, payload) => {
