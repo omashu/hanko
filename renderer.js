@@ -674,6 +674,7 @@ function chapterSourceLabel(chapters) {
   if (id.startsWith('rm:')) return 'ReManga';
   if (id.startsWith('wa:')) return 'WaManga';
   if (id.startsWith('mb:')) return 'MangaBuff';
+  if (id.startsWith('ug:')) return 'Usagi';
   return 'MangaDex';
 }
 
@@ -1713,6 +1714,7 @@ function animeLibraryCard(item) {
   card.querySelector('.card-add').addEventListener('click', async (e) => {
     e.stopPropagation();
     await window.hanko.removeAnimeLibraryItem(item.id);
+    syncBookmarkRemove(item.id);
     animeLibrary = await window.hanko.loadAnimeLibrary();
     renderAnimeLibrary();
   });
@@ -2065,7 +2067,24 @@ async function connectOnline() {
   onlineInitStarted = true;
   onlineState = await window.hanko.onlineInit();
   renderOnlineStatus();
-  if (onlineState.ready) await Promise.all([refreshIncoming(), refreshOutgoing(), refreshFriends(), refreshPresence()]);
+  if (onlineState.ready) {
+    await Promise.all([refreshIncoming(), refreshOutgoing(), refreshFriends(), refreshPresence()]);
+    backfillBookmarksOnce();
+  }
+}
+
+// разовая синхронизация: все закладки (манга + аниме), добавленные ДО того,
+// как появилась синхронизация с друзьями (или до того, как её добавили для
+// аниме отдельно) — были только локально и никогда не улетали в Supabase.
+// Гоняем один раз за всё время (флаг в settings), дальше новые закладки и
+// так синхронятся сразу при добавлении/удалении.
+async function backfillBookmarksOnce() {
+  try {
+    const settings = await window.hanko.loadSettings();
+    if (settings.bookmarksBackfilledAt) return;
+    for (const item of [...library, ...animeLibrary]) syncBookmarkUpsert(item);
+    await window.hanko.saveSettings({ bookmarksBackfilledAt: Date.now() });
+  } catch { /* не страшно, попробуем при следующем подключении */ }
 }
 
 async function loadFriendsView() {
@@ -2859,10 +2878,14 @@ function friendBookmarkCard(item) {
       <p class="card-meta">${escapeHtml(statusRu)}</p>
     </div>
   `;
-  // раньше карточка ничего не делала по клику — теперь открывает тайтл в
-  // своей библиотеке (та же логика, что и у истории прочтения): manga_id
-  // общий для всех, id тайтла не привязан к конкретному пользователю
-  card.addEventListener('click', () => openTitleModal({ id: item.manga_id, title: item.title, coverUrl: item.cover_url }));
+  // раньше карточка всегда открывала мангу — у аниме другой id-префикс
+  // (al:/kd:) и своя модалка с сериями/озвучками, а не главами
+  card.addEventListener('click', () => {
+    const id = item.manga_id;
+    const isAnime = id.startsWith('al:') || id.startsWith('kd:');
+    if (isAnime) openAnimeTitleModal({ id, title: item.title, coverUrl: item.cover_url });
+    else openTitleModal({ id, title: item.title, coverUrl: item.cover_url });
+  });
   return card;
 }
 
@@ -3539,8 +3562,10 @@ async function openAnimeTitleModal(item) {
   document.getElementById('animeLibToggleBtn').addEventListener('click', async () => {
     if (animeLibrary.some((l) => l.id === item.id)) {
       await window.hanko.removeAnimeLibraryItem(item.id);
+      syncBookmarkRemove(item.id);
     } else {
       await window.hanko.upsertAnimeLibraryItem({ id: item.id, title: item.title, coverUrl: item.coverUrl, status: item.status, description: item.description });
+      syncBookmarkUpsert(item);
     }
     animeLibrary = await window.hanko.loadAnimeLibrary();
     renderAnimeLibrary();

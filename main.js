@@ -64,6 +64,16 @@ const MANGABUFF_SITE = 'https://mangabuff.ru';
 // id вида mb:<slug>, глава — mb:<slug>:<том>:<глава>
 const MANGABUFF_PREFIX = 'mb:';
 
+// Usagi — пятый источник, часть известного семейства "Readmanga"-движков
+// (заголовок страницы буквально "Usagi - Readmanga"). Часть инфраструктуры
+// (статика фронтенда, resrmu.one-way.work) стоит за DDoS-Guard, но сам
+// контент (поиск, страницы тайтла/главы) — нет, проверено вручную. Поиск —
+// открытый JSON (search/suggestion?query=), список глав и картинки страниц
+// уже лежат прямо в SSR HTML, отдельного API не нужно.
+const USAGI_SITE = 'https://web.usagi.one';
+// id тайтла вида ug:<slug>, id главы — ug:<href нацело, начиная с "/">
+const USAGI_PREFIX = 'ug:';
+
 let mainWindow = null;
 
 // ---------- диск: настройки / библиотека / сайты ----------
@@ -214,6 +224,10 @@ function setupRequestHeaders() {
       '*://*.reimg.org/*', '*://*.reimg2.org/*', '*://*.reimg3.org/*',
       '*://*.reimg4.org/*', '*://*.reimg5.org/*',
       '*://*.wamanga.ru/*', '*://*.mangabuff.ru/*',
+      // rmr.rocks — CDN картинок страниц Usagi, тоже несколько поддоменов-шардов
+      // (p7/p11/p15/a12 уже встретились) — сразу без wildcard-номеров, раз тут
+      // шардируется не по цифре в самом домене, а по случайному префиксу поддомена
+      '*://*.rmr.rocks/*',
     ],
   };
   session.defaultSession.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
@@ -227,6 +241,9 @@ function setupRequestHeaders() {
     } else if (url.includes('mangabuff.ru')) {
       details.requestHeaders['Referer'] = `${MANGABUFF_SITE}/`;
       details.requestHeaders['Origin'] = MANGABUFF_SITE;
+    } else if (url.includes('rmr.rocks')) {
+      details.requestHeaders['Referer'] = `${USAGI_SITE}/`;
+      details.requestHeaders['Origin'] = USAGI_SITE;
     } else {
       details.requestHeaders['Referer'] = 'https://mangadex.org/';
     }
@@ -832,6 +849,7 @@ const sourceHealth = {
   remanga: { up: true, downUntil: 0 },
   wamanga: { up: true, downUntil: 0 },
   mangabuff: { up: true, downUntil: 0 },
+  usagi: { up: true, downUntil: 0 },
 };
 
 function isSourceUp(key) {
@@ -871,6 +889,10 @@ const HEALTH_PING = {
   mangabuff: () => fetch(MANGABUFF_SITE, {
     signal: AbortSignal.timeout(HEALTH_FETCH_TIMEOUT_MS),
     headers: { 'User-Agent': USER_AGENT },
+  }),
+  usagi: () => fetch(`${USAGI_SITE}/search/suggestion?query=a&types%5B%5D=CREATION&types%5B%5D=FEDERATION_MANGA`, {
+    signal: AbortSignal.timeout(HEALTH_FETCH_TIMEOUT_MS),
+    headers: { 'User-Agent': USER_AGENT, Referer: `${USAGI_SITE}/` },
   }),
 };
 
@@ -1420,6 +1442,144 @@ async function findMangabuffMatchForTitle(title) {
   }
 }
 
+// ---------- Usagi (см. константы USAGI_SITE/USAGI_PREFIX вверху файла) ----------
+
+async function ugFetchHtml(url, attempt = 1) {
+  if (!isSourceUp('usagi')) throw new Error('Usagi временно недоступна (сайт не отвечает, повторим попытку позже)');
+  try {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(HEALTH_FETCH_TIMEOUT_MS),
+      headers: {
+        'User-Agent': USER_AGENT,
+        Referer: `${USAGI_SITE}/`,
+        'Accept-Language': 'ru,en;q=0.8',
+      },
+    });
+    if (!res.ok) throw new Error(`Usagi вернул HTTP ${res.status}`);
+    const html = await res.text();
+    markSourceUp('usagi');
+    return html;
+  } catch (err) {
+    if (attempt < 2) return ugFetchHtml(url, attempt + 1);
+    markSourceDown('usagi');
+    throw new Error(`Usagi не отвечает (${err.message})`);
+  }
+}
+
+async function ugFetchJson(url, attempt = 1) {
+  if (!isSourceUp('usagi')) throw new Error('Usagi временно недоступна (сайт не отвечает, повторим попытку позже)');
+  try {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(HEALTH_FETCH_TIMEOUT_MS),
+      headers: {
+        'User-Agent': USER_AGENT,
+        Referer: `${USAGI_SITE}/`,
+        Accept: 'application/json',
+        'Accept-Language': 'ru,en;q=0.8',
+      },
+    });
+    if (!res.ok) throw new Error(`Usagi вернул HTTP ${res.status}`);
+    const json = await res.json();
+    markSourceUp('usagi');
+    return json;
+  } catch (err) {
+    if (attempt < 2) return ugFetchJson(url, attempt + 1);
+    markSourceDown('usagi');
+    throw new Error(`Usagi не отвечает (${err.message})`);
+  }
+}
+
+function mapUgListItem(raw) {
+  const slug = (raw.link || '').replace(/^\//, '');
+  return {
+    id: `${USAGI_PREFIX}${slug}`,
+    title: raw.value || raw.names?.[0] || slug,
+    coverUrl: raw.thumbnail || null,
+    status: null,
+    rating: raw.score || null,
+    description: '',
+  };
+}
+
+async function ugSearch(query, { limit = 20 } = {}) {
+  if (!query.trim()) return { items: [], total: 0 };
+  const params = new URLSearchParams({ query: query.trim() });
+  params.append('types[]', 'CREATION');
+  params.append('types[]', 'FEDERATION_MANGA');
+  const data = await ugFetchJson(`${USAGI_SITE}/search/suggestion?${params.toString()}`);
+  // elementId.type у "Манга"/"Комикс"/"Манхва" и т.п. всегда "MANGA" в общей
+  // федерации типов сайта — это и есть нужный нам фильтр, а не typeName
+  const items = (data.suggestions || [])
+    .filter((s) => s.elementId?.type === 'MANGA' && s.link)
+    .map(mapUgListItem)
+    .slice(0, limit);
+  return { items, total: items.length };
+}
+
+// список глав лежит прямо в HTML тайтла — строки вида
+// <tr class="item-row" data-id="..." data-vol="N" data-num="M"> с
+// <a href="/slug/volN/глава" class="chapter-link">; data-num — номер главы,
+// умноженный на 10 (поддерживает дробные вроде 20.5 → 205)
+function parseUgChapters(html) {
+  const rowRe = /<tr class="item-row" data-id="(\d+)" data-vol="(\d+)" data-num="(\d+)">([\s\S]*?)<\/tr>/g;
+  const items = [];
+  let m;
+  while ((m = rowRe.exec(html))) {
+    const [, , , num, block] = m;
+    const linkMatch = block.match(/<a href="([^"]+)"[^>]*class="chapter-link/);
+    if (!linkMatch) continue;
+    items.push({
+      id: `${USAGI_PREFIX}${linkMatch[1]}`, // linkMatch[1] уже вида "/slug/volN/глава"
+      chapter: String(Number(num) / 10),
+      title: null,
+      lang: 'ru',
+    });
+  }
+  return remangaSortChaptersAsc(items); // сортировка чисто числовая, функция общая
+}
+
+async function ugChapters(slug) {
+  const html = await ugFetchHtml(`${USAGI_SITE}/${slug}`);
+  const items = parseUgChapters(html);
+  if (!items.length) {
+    console.error(`[Usagi] chapters: 0 глав распознано для slug=${slug} — возможно, разметка строки главы отличается`);
+  }
+  return items;
+}
+
+// картинки страниц лежат прямо в HTML главы, в вызове rm_h.readerInit(...) —
+// массив вида [['https://p15.rmr.rocks/','',"auto/.../000.png?t=...&h=...",900,1300,''], ...]
+function parseUgPages(html) {
+  const re = /\[\s*'([^']*)'\s*,\s*'[^']*'\s*,\s*"([^"]+)"/g;
+  const urls = [];
+  let m;
+  while ((m = re.exec(html))) {
+    urls.push(`${m[1]}${m[2]}`);
+  }
+  return urls;
+}
+
+async function ugPages(href) {
+  const html = await ugFetchHtml(`${USAGI_SITE}${href}`);
+  const pages = parseUgPages(html);
+  if (!pages.length) {
+    console.error(`[Usagi] pages: не нашли ни одной картинки в rm_h.readerInit, href=${href}`);
+  } else {
+    console.log(`[Usagi] pages ${href}: найдено ${pages.length} картинок, первая = ${pages[0]}`);
+  }
+  return pages;
+}
+
+async function findUsagiMatchForTitle(title) {
+  if (!title) return null;
+  try {
+    const { items } = await ugSearch(title, { limit: 10 });
+    return pickBestTitleMatch(title, items, (it) => it.title);
+  } catch {
+    return null;
+  }
+}
+
 // ---------- AniLibria (аниме) ----------
 // В отличие от манга-источников это не пиратский агрегатор, а команда
 // озвучки/перевода со своим официальным открытым API, специально сделанным
@@ -1709,6 +1869,15 @@ ipcMain.handle('mangadex:search', async (_e, payload) => {
     } catch (err) {
       console.error('MangaBuff поиск не удался:', err?.message || err);
     }
+    try {
+      const ug = await ugSearch(query);
+      if (ug.items.length) {
+        items.push(...ug.items);
+        total += ug.items.length;
+      }
+    } catch (err) {
+      console.error('Usagi поиск не удался:', err?.message || err);
+    }
   }
 
   // data.total — сколько всего тайтлов подходит под фильтр (не только на этой странице),
@@ -1884,12 +2053,14 @@ ipcMain.handle('mangadex:chapters', async (_e, payload) => {
   const isRemanga = typeof mangaId === 'string' && mangaId.startsWith(REMANGA_PREFIX);
   const isWamanga = typeof mangaId === 'string' && mangaId.startsWith(WAMANGA_PREFIX);
   const isMangabuff = typeof mangaId === 'string' && mangaId.startsWith(MANGABUFF_PREFIX);
+  const isUsagi = typeof mangaId === 'string' && mangaId.startsWith(USAGI_PREFIX);
 
-  let mdId = (isRemanga || isWamanga || isMangabuff) ? null : mangaId;
+  let mdId = (isRemanga || isWamanga || isMangabuff || isUsagi) ? null : mangaId;
   let rmDir = isRemanga ? mangaId.slice(REMANGA_PREFIX.length) : null;
   let waType = null, waSlug = null;
   if (isWamanga) ({ type: waType, slug: waSlug } = parseWamangaId(mangaId));
   let mbSlug = isMangabuff ? mangaId.slice(MANGABUFF_PREFIX.length) : null;
+  let ugSlug = isUsagi ? mangaId.slice(USAGI_PREFIX.length) : null;
 
   // Эти четыре поиска совпадения по названию независимы друг от друга, поэтому
   // гоняем их параллельно, а не по очереди — раньше был await один за другим,
@@ -1898,61 +2069,67 @@ ipcMain.handle('mangadex:chapters', async (_e, payload) => {
   // цепочке целиком, прежде чем дело доходило до следующего источника. Именно
   // это, похоже, и ощущалось как "тайтл долго грузится, хотя все сайты вроде
   // живы" — теперь худший случай это самый медленный источник, а не их сумма.
-  const [mdMatch, rmMatch, waMatch, mbMatch] = await Promise.all([
+  const [mdMatch, rmMatch, waMatch, mbMatch, ugMatch] = await Promise.all([
     (!mdId && title) ? findMangadexMatchForTitle(title).catch(() => null) : null,
     (!rmDir && title) ? findRemangaMatchForTitle(title).catch(() => null) : null,
     (!waType && title) ? findWamangaMatchForTitle(title).catch(() => null) : null,
     (!mbSlug && title) ? findMangabuffMatchForTitle(title).catch(() => null) : null,
+    (!ugSlug && title) ? findUsagiMatchForTitle(title).catch(() => null) : null,
   ]);
   if (!mdId && mdMatch) mdId = mdMatch;
   if (!rmDir && rmMatch) rmDir = rmMatch.id.slice(REMANGA_PREFIX.length);
   if (!waType && waMatch) ({ type: waType, slug: waSlug } = parseWamangaId(waMatch.id));
   if (!mbSlug && mbMatch) mbSlug = mbMatch.id.slice(MANGABUFF_PREFIX.length);
+  if (!ugSlug && ugMatch) ugSlug = ugMatch.id.slice(USAGI_PREFIX.length);
 
-  const [enItems, mdRuItems, rmRuItems, waRuItems, mbRuItems] = await Promise.all([
+  const [enItems, mdRuItems, rmRuItems, waRuItems, mbRuItems, ugRuItems] = await Promise.all([
     mdId ? mdChaptersFeed(mdId, ['en']).catch(() => []) : [],
     mdId ? mdChaptersFeed(mdId, ['ru']).catch(() => []) : [],
     rmDir ? remangaChapters(rmDir).catch(() => []) : [],
     waType ? waChapters(waType, waSlug).catch(() => []) : [],
     mbSlug ? mbChapters(mbSlug).catch(() => []) : [],
+    ugSlug ? ugChapters(ugSlug).catch(() => []) : [],
   ]);
 
-  // из источников RU (MangaDex/ReManga/WaManga/MangaBuff) берём тот, где глав больше
+  // из источников RU (MangaDex/ReManga/WaManga/MangaBuff/Usagi) берём тот, где глав больше
   const ruCandidates = [
     { name: 'MangaDex', items: mdRuItems },
     { name: 'ReManga', items: rmRuItems },
     { name: 'WaManga', items: waRuItems },
     { name: 'MangaBuff', items: mbRuItems },
+    { name: 'Usagi', items: ugRuItems },
   ];
   let winner = ruCandidates.reduce((best, cur) => (cur.items.length > best.items.length ? cur : best));
 
-  // Предохранитель только для MangaBuff: список глав парсится из отдельного HTML
-  // (карточка тайтла) независимо от страниц конкретной главы, поэтому у тайтла
-  // формально может быть больше всего глав, а сам парсинг страниц при этом
-  // сломан для конкретной разметки (как было с regex \w на кириллице) — тайтл
-  // выигрывает сравнение, но открывается пустым. Проверяем это пробным запросом
-  // первой главы и, если страниц 0, откатываемся на следующего по числу глав.
-  // ReManga/WaManga этой проверкой не трогаем — по опыту пользователя они
-  // надёжнее и лишний сетевой запрос на каждое открытие тайтла того не стоит.
-  if (winner.name === 'MangaBuff' && winner.items.length) {
-    const first = winner.items[0];
-    const m = /^mb:(.+):([^:]+):([^:]+)$/.exec(first.id);
-    let pagesOk = false;
-    if (m) {
+  // Предохранитель для "хрупких" источников (MangaBuff/Usagi): список глав
+  // парсится из отдельного HTML (карточка тайтла) независимо от страниц
+  // конкретной главы, поэтому у тайтла формально может быть больше всего
+  // глав, а сам парсинг страниц при этом сломан для конкретной разметки (как
+  // было с regex \w на кириллице у MangaBuff) — тайтл выигрывает сравнение,
+  // но открывается пустым. Проверяем это пробным запросом первой главы и,
+  // если страниц 0, откатываемся на следующего по числу глав. ReManga/WaManga
+  // этой проверкой не трогаем — по опыту пользователя они надёжнее, и лишний
+  // сетевой запрос на каждое открытие тайтла того не стоит.
+  const fragileSourceCheckers = {
+    MangaBuff: async (firstId) => {
+      const m = /^mb:(.+):([^:]+):([^:]+)$/.exec(firstId);
+      if (!m) return false;
       const [, slug, vol, chapter] = m;
-      try {
-        const pages = await mbPages(slug, vol, chapter);
-        pagesOk = pages.length > 0;
-      } catch {
-        pagesOk = false;
-      }
-    }
+      try { return (await mbPages(slug, vol, chapter)).length > 0; } catch { return false; }
+    },
+    Usagi: async (firstId) => {
+      if (!firstId.startsWith(USAGI_PREFIX)) return false;
+      try { return (await ugPages(firstId.slice(USAGI_PREFIX.length))).length > 0; } catch { return false; }
+    },
+  };
+  if (fragileSourceCheckers[winner.name] && winner.items.length) {
+    const pagesOk = await fragileSourceCheckers[winner.name](winner.items[0].id);
     if (!pagesOk) {
       const fallback = ruCandidates
-        .filter((c) => c.name !== 'MangaBuff')
+        .filter((c) => c.name !== winner.name)
         .reduce((best, cur) => (cur.items.length > best.items.length ? cur : best));
       console.error(
-        `[MangaBuff] выбран победителем по числу глав (${winner.items.length}), но пробная проверка первой главы вернула 0 страниц — откат на ${fallback.name} (${fallback.items.length} глав)`,
+        `[${winner.name}] выбран победителем по числу глав (${winner.items.length}), но пробная проверка первой главы вернула 0 страниц — откат на ${fallback.name} (${fallback.items.length} глав)`,
       );
       winner = fallback;
     }
@@ -1988,6 +2165,9 @@ ipcMain.handle('mangadex:pages', async (_e, chapterId) => {
   if (typeof chapterId === 'string' && chapterId.startsWith(MANGABUFF_PREFIX)) {
     const [slug, vol, chapter] = chapterId.slice(MANGABUFF_PREFIX.length).split(':');
     return mbPages(slug, vol, chapter);
+  }
+  if (typeof chapterId === 'string' && chapterId.startsWith(USAGI_PREFIX)) {
+    return ugPages(chapterId.slice(USAGI_PREFIX.length));
   }
   return getChapterPages(chapterId);
 });
