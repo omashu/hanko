@@ -111,6 +111,14 @@ contextBridge.exposeInMainWorld('hanko', {
     ipcRenderer.on('online:event', (_e, data) => cb(data));
   },
 
+  partyCreate: () => ipcRenderer.invoke('party:create'),
+  partyJoin: (roomId) => ipcRenderer.invoke('party:join', roomId),
+  partyLeave: () => ipcRenderer.invoke('party:leave'),
+  partySend: (payload) => ipcRenderer.invoke('party:send', payload),
+  onPartyEvent: (cb) => {
+    ipcRenderer.on('party:event', (_e, data) => cb(data));
+  },
+
   updateGetStatus: () => ipcRenderer.invoke('update:getStatus'),
   updateInstall: () => ipcRenderer.invoke('update:install'),
   onUpdateStatus: (cb) => {

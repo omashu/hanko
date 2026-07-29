@@ -472,6 +472,17 @@
   </div>
 
 
+  <!-- ===================== ПОПАП: ПРИГЛАСИТЬ НА СОВМЕСТНЫЙ ПРОСМОТР ===================== -->
+  <div class="modal-backdrop" id="watchPartyInviteBackdrop" hidden>
+    <div class="modal" id="watchPartyInviteModal">
+      <button class="icon-btn modal-close" id="watchPartyInviteClose" type="button">✕</button>
+      <h3>Смотреть вместе</h3>
+      <p class="view-sub" style="margin: -6px 0 12px;">Онлайн-друзья — пригласи, и пауза/перемотка/серия будут синхронизироваться у всех.</p>
+      <p class="empty-hint" id="watchPartyInviteEmpty" hidden>Никто из друзей сейчас не в сети.</p>
+      <div class="chat-list" id="watchPartyInviteList"></div>
+    </div>
+  </div>
+
   <!-- ===================== ПОПАП: СТИКЕРЫ И ПОДЕЛИТЬСЯ ТАЙТЛОМ ===================== -->
   <div class="modal-backdrop" id="shareModalBackdrop" hidden>
     <div class="modal modal--wide" id="shareModal">
@@ -552,6 +563,10 @@
           </button>
           <span id="animePlayerTitle" class="reader-title"></span>
           <div class="reader-actions">
+            <div class="party-participants" id="partyParticipants" hidden></div>
+            <button id="animePartyBtn" class="icon-btn" title="Смотреть вместе с друзьями" type="button">
+              <svg viewBox="0 0 24 24" width="18" height="18"><path d="M17 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 5 18.5V20M11 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM21 20v-1.5a3 3 0 0 0-2.2-2.9M16 4.2a3 3 0 0 1 0 5.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
             <select id="animeTranslationSelect" class="filter-select" style="width:auto;"></select>
             <select id="animeQualitySelect" class="filter-select" style="width:auto;"></select>
           </div>
@@ -591,12 +606,26 @@
               <button id="animeEpPrevBtn" class="chapter-nav-btn" type="button">‹ Пред. серия</button>
               <button id="animeEpNextBtn" class="chapter-nav-btn" type="button">След. серия ›</button>
               <button id="animeSpeedBtn" class="anime-speed-btn" title="Скорость воспроизведения" type="button">1x</button>
+              <button id="animePartyChatToggleBtn" class="icon-btn" title="Чат просмотра" type="button" hidden>
+                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M21 11.5a8.38 8.38 0 0 1-4.9 7.6A8.5 8.5 0 0 1 3 12.5 8.38 8.38 0 0 1 10.6 4a8.5 8.5 0 0 1 10.4 7.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
               <button id="animeFullscreenBtn" class="icon-btn" title="На весь экран (F)" type="button">
                 <svg id="animeFullscreenIcon" viewBox="0 0 24 24" width="18" height="18"><path d="M8 3H4v4M16 3h4v4M8 21H4v-4M16 21h4v-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
             </div>
           </div>
         </footer>
+      </div>
+
+      <div class="anime-party-chat" id="animePartyChat" hidden>
+        <div class="anime-party-chat-header">
+          <span>Чат просмотра</span>
+          <button type="button" class="icon-btn" id="animePartyChatCloseBtn" title="Скрыть">✕</button>
+        </div>
+        <div class="anime-party-chat-body" id="animePartyChatBody"></div>
+        <form class="anime-party-chat-form" id="animePartyChatForm">
+          <input id="animePartyChatInput" type="text" placeholder="Написать…" maxlength="300" autocomplete="off" />
+        </form>
       </div>
     </div>
   </div>

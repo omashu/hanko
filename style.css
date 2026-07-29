@@ -729,6 +729,11 @@ webview#siteWebview { flex: 1; width: 100%; }
   z-index: 50;
 }
 
+/* открывается поверх плеера аниме (у него z-index: 100) — иначе, пока плеер
+   открыт, попап приглашения рисуется визуально позади него и не виден до тех
+   пор, пока плеер не закроют */
+#watchPartyInviteBackdrop { z-index: 150; }
+
 .modal {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1333,6 +1338,118 @@ webview#siteWebview { flex: 1; width: 100%; }
   min-width: 42px;
 }
 .anime-speed-btn:hover { border-color: var(--accent); }
+
+/* ---------- совместный просмотр (watch party) ---------- */
+
+.party-participants {
+  font-size: 12px;
+  color: #eef0ff;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+#animePartyChatToggleBtn { position: relative; }
+#animePartyChatToggleBtn.has-unread::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.anime-party-chat {
+  position: absolute;
+  top: 64px;
+  right: 16px;
+  bottom: 88px;
+  width: 260px;
+  max-width: calc(100% - 32px);
+  display: flex;
+  flex-direction: column;
+  background: rgba(20, 18, 32, 0.55);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  overflow: hidden;
+  z-index: 5;
+}
+.anime-party-chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #eef0ff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  flex-shrink: 0;
+}
+.anime-party-chat-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.anime-party-chat-msg {
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: #eef0ff;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 6px 9px;
+  align-self: flex-start;
+  max-width: 90%;
+  word-wrap: break-word;
+}
+.anime-party-chat-msg.is-mine {
+  align-self: flex-end;
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.anime-party-chat-msg-name {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  opacity: .75;
+  margin-bottom: 2px;
+}
+.anime-party-chat-form {
+  flex-shrink: 0;
+  padding: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.anime-party-chat-form input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  padding: 7px 12px;
+  color: #eef0ff;
+  font-size: 12.5px;
+}
+.anime-party-chat-form input:focus { outline: none; border-color: var(--accent); }
+.anime-party-chat-form input::placeholder { color: rgba(238, 240, 255, 0.5); }
+
+.party-invite-btn {
+  width: auto !important;
+  height: auto !important;
+  padding: 6px 12px !important;
+  border-radius: 999px !important;
+  background: var(--accent) !important;
+  color: #fff !important;
+  font-size: 12px;
+  font-weight: 600;
+}
+.party-invite-btn:hover { background: var(--accent-bright) !important; }
+.party-invite-btn:disabled { opacity: .6; cursor: default; background: var(--surface-3) !important; color: var(--text-muted) !important; }
 
 @media (max-width: 720px) {
   .anime-buttons-right .chapter-nav-btn span,

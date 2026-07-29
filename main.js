@@ -2544,6 +2544,7 @@ async function initOnline() {
 async function switchIdentity() {
   realtimeReady = false;
   await teardownPresence();
+  await leavePartyChannel();
   try {
     await supabase.removeAllChannels();
   } catch { /* не критично */ }
@@ -2625,6 +2626,82 @@ async function teardownPresence() {
     presenceChannel = null;
   }
 }
+
+// ---------- совместный просмотр аниме (watch party) ----------
+// Отдельный Realtime-канал на "комнату": Broadcast — для play/pause/
+// перемотки/смены серии/чата внутри плеера, Presence (на том же канале) —
+// для списка участников. В отличие от чата друзей (пишется в таблицу
+// messages) тут всё эфемерно, ничего не сохраняется в базе — комната просто
+// перестаёт существовать, когда из неё все вышли. Роль участников
+// симметрична: у канала нет "хозяина" — любой в комнате может поставить на
+// паузу/перемотать/переключить серию, это применится у всех остальных.
+let partyChannel = null;
+let partyRoomId = null;
+
+function sendPartyEvent(payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('party:event', payload);
+  }
+}
+
+async function leavePartyChannel() {
+  if (partyChannel) {
+    try { await partyChannel.untrack(); } catch { /* не критично */ }
+    try { await supabase.removeChannel(partyChannel); } catch { /* не критично */ }
+  }
+  partyChannel = null;
+  partyRoomId = null;
+}
+
+function joinPartyChannel(roomId, myId, myName) {
+  return new Promise((resolve, reject) => {
+    const channel = supabase.channel(`hanko-party-${roomId}`, {
+      config: { broadcast: { self: false }, presence: { key: myId } },
+    });
+    channel
+      .on('broadcast', { event: 'sync' }, ({ payload }) => sendPartyEvent(payload))
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        const participants = Object.entries(state).map(([id, metas]) => ({
+          id, name: metas[0]?.name || '?',
+        }));
+        sendPartyEvent({ event: 'participants', participants });
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          partyChannel = channel;
+          partyRoomId = roomId;
+          await channel.track({ name: myName });
+          resolve(true);
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          reject(new Error('Не удалось подключиться к совместному просмотру'));
+        }
+      });
+  });
+}
+
+ipcMain.handle('party:create', async () => {
+  await leavePartyChannel();
+  const roomId = `${onlineState.myId}-${Date.now()}`;
+  const myName = onlineState.displayName || onlineState.username || 'Друг';
+  await joinPartyChannel(roomId, onlineState.myId, myName);
+  return { roomId };
+});
+
+ipcMain.handle('party:join', async (_e, roomId) => {
+  await leavePartyChannel();
+  const myName = onlineState.displayName || onlineState.username || 'Друг';
+  await joinPartyChannel(roomId, onlineState.myId, myName);
+  return { roomId };
+});
+
+ipcMain.handle('party:leave', () => leavePartyChannel());
+
+ipcMain.handle('party:send', async (_e, payload) => {
+  if (!partyChannel || !partyRoomId) return false;
+  await partyChannel.send({ type: 'broadcast', event: 'sync', payload: { ...payload, from: onlineState.myId } });
+  return true;
+});
 
 ipcMain.handle('online:init', () => initOnline());
 ipcMain.handle('online:getState', () => onlineState);

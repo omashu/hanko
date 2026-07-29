@@ -244,6 +244,18 @@ const els = {
   animeSpeedBtn: document.getElementById('animeSpeedBtn'),
   animeFullscreenBtn: document.getElementById('animeFullscreenBtn'),
   animeFullscreenIcon: document.getElementById('animeFullscreenIcon'),
+  animePartyBtn: document.getElementById('animePartyBtn'),
+  partyParticipants: document.getElementById('partyParticipants'),
+  animePartyChatToggleBtn: document.getElementById('animePartyChatToggleBtn'),
+  animePartyChat: document.getElementById('animePartyChat'),
+  animePartyChatCloseBtn: document.getElementById('animePartyChatCloseBtn'),
+  animePartyChatBody: document.getElementById('animePartyChatBody'),
+  animePartyChatForm: document.getElementById('animePartyChatForm'),
+  animePartyChatInput: document.getElementById('animePartyChatInput'),
+  watchPartyInviteBackdrop: document.getElementById('watchPartyInviteBackdrop'),
+  watchPartyInviteClose: document.getElementById('watchPartyInviteClose'),
+  watchPartyInviteEmpty: document.getElementById('watchPartyInviteEmpty'),
+  watchPartyInviteList: document.getElementById('watchPartyInviteList'),
   animeSeekTrack: document.getElementById('animeSeekTrack'),
   animeSeekFill: document.getElementById('animeSeekFill'),
   animeSeekBuffered: document.getElementById('animeSeekBuffered'),
@@ -2519,6 +2531,10 @@ function encodeRichMessage(payload) {
 }
 
 async function openSharedContent(rich) {
+  if (rich.kind === 'watch_invite') {
+    await joinWatchParty(rich);
+    return;
+  }
   const item = { id: rich.mangaId, title: rich.title, coverUrl: rich.coverUrl, status: rich.status };
   if (rich.kind === 'share_title' || !rich.chapterId) {
     openTitleModal(item);
@@ -2608,6 +2624,20 @@ function chatBubble(msg) {
       ${rich.caption ? `<div class="sticker-bubble-caption">${escapeHtml(rich.caption)}</div>` : ''}
       <span class="chat-bubble-time">${escapeHtml(time)}${readTick}</span>
     `;
+    return bubble;
+  }
+
+  if (rich && rich.kind === 'watch_invite') {
+    bubble.className = `chat-bubble chat-bubble--card is-clickable ${mine ? 'is-mine' : 'is-theirs'}`;
+    bubble.innerHTML = `
+      <img class="card-cover" src="${rich.coverUrl || ''}" alt="" loading="lazy" onerror="this.style.opacity=0" />
+      <div class="chat-bubble--card-info">
+        <span class="chat-bubble--card-title">🎬 ${escapeHtml(rich.title || '')}</span>
+        <span class="chat-bubble--card-sub">${escapeHtml(rich.episodeLabel || 'Совместный просмотр')} — жми, чтобы присоединиться</span>
+        <span class="chat-bubble-time">${escapeHtml(time)}${readTick}</span>
+      </div>
+    `;
+    bubble.addEventListener('click', () => openSharedContent(rich));
     return bubble;
   }
 
@@ -3066,6 +3096,7 @@ function richPreviewText(rich) {
   if (rich.kind === 'sticker') return rich.emoji || `Стикер${rich.caption ? ': ' + rich.caption : ''}`;
   if (rich.kind === 'share_title') return `Поделился(-ась) тайтлом «${rich.title}»`;
   if (rich.kind === 'share_chapter') return `Поделился(-ась) главой «${rich.title}»`;
+  if (rich.kind === 'watch_invite') return `Приглашает смотреть «${rich.title}» вместе`;
   return 'Сообщение';
 }
 
@@ -3720,6 +3751,16 @@ els.animeTitleModalBackdrop.addEventListener('click', (e) => {
 // серию не нужно, docs самого hls.js рекомендуют переиспользовать loadSource
 let hlsPlayer = null;
 let animePlayerState = null; // { item, episodes, index }
+// совместный просмотр: null — не в комнате; иначе { roomId, releaseId }.
+// Участники синхронизации симметричны — у комнаты нет "хозяина", любой может
+// поставить на паузу/перемотать/переключить серию, это применится у всех
+// остальных участников (см. main.js: обычный Broadcast-канал на roomId).
+let watchParty = null;
+// true на время применения ПРИШЕДШЕГО извне события (play/pause/seek) —
+// без этого флага применение чужого действия вызвало бы наш собственный
+// play/pause/seeked обработчик на <video>, и мы бы разослали его обратно,
+// зациклив эхо между участниками
+let suppressPartyEvents = false;
 // последняя сохранённая (в секундах видео) позиция просмотра — не пишем в
 // историю на каждый timeupdate (он стреляет по несколько раз в секунду), а
 // примерно раз в 5 реальных секунд просмотра; сбрасывается при открытии новой
@@ -3822,6 +3863,240 @@ els.animeQualitySelect.addEventListener('change', () => {
   }
 });
 
+// ---------------- совместный просмотр (watch party) ----------------
+
+function renderPartyParticipants() {
+  if (!watchParty || !watchParty.participants || !watchParty.participants.length) {
+    els.partyParticipants.hidden = true;
+    return;
+  }
+  els.partyParticipants.hidden = false;
+  els.partyParticipants.textContent = `👥 ${watchParty.participants.length}`;
+  els.partyParticipants.title = watchParty.participants.map((p) => p.name).join(', ');
+}
+
+function showPartyUI() { els.animePartyChatToggleBtn.hidden = false; }
+function hidePartyUI() {
+  els.animePartyChatToggleBtn.hidden = true;
+  els.animePartyChatToggleBtn.classList.remove('has-unread');
+  els.animePartyChat.hidden = true;
+  els.animePartyChatBody.innerHTML = '';
+  els.partyParticipants.hidden = true;
+}
+
+// создаёт комнату, только если ещё не в ней — повторный клик на "Смотреть
+// вместе" не плодит новые комнаты, а просто открывает попап приглашения ещё раз
+async function ensureWatchParty() {
+  if (watchParty) return watchParty;
+  const { roomId } = await window.hanko.partyCreate();
+  watchParty = { roomId, participants: [] };
+  showPartyUI();
+  return watchParty;
+}
+
+async function leaveWatchParty() {
+  if (!watchParty) return;
+  watchParty = null;
+  hidePartyUI();
+  try { await window.hanko.partyLeave(); } catch { /* не критично */ }
+}
+
+function sendPartySync(event, extra = {}) {
+  if (!watchParty) return;
+  window.hanko.partySend({ event, ...extra }).catch(() => {});
+}
+
+function partyChatRow(fromName, text, mine) {
+  const row = document.createElement('div');
+  row.className = `anime-party-chat-msg ${mine ? 'is-mine' : ''}`;
+  row.innerHTML = `<span class="anime-party-chat-msg-name">${escapeHtml(fromName)}</span><span class="anime-party-chat-msg-text">${escapeHtml(text)}</span>`;
+  return row;
+}
+
+// ---- окно приглашения друзей (список онлайн-друзей + кнопка "Позвать") ----
+function watchPartyInviteRow(f) {
+  const row = document.createElement('div');
+  row.className = 'chat-list-item';
+  const name = f.display_name || 'Без имени';
+  row.innerHTML = `
+    <span class="chat-list-item-avatar">
+      ${avatarInnerHtml(name, f.avatar_url)}
+      <span class="chat-list-item-online-dot" title="В сети"></span>
+    </span>
+    <div class="chat-list-item-info">
+      <span class="chat-list-item-name">${escapeHtml(name)}</span>
+      <span class="chat-list-item-sub">Пригласить в просмотр</span>
+    </div>
+    <button type="button" class="chat-list-item-msg-btn party-invite-btn">Позвать</button>
+  `;
+  row.querySelector('.party-invite-btn').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (!animePlayerState) return;
+    const btn = e.currentTarget;
+    const party = await ensureWatchParty();
+    const { item, index, episodes } = animePlayerState;
+    const ep = episodes[index];
+    try {
+      await window.hanko.onlineSendMessage({
+        friendId: f.friend_id,
+        body: encodeRichMessage({
+          kind: 'watch_invite', roomId: party.roomId,
+          releaseId: item.id, title: item.title, coverUrl: item.coverUrl,
+          episodeIndex: index, episodeLabel: `Серия ${ep.number}`,
+        }),
+      });
+      btn.textContent = 'Позвал(а) ✓';
+      btn.disabled = true;
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+  return row;
+}
+
+function openWatchPartyInvite() {
+  const online = friendsList.filter((f) => onlineFriendIds.has(f.friend_id));
+  els.watchPartyInviteList.innerHTML = '';
+  els.watchPartyInviteEmpty.hidden = online.length > 0;
+  for (const f of online) els.watchPartyInviteList.appendChild(watchPartyInviteRow(f));
+  els.watchPartyInviteBackdrop.hidden = false;
+}
+els.watchPartyInviteClose.addEventListener('click', () => { els.watchPartyInviteBackdrop.hidden = true; });
+els.watchPartyInviteBackdrop.addEventListener('click', (e) => {
+  if (e.target === els.watchPartyInviteBackdrop) els.watchPartyInviteBackdrop.hidden = true;
+});
+els.animePartyBtn.addEventListener('click', async () => {
+  if (!animePlayerState) return;
+  try {
+    await ensureWatchParty();
+  } catch (err) {
+    alert(err.message);
+    return;
+  }
+  openWatchPartyInvite();
+});
+
+// ---- панель чата просмотра (справа поверх плеера, полупрозрачная) ----
+els.animePartyChatToggleBtn.addEventListener('click', () => {
+  els.animePartyChat.hidden = !els.animePartyChat.hidden;
+  els.animePartyChatToggleBtn.classList.remove('has-unread');
+});
+els.animePartyChatCloseBtn.addEventListener('click', () => { els.animePartyChat.hidden = true; });
+els.animePartyChatForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const text = els.animePartyChatInput.value.trim();
+  if (!text || !watchParty) return;
+  els.animePartyChatInput.value = '';
+  const myName = onlineState.displayName || onlineState.username || 'Ты';
+  els.animePartyChatBody.appendChild(partyChatRow('Ты', text, true));
+  els.animePartyChatBody.scrollTop = els.animePartyChatBody.scrollHeight;
+  sendPartySync('chat', { text, fromName: myName });
+});
+
+// ---- присоединение по приглашению (клик на карточку в обычном чате друзей) ----
+async function joinWatchParty(rich) {
+  const item = { id: rich.releaseId, title: rich.title, coverUrl: rich.coverUrl };
+  let episodes;
+  try {
+    episodes = await window.hanko.anilibriaEpisodes(item.id);
+    await openAnimePlayer(item, episodes, rich.episodeIndex || 0);
+  } catch {
+    openAnimeTitleModal(item);
+    return;
+  }
+  watchParty = { roomId: rich.roomId, participants: [] };
+  showPartyUI();
+  try {
+    await window.hanko.partyJoin(rich.roomId);
+  } catch (err) {
+    alert(err.message);
+    watchParty = null;
+    hidePartyUI();
+    return;
+  }
+  // просим кого-то из уже смотрящих прислать текущее состояние (серия/тайминг/
+  // пауза), чтобы попасть не на начало серии, а туда, где остальные сейчас
+  sendPartySync('request-state');
+}
+
+// ---- применение входящих событий синхронизации ----
+window.hanko.onPartyEvent(async (payload) => {
+  if (!watchParty) return;
+  switch (payload.event) {
+    case 'participants':
+      watchParty.participants = payload.participants || [];
+      renderPartyParticipants();
+      break;
+
+    case 'play':
+      suppressPartyEvents = true;
+      if (Math.abs(els.animeVideo.currentTime - payload.currentTime) > 1.5) {
+        els.animeVideo.currentTime = payload.currentTime;
+      }
+      try { await els.animeVideo.play(); } catch { /* автоплей мог быть заблокирован браузером */ }
+      setTimeout(() => { suppressPartyEvents = false; }, 300);
+      break;
+
+    case 'pause':
+      suppressPartyEvents = true;
+      if (Math.abs(els.animeVideo.currentTime - payload.currentTime) > 1.5) {
+        els.animeVideo.currentTime = payload.currentTime;
+      }
+      els.animeVideo.pause();
+      setTimeout(() => { suppressPartyEvents = false; }, 300);
+      break;
+
+    case 'seek':
+      suppressPartyEvents = true;
+      els.animeVideo.currentTime = payload.currentTime;
+      setTimeout(() => { suppressPartyEvents = false; }, 300);
+      break;
+
+    case 'episode': {
+      if (!animePlayerState || animePlayerState.index === payload.episodeIndex) break;
+      suppressPartyEvents = true;
+      const { item, episodes, index, sourceIndex } = animePlayerState;
+      const preferredName = episodes[index].sources[sourceIndex]?.name;
+      await openAnimePlayer(item, episodes, payload.episodeIndex, preferredName);
+      setTimeout(() => { suppressPartyEvents = false; }, 300);
+      break;
+    }
+
+    case 'request-state':
+      if (!animePlayerState) break;
+      sendPartySync('state', {
+        episodeIndex: animePlayerState.index,
+        currentTime: els.animeVideo.currentTime,
+        paused: els.animeVideo.paused,
+      });
+      break;
+
+    case 'state': {
+      if (!animePlayerState) break;
+      suppressPartyEvents = true;
+      if (animePlayerState.index !== payload.episodeIndex) {
+        const { item, episodes, index, sourceIndex } = animePlayerState;
+        const preferredName = episodes[index].sources[sourceIndex]?.name;
+        await openAnimePlayer(item, episodes, payload.episodeIndex, preferredName);
+      }
+      const applyState = () => {
+        els.animeVideo.currentTime = payload.currentTime;
+        if (!payload.paused) els.animeVideo.play().catch(() => {});
+      };
+      if (els.animeVideo.readyState >= 1) applyState();
+      else els.animeVideo.addEventListener('loadedmetadata', applyState, { once: true });
+      setTimeout(() => { suppressPartyEvents = false; }, 500);
+      break;
+    }
+
+    case 'chat':
+      els.animePartyChatBody.appendChild(partyChatRow(payload.fromName || '?', payload.text || '', false));
+      els.animePartyChatBody.scrollTop = els.animePartyChatBody.scrollHeight;
+      if (els.animePartyChat.hidden) els.animePartyChatToggleBtn.classList.add('has-unread');
+      break;
+  }
+});
+
 function closeAnimePlayer() {
   // если закрываем плеер, пока он в настоящем полноэкранном режиме (Fullscreen
   // API на els.animePlayerBody) — сначала обязательно выходим из fullscreen,
@@ -3842,6 +4117,7 @@ function closeAnimePlayer() {
   animePlayerState = null;
   clearTimeout(animeIdleTimer);
   els.animePlayerOverlay.classList.remove('is-idle');
+  leaveWatchParty();
 }
 els.animePlayerBack.addEventListener('click', closeAnimePlayer);
 
@@ -3853,12 +4129,14 @@ els.animeEpPrevBtn.addEventListener('click', () => {
   const { item, episodes, index, sourceIndex } = animePlayerState;
   const preferredName = episodes[index].sources[sourceIndex]?.name;
   openAnimePlayer(item, episodes, index - 1, preferredName);
+  if (!suppressPartyEvents) sendPartySync('episode', { episodeIndex: index - 1 });
 });
 els.animeEpNextBtn.addEventListener('click', () => {
   if (!animePlayerState || animePlayerState.index >= animePlayerState.episodes.length - 1) return;
   const { item, episodes, index, sourceIndex } = animePlayerState;
   const preferredName = episodes[index].sources[sourceIndex]?.name;
   openAnimePlayer(item, episodes, index + 1, preferredName);
+  if (!suppressPartyEvents) sendPartySync('episode', { episodeIndex: index + 1 });
 });
 
 // ---------------- кастомные контролы плеера аниме ----------------
@@ -3922,7 +4200,11 @@ function updateAnimeVolumeIcon() {
 els.animePlayPauseBtn.addEventListener('click', toggleAnimePlayback);
 els.animeCenterBtn.addEventListener('click', toggleAnimePlayback);
 els.animeVideo.addEventListener('click', toggleAnimePlayback);
-els.animeVideo.addEventListener('play', () => { updateAnimePlayIcon(); armAnimeIdleTimer(); });
+els.animeVideo.addEventListener('play', () => {
+  updateAnimePlayIcon();
+  armAnimeIdleTimer();
+  if (!suppressPartyEvents) sendPartySync('play', { currentTime: els.animeVideo.currentTime });
+});
 els.animeVideo.addEventListener('pause', () => {
   updateAnimePlayIcon();
   showAnimeControls({ keepVisible: true });
@@ -3932,6 +4214,14 @@ els.animeVideo.addEventListener('pause', () => {
       releaseId: animePlayerState.item.id, positionSec: els.animeVideo.currentTime,
     }).catch(() => {});
   }
+  if (!suppressPartyEvents) sendPartySync('pause', { currentTime: els.animeVideo.currentTime });
+});
+els.animeVideo.addEventListener('seeked', () => {
+  // 'seeked' срабатывает и после программной перемотки (перемотка ±10 сек,
+  // драг по полосе, восстановление сохранённой позиции, применение чужого
+  // 'state'/'seek') — сообщаем остальным участникам только если это НЕ
+  // применение уже пришедшего извне события (см. suppressPartyEvents)
+  if (!suppressPartyEvents) sendPartySync('seek', { currentTime: els.animeVideo.currentTime });
 });
 els.animeVideo.addEventListener('ended', () => { updateAnimePlayIcon(); showAnimeControls({ keepVisible: true }); });
 
