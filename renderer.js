@@ -15,9 +15,19 @@ const els = {
   viewProfile: document.getElementById('viewProfile'),
   viewFriends: document.getElementById('viewFriends'),
 
+  profileAvatarWrap: document.getElementById('profileAvatarWrap'),
   profileAvatarBtn: document.getElementById('profileAvatarBtn'),
   profileAvatarImg: document.getElementById('profileAvatarImg'),
   profileAvatarFallback: document.getElementById('profileAvatarFallback'),
+  avatarFrameBtn: document.getElementById('avatarFrameBtn'),
+  avatarFramePopover: document.getElementById('avatarFramePopover'),
+  avatarFramePopoverList: document.getElementById('avatarFramePopoverList'),
+  profileBanner: document.getElementById('profileBanner'),
+  profileBannerBtn: document.getElementById('profileBannerBtn'),
+  profileBannerRemoveBtn: document.getElementById('profileBannerRemoveBtn'),
+  premiumStatusPill: document.getElementById('premiumStatusPill'),
+  premiumHint: document.getElementById('premiumHint'),
+  friendProfileBanner: document.getElementById('friendProfileBanner'),
   profileNameInput: document.getElementById('profileNameInput'),
   profileBioInput: document.getElementById('profileBioInput'),
   profileMangaGrid: document.getElementById('profileMangaGrid'),
@@ -303,11 +313,36 @@ function showAppConfirm(message, opts = {}) {
   els.appConfirmMessage.textContent = message;
   els.appConfirmOkBtn.textContent = okText;
   els.appConfirmCancelBtn.textContent = cancelText;
+  els.appConfirmCancelBtn.hidden = false;
   els.appConfirmOkBtn.classList.toggle('btn-primary--danger', danger);
   els.appConfirmBackdrop.hidden = false;
   return new Promise((resolve) => {
     appConfirmResolve = resolve;
   });
+}
+
+// то же окно, но без кнопки отмены — замена системного window.alert()
+function showAppAlert(message, opts = {}) {
+  const { title = 'Ханко', okText = 'Понятно' } = opts;
+  els.appConfirmTitle.textContent = title;
+  els.appConfirmMessage.textContent = message;
+  els.appConfirmOkBtn.textContent = okText;
+  els.appConfirmOkBtn.classList.remove('btn-primary--danger');
+  els.appConfirmCancelBtn.hidden = true;
+  els.appConfirmBackdrop.hidden = false;
+  return new Promise((resolve) => {
+    appConfirmResolve = resolve;
+  });
+}
+
+// Electron заворачивает ошибку из ipcMain в техническую строку вида
+// "Error invoking remote method 'x': Error: <наш текст>\n    at ...(стек)".
+// Достаём отсюда только то, что реально написали мы сами, без обёртки и стека.
+function cleanIpcError(err) {
+  let msg = String(err?.message || err || '').split('\n')[0];
+  msg = msg.replace(/^Error invoking remote method '[^']*':\s*/, '');
+  msg = msg.replace(/^Error:\s*/, '');
+  return msg || 'Что-то пошло не так.';
 }
 
 function closeAppConfirm(result) {
@@ -2032,7 +2067,7 @@ els.friendActionRemoveBtn.addEventListener('click', async () => {
     closeFriendsQuickModal();
     await refreshFriends();
   } catch (err) {
-    alert(err.message);
+    showAppAlert(cleanIpcError(err));
   }
 });
 
@@ -2052,7 +2087,7 @@ function myCommentRow(c) {
       await window.hanko.onlineDeleteProfileComment(c.id);
       await loadMyComments();
     } catch (err) {
-      alert(err.message);
+      showAppAlert(cleanIpcError(err));
     }
   });
   return row;
@@ -2082,7 +2117,30 @@ async function connectOnline() {
   if (onlineState.ready) {
     await Promise.all([refreshIncoming(), refreshOutgoing(), refreshFriends(), refreshPresence()]);
     backfillBookmarksOnce();
+    syncLibraryAndHistoryOnce();
   }
+}
+
+// личный бэкап библиотеки/истории (заметки, свои комментарии, прогресс) —
+// отдельно от бэкфилла закладок выше: этот работает в обе стороны. Догружает
+// то, чего нет локально (например, на свежем ПК после переустановки), и
+// доливает наверх то, чего ещё нет в облаке. Ничего, что уже есть в обеих
+// сторонах, не трогает — дальше каждое изменение и так само улетает в облако
+// (см. main.js — push встроен прямо в library:*/history:* обработчики).
+async function syncLibraryAndHistoryOnce() {
+  try {
+    const merged = await window.hanko.syncPullAll();
+    if (!merged) return;
+    library = merged.library;
+    animeLibrary = merged.animeLibrary;
+    readingHistory = merged.history;
+    animeHistory = merged.animeHistory;
+    renderLibrary();
+    renderAnimeLibrary();
+    renderReadingHistory();
+    renderWatchHistory();
+    renderHomeContinue();
+  } catch { /* не страшно, попробуем при следующем запуске */ }
 }
 
 // разовая синхронизация: все закладки (манга + аниме), добавленные ДО того,
@@ -2131,6 +2189,7 @@ function renderOnlineStatus() {
   renderAccountStatus();
   renderUsernameUI();
   renderProfileStats();
+  renderPremiumBlock();
 
   if (onlineState.error) {
     els.onlineStatusHint.hidden = false;
@@ -2176,6 +2235,126 @@ function showAuthFeedback(text, isError) {
   els.authFeedback.textContent = text;
   els.authFeedback.style.color = isError ? 'var(--accent-bright)' : 'var(--text-muted)';
 }
+
+// ---------------- премиум: баннер профиля + рамка аватара ----------------
+
+const PREMIUM_FRAMES = [
+  { id: 'gold', label: 'Золото' },
+  { id: 'neon', label: 'Неон' },
+  { id: 'sakura', label: 'Сакура' },
+  { id: 'obsidian', label: 'Аметист' },
+];
+
+function applyAvatarFrame(el, frame) {
+  if (!el) return;
+  if (frame) el.dataset.frame = frame; else delete el.dataset.frame;
+}
+
+function renderPremiumBlock() {
+  applyAvatarFrame(els.profileAvatarBtn, onlineState.avatarFrame);
+
+  if (onlineState.bannerUrl) {
+    els.profileBanner.style.backgroundImage = `url("${onlineState.bannerUrl}")`;
+  } else {
+    els.profileBanner.style.backgroundImage = '';
+  }
+  els.profileBannerRemoveBtn.hidden = !onlineState.bannerUrl;
+
+  if (!onlineState.ready) {
+    els.premiumStatusPill.textContent = 'нужен онлайн-аккаунт';
+    els.premiumStatusPill.classList.remove('is-active');
+    els.premiumHint.textContent = 'Баннер и рамка аватара станут доступны, как только подключится онлайн-профиль.';
+    els.avatarFrameBtn.hidden = true;
+    closeAvatarFramePopover();
+    return;
+  }
+
+  if (onlineState.isPremium) {
+    const until = onlineState.premiumUntil ? new Date(onlineState.premiumUntil).toLocaleDateString('ru-RU') : '';
+    els.premiumStatusPill.textContent = until ? `активен до ${until}` : 'активен';
+    els.premiumStatusPill.classList.add('is-active');
+    els.premiumHint.textContent = 'Можешь поставить баннер (кнопка над ним) и рамку аватара — значок ✦ на самом аватаре.';
+    els.avatarFrameBtn.hidden = false;
+  } else {
+    els.premiumStatusPill.textContent = 'не активен';
+    els.premiumStatusPill.classList.remove('is-active');
+    els.premiumHint.textContent = 'Премиум пока не подключён — баннер профиля и рамка аватара с ним станут доступны.';
+    els.avatarFrameBtn.hidden = true;
+    closeAvatarFramePopover();
+  }
+
+  els.avatarFramePopoverList.innerHTML = '';
+  const noneSwatch = document.createElement('button');
+  noneSwatch.type = 'button';
+  noneSwatch.className = 'premium-frame-swatch';
+  noneSwatch.dataset.frame = '';
+  noneSwatch.title = 'Без рамки';
+  noneSwatch.textContent = '—';
+  if (!onlineState.avatarFrame) noneSwatch.classList.add('is-selected');
+  noneSwatch.addEventListener('click', () => pickAvatarFrame(null));
+  els.avatarFramePopoverList.appendChild(noneSwatch);
+
+  for (const f of PREMIUM_FRAMES) {
+    const swatch = document.createElement('button');
+    swatch.type = 'button';
+    swatch.className = 'premium-frame-swatch';
+    swatch.dataset.frame = f.id;
+    swatch.title = f.label;
+    if (onlineState.avatarFrame === f.id) swatch.classList.add('is-selected');
+    swatch.addEventListener('click', () => pickAvatarFrame(f.id));
+    els.avatarFramePopoverList.appendChild(swatch);
+  }
+}
+
+function closeAvatarFramePopover() {
+  els.avatarFramePopover.hidden = true;
+}
+
+els.avatarFrameBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  els.avatarFramePopover.hidden = !els.avatarFramePopover.hidden;
+});
+
+document.addEventListener('click', (e) => {
+  if (!els.avatarFramePopover.hidden && !els.profileAvatarWrap.contains(e.target)) closeAvatarFramePopover();
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !els.avatarFramePopover.hidden) closeAvatarFramePopover();
+});
+
+async function pickAvatarFrame(frame) {
+  try {
+    await window.hanko.onlineSetAvatarFrame(frame);
+    onlineState.avatarFrame = frame;
+    renderPremiumBlock();
+    closeAvatarFramePopover();
+  } catch (err) {
+    showAppAlert(cleanIpcError(err));
+  }
+}
+
+els.profileBannerBtn.addEventListener('click', async () => {
+  try {
+    const url = await window.hanko.pickBanner();
+    if (url) {
+      onlineState.bannerUrl = url;
+      renderPremiumBlock();
+    }
+  } catch (err) {
+    showAppAlert(cleanIpcError(err));
+  }
+});
+
+els.profileBannerRemoveBtn.addEventListener('click', async () => {
+  try {
+    await window.hanko.removeBanner();
+    onlineState.bannerUrl = null;
+    renderPremiumBlock();
+  } catch (err) {
+    showAppAlert(cleanIpcError(err));
+  }
+});
 
 els.registerForm.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -2727,7 +2906,7 @@ async function sendChatPayload(body) {
     appendChatMessage(msg);
     els.chatBody.scrollTop = els.chatBody.scrollHeight;
   } catch (err) {
-    alert(err.message);
+    showAppAlert(cleanIpcError(err));
   }
 }
 
@@ -2938,7 +3117,7 @@ function friendCommentRow(c) {
         await loadFriendComments(activeFriendProfile.friendId);
         els.friendStatComments.textContent = String(Math.max(0, (parseInt(els.friendStatComments.textContent, 10) || 1) - 1));
       } catch (err) {
-        alert(err.message);
+        showAppAlert(cleanIpcError(err));
       }
     });
   }
@@ -2975,7 +3154,7 @@ els.friendStatLikeBlock.addEventListener('click', async () => {
     const current = parseInt(els.friendStatLikes.textContent, 10) || 0;
     renderFriendLikeBlock(likedNow ? current + 1 : Math.max(0, current - 1), likedNow);
   } catch (err) {
-    alert(err.message);
+    showAppAlert(cleanIpcError(err));
   }
 });
 
@@ -2984,6 +3163,9 @@ async function openFriendProfile(friendId, name) {
   els.friendProfileOverlay.hidden = false;
   els.friendProfileName.textContent = name;
   els.friendProfileAvatar.innerHTML = avatarInnerHtml(name, friendsList.find((f) => f.friend_id === friendId)?.avatar_url);
+  applyAvatarFrame(els.friendProfileAvatar, null);
+  els.friendProfileBanner.hidden = true;
+  els.friendProfileBanner.style.backgroundImage = '';
   updateFriendProfileOnlineLabel();
   switchFriendProfileTab('profile');
 
@@ -3008,6 +3190,13 @@ async function openFriendProfile(friendId, name) {
       if (profileData.bio) {
         els.friendProfileBio.hidden = false;
         els.friendProfileBio.textContent = profileData.bio;
+      }
+      if (profileData.is_premium) {
+        applyAvatarFrame(els.friendProfileAvatar, profileData.avatar_frame);
+        if (profileData.banner_url) {
+          els.friendProfileBanner.hidden = false;
+          els.friendProfileBanner.style.backgroundImage = `url("${profileData.banner_url}")`;
+        }
       }
       els.friendStatViews.textContent = String(profileData.view_count ?? 0);
       renderFriendLikeBlock(profileData.likes_count ?? 0, !!profileData.liked_by_me);
@@ -3043,7 +3232,7 @@ els.friendProfileUnfriendBtn.addEventListener('click', async () => {
     closeFriendProfile();
     await refreshFriends();
   } catch (err) {
-    alert(err.message);
+    showAppAlert(cleanIpcError(err));
   }
 });
 
@@ -3948,7 +4137,7 @@ function watchPartyInviteRow(f) {
       btn.textContent = 'Позвал(а) ✓';
       btn.disabled = true;
     } catch (err) {
-      alert(err.message);
+      showAppAlert(cleanIpcError(err));
     }
   });
   return row;
@@ -3970,7 +4159,7 @@ els.animePartyBtn.addEventListener('click', async () => {
   try {
     await ensureWatchParty();
   } catch (err) {
-    alert(err.message);
+    showAppAlert(cleanIpcError(err));
     return;
   }
   openWatchPartyInvite();
@@ -4009,7 +4198,7 @@ async function joinWatchParty(rich) {
   try {
     await window.hanko.partyJoin(rich.roomId);
   } catch (err) {
-    alert(err.message);
+    showAppAlert(cleanIpcError(err));
     watchParty = null;
     hidePartyUI();
     return;

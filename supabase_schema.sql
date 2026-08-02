@@ -38,6 +38,22 @@ alter table public.profiles add column if not exists view_count bigint not null 
 -- rpc_set_avatar_url / rpc_list_friends / rpc_get_profile
 alter table public.profiles add column if not exists avatar_url text;
 
+-- ---------- премиум ----------
+-- premium_until — до какого момента активна подписка (null = никогда не было).
+-- Оплаты пока нет — статус выставляется вручную одной строкой в SQL Editor,
+-- когда решишь кому-то выдать (себе на тест, другу, или позже — по вебхуку
+-- от платёжки, когда она появится):
+--   update public.profiles set premium_until = now() + interval '1 month' where username = 'ник';
+-- Забрать досрочно:
+--   update public.profiles set premium_until = now() where username = 'ник';
+alter table public.profiles add column if not exists premium_until timestamptz;
+-- баннер профиля (Storage, бакет banners, публичный) — только для премиума,
+-- см. rpc_set_banner ниже
+alter table public.profiles add column if not exists banner_url text;
+-- рамка аватара — id одного из готовых пресетов ('gold'/'neon'/'sakura'/'obsidian'
+-- на клиенте), тоже только для премиума, см. rpc_set_avatar_frame
+alter table public.profiles add column if not exists avatar_frame text;
+
 create table if not exists public.friend_requests (
   id uuid primary key default gen_random_uuid(),
   from_id uuid not null references public.profiles(id) on delete cascade,
@@ -127,6 +143,31 @@ drop policy if exists "avatar own delete" on storage.objects;
 create policy "avatar own delete" on storage.objects
   for delete using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
 
+-- ---------- Storage: баннеры профиля (премиум) ----------
+-- Та же логика, что и с аватарами: публичное чтение, писать может только
+-- владелец в свою папку. Заливка на клиенте всё равно упирается в
+-- rpc_set_banner (нужен активный premium_until), так что без подписки
+-- сохранить ссылку в профиль не получится, даже если файл залить руками.
+insert into storage.buckets (id, name, public)
+values ('banners', 'banners', true)
+on conflict (id) do nothing;
+
+drop policy if exists "banner public read" on storage.objects;
+create policy "banner public read" on storage.objects
+  for select using (bucket_id = 'banners');
+
+drop policy if exists "banner own write" on storage.objects;
+create policy "banner own write" on storage.objects
+  for insert with check (bucket_id = 'banners' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "banner own update" on storage.objects;
+create policy "banner own update" on storage.objects
+  for update using (bucket_id = 'banners' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "banner own delete" on storage.objects;
+create policy "banner own delete" on storage.objects
+  for delete using (bucket_id = 'banners' and (storage.foldername(name))[1] = auth.uid()::text);
+
 -- ---------- RLS ----------
 -- Прямой доступ к таблицам закрыт почти полностью: всё чтение/запись идёт
 -- через функции ниже (security definer), которые сами проверяют auth.uid().
@@ -213,12 +254,16 @@ create trigger on_auth_user_created
 
 drop function if exists public.rpc_get_my_profile();
 create or replace function public.rpc_get_my_profile()
-returns table(id uuid, friend_code text, username text, display_name text)
+returns table(
+  id uuid, friend_code text, username text, display_name text,
+  premium_until timestamptz, banner_url text, avatar_frame text
+)
 language sql
 security definer
 set search_path = public
 as $$
-  select id, friend_code, username, display_name from public.profiles where id = auth.uid();
+  select id, friend_code, username, display_name, premium_until, banner_url, avatar_frame
+  from public.profiles where id = auth.uid();
 $$;
 
 drop function if exists public.rpc_set_display_name(text);
@@ -578,6 +623,45 @@ as $$
   update public.profiles set avatar_url = nullif(trim(p_url), '') where id = auth.uid();
 $$;
 
+-- ---------- RPC: премиум-кастомизация (баннер, рамка аватара) ----------
+-- Обе функции требуют активной подписки — иначе понятная ошибка not_premium.
+-- Если подписка позже истечёт, значения в базе не стираются (чтобы при
+-- продлении всё вернулось как было) — просто клиент перестаёт их показывать,
+-- ориентируясь на is_premium из rpc_get_profile.
+
+drop function if exists public.rpc_set_banner(text);
+create or replace function public.rpc_set_banner(p_url text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not exists (select 1 from public.profiles where id = auth.uid() and premium_until > now()) then
+    raise exception 'not_premium';
+  end if;
+  update public.profiles set banner_url = nullif(trim(p_url), '') where id = auth.uid();
+end;
+$$;
+
+drop function if exists public.rpc_set_avatar_frame(text);
+create or replace function public.rpc_set_avatar_frame(p_frame text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not exists (select 1 from public.profiles where id = auth.uid() and premium_until > now()) then
+    raise exception 'not_premium';
+  end if;
+  if p_frame is not null and p_frame not in ('gold', 'neon', 'sakura', 'obsidian') then
+    raise exception 'invalid_frame';
+  end if;
+  update public.profiles set avatar_frame = p_frame where id = auth.uid();
+end;
+$$;
+
 -- ---------- RPC: чужой профиль (сам себе тоже можно) ----------
 -- Открыть можно только свой профиль или профиль друга — иначе понятная ошибка
 -- (в интерфейсе профиль открывается только по клику на друга из списка друзей).
@@ -587,7 +671,7 @@ create or replace function public.rpc_get_profile(p_user_id uuid)
 returns table(
   id uuid, username text, display_name text, bio text, friend_code text,
   view_count bigint, friends_count bigint, comments_count bigint, likes_count bigint, liked_by_me boolean,
-  avatar_url text
+  avatar_url text, banner_url text, avatar_frame text, is_premium boolean
 )
 language plpgsql
 security definer
@@ -612,7 +696,12 @@ begin
       (select count(*) from public.profile_comments c where c.profile_id = p.id),
       (select count(*) from public.profile_likes l where l.profile_id = p.id),
       exists(select 1 from public.profile_likes l where l.profile_id = p.id and l.liker_id = auth.uid()),
-      p.avatar_url
+      p.avatar_url,
+      -- баннер/рамку отдаём только пока подписка реально активна — если
+      -- истекла, для остальных они просто не показываются (но не стираются)
+      case when p.premium_until > now() then p.banner_url else null end,
+      case when p.premium_until > now() then p.avatar_frame else null end,
+      (p.premium_until > now())
     from public.profiles p
     where p.id = p_user_id;
 end;
@@ -766,6 +855,151 @@ begin
 end;
 $$;
 
+-- ---------- личный бэкап библиотеки и истории ----------
+-- Полностью отдельно от bookmarks выше: bookmarks — то, что видно друзьям
+-- на профиле (только название/обложка/статус). Здесь — приватная копия для
+-- восстановления на другом устройстве: заметки, свои комментарии к тайтлу и
+-- прогресс чтения/просмотра. Друзьям не видно никогда — ни через какую RPC.
+-- kind различает мангу и аниме (id тайтлов и так не пересекаются — у аниме
+-- всегда префикс "al:" — но явная колонка проще для будущих запросов).
+-- Скачанные главы сюда намеренно не входят — тяжёлые, проще перекачать заново.
+
+create table if not exists public.library_items (
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  kind text not null check (kind in ('manga', 'anime')),
+  item_id text not null,
+  title text not null,
+  cover_url text,
+  status text,
+  note text,
+  comments jsonb not null default '[]'::jsonb,
+  chapter_id text,
+  chapter_label text,
+  page int,
+  added_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (user_id, kind, item_id)
+);
+
+-- история — отдельно от библиотеки: сюда попадает вообще всё открытое, даже
+-- не добавленное в библиотеку (это и есть лента "Продолжить"). position_sec
+-- используется только аниме (позиция в секундах), page — только мангой
+-- (номер страницы); у другого вида соответствующее поле просто пустое.
+create table if not exists public.history_items (
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  kind text not null check (kind in ('manga', 'anime')),
+  item_id text not null,
+  title text not null,
+  cover_url text,
+  chapter_id text,
+  chapter_label text,
+  page int,
+  position_sec int,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, kind, item_id)
+);
+
+alter table public.library_items enable row level security;
+alter table public.history_items enable row level security;
+
+drop policy if exists "see own library items" on public.library_items;
+create policy "see own library items" on public.library_items
+  for select using (user_id = auth.uid());
+
+drop policy if exists "see own history items" on public.history_items;
+create policy "see own history items" on public.history_items
+  for select using (user_id = auth.uid());
+
+drop function if exists public.rpc_upsert_library_item(text, text, text, text, text, text, jsonb, text, text, int);
+create or replace function public.rpc_upsert_library_item(
+  p_kind text, p_item_id text, p_title text, p_cover_url text, p_status text,
+  p_note text, p_comments jsonb, p_chapter_id text, p_chapter_label text, p_page int
+)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  insert into public.library_items
+    (user_id, kind, item_id, title, cover_url, status, note, comments, chapter_id, chapter_label, page, updated_at)
+  values
+    (auth.uid(), p_kind, p_item_id, p_title, p_cover_url, p_status, p_note, coalesce(p_comments, '[]'::jsonb), p_chapter_id, p_chapter_label, p_page, now())
+  on conflict (user_id, kind, item_id) do update
+    set title = excluded.title, cover_url = excluded.cover_url, status = excluded.status,
+        note = excluded.note, comments = excluded.comments, chapter_id = excluded.chapter_id,
+        chapter_label = excluded.chapter_label, page = excluded.page, updated_at = now();
+$$;
+
+drop function if exists public.rpc_remove_library_item(text, text);
+create or replace function public.rpc_remove_library_item(p_kind text, p_item_id text)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  delete from public.library_items where user_id = auth.uid() and kind = p_kind and item_id = p_item_id;
+$$;
+
+drop function if exists public.rpc_list_library_items();
+create or replace function public.rpc_list_library_items()
+returns setof public.library_items
+language sql
+security definer
+set search_path = public
+as $$
+  select * from public.library_items where user_id = auth.uid() order by added_at desc;
+$$;
+
+drop function if exists public.rpc_upsert_history_item(text, text, text, text, text, text, int, int);
+create or replace function public.rpc_upsert_history_item(
+  p_kind text, p_item_id text, p_title text, p_cover_url text,
+  p_chapter_id text, p_chapter_label text, p_page int, p_position_sec int
+)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  insert into public.history_items
+    (user_id, kind, item_id, title, cover_url, chapter_id, chapter_label, page, position_sec, updated_at)
+  values
+    (auth.uid(), p_kind, p_item_id, p_title, p_cover_url, p_chapter_id, p_chapter_label, p_page, p_position_sec, now())
+  on conflict (user_id, kind, item_id) do update
+    set title = excluded.title, cover_url = excluded.cover_url, chapter_id = excluded.chapter_id,
+        chapter_label = excluded.chapter_label, page = excluded.page, position_sec = excluded.position_sec,
+        updated_at = now();
+$$;
+
+drop function if exists public.rpc_remove_history_item(text, text);
+create or replace function public.rpc_remove_history_item(p_kind text, p_item_id text)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  delete from public.history_items where user_id = auth.uid() and kind = p_kind and item_id = p_item_id;
+$$;
+
+drop function if exists public.rpc_clear_history_items(text);
+create or replace function public.rpc_clear_history_items(p_kind text)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  delete from public.history_items where user_id = auth.uid() and kind = p_kind;
+$$;
+
+drop function if exists public.rpc_list_history_items();
+create or replace function public.rpc_list_history_items()
+returns setof public.history_items
+language sql
+security definer
+set search_path = public
+as $$
+  select * from public.history_items where user_id = auth.uid() order by updated_at desc;
+$$;
+
 -- ---------- права на выполнение функций ----------
 -- Анонимный вход в Supabase выдаёт роль authenticated (с флагом is_anonymous),
 -- поэтому даём права именно ей — анонимным "без сессии" эти функции не нужны.
@@ -789,6 +1023,8 @@ revoke all on function public.rpc_list_messages(uuid, int) from public;
 revoke all on function public.rpc_mark_messages_read(uuid) from public;
 revoke all on function public.rpc_set_bio(text) from public;
 revoke all on function public.rpc_set_avatar_url(text) from public;
+revoke all on function public.rpc_set_banner(text) from public;
+revoke all on function public.rpc_set_avatar_frame(text) from public;
 revoke all on function public.rpc_get_profile(uuid) from public;
 revoke all on function public.rpc_toggle_profile_like(uuid) from public;
 revoke all on function public.rpc_upsert_bookmark(text, text, text, text) from public;
@@ -797,6 +1033,13 @@ revoke all on function public.rpc_list_bookmarks(uuid) from public;
 revoke all on function public.rpc_list_profile_comments(uuid) from public;
 revoke all on function public.rpc_add_profile_comment(uuid, text) from public;
 revoke all on function public.rpc_delete_profile_comment(uuid) from public;
+revoke all on function public.rpc_upsert_library_item(text, text, text, text, text, text, jsonb, text, text, int) from public;
+revoke all on function public.rpc_remove_library_item(text, text) from public;
+revoke all on function public.rpc_list_library_items() from public;
+revoke all on function public.rpc_upsert_history_item(text, text, text, text, text, text, int, int) from public;
+revoke all on function public.rpc_remove_history_item(text, text) from public;
+revoke all on function public.rpc_clear_history_items(text) from public;
+revoke all on function public.rpc_list_history_items() from public;
 
 grant execute on function public.rpc_get_my_profile() to authenticated;
 grant execute on function public.rpc_set_display_name(text) to authenticated;
@@ -817,6 +1060,8 @@ grant execute on function public.rpc_list_messages(uuid, int) to authenticated;
 grant execute on function public.rpc_mark_messages_read(uuid) to authenticated;
 grant execute on function public.rpc_set_bio(text) to authenticated;
 grant execute on function public.rpc_set_avatar_url(text) to authenticated;
+grant execute on function public.rpc_set_banner(text) to authenticated;
+grant execute on function public.rpc_set_avatar_frame(text) to authenticated;
 grant execute on function public.rpc_get_profile(uuid) to authenticated;
 grant execute on function public.rpc_toggle_profile_like(uuid) to authenticated;
 grant execute on function public.rpc_upsert_bookmark(text, text, text, text) to authenticated;
@@ -825,6 +1070,13 @@ grant execute on function public.rpc_list_bookmarks(uuid) to authenticated;
 grant execute on function public.rpc_list_profile_comments(uuid) to authenticated;
 grant execute on function public.rpc_add_profile_comment(uuid, text) to authenticated;
 grant execute on function public.rpc_delete_profile_comment(uuid) to authenticated;
+grant execute on function public.rpc_upsert_library_item(text, text, text, text, text, text, jsonb, text, text, int) to authenticated;
+grant execute on function public.rpc_remove_library_item(text, text) to authenticated;
+grant execute on function public.rpc_list_library_items() to authenticated;
+grant execute on function public.rpc_upsert_history_item(text, text, text, text, text, text, int, int) to authenticated;
+grant execute on function public.rpc_remove_history_item(text, text) to authenticated;
+grant execute on function public.rpc_clear_history_items(text) to authenticated;
+grant execute on function public.rpc_list_history_items() to authenticated;
 
 -- ---------- реалтайм ----------
 -- Без этого живые уведомления (новая заявка / принятая заявка / новое

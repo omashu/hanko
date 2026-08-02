@@ -496,14 +496,18 @@ ipcMain.handle('library:load', () => loadLibrary());
 ipcMain.handle('library:upsert', async (_e, item) => {
   const items = await loadLibrary();
   const idx = items.findIndex((i) => i.id === item.id);
-  if (idx >= 0) items[idx] = { ...items[idx], ...item };
-  else items.unshift(item);
-  return saveLibrary(items);
+  const merged = idx >= 0 ? { ...items[idx], ...item } : { ...item, addedAt: item.addedAt || Date.now() };
+  if (idx >= 0) items[idx] = merged; else items.unshift(merged);
+  await saveLibrary(items);
+  pushLibraryItem('manga', merged);
+  return items;
 });
 
 ipcMain.handle('library:remove', async (_e, id) => {
   const items = (await loadLibrary()).filter((i) => i.id !== id);
-  return saveLibrary(items);
+  await saveLibrary(items);
+  pushLibraryRemove('manga', id);
+  return items;
 });
 
 ipcMain.handle('library:progress', async (_e, { id, chapterId, chapterLabel, page }) => {
@@ -512,6 +516,7 @@ ipcMain.handle('library:progress', async (_e, { id, chapterId, chapterLabel, pag
   if (idx >= 0) {
     items[idx].progress = { chapterId, chapterLabel, page, updatedAt: Date.now() };
     await saveLibrary(items);
+    pushLibraryItem('manga', items[idx]);
   }
   return items;
 });
@@ -521,30 +526,43 @@ ipcMain.handle('history:load', () => loadHistory());
 ipcMain.handle('history:progress', async (_e, { mangaId, title, coverUrl, chapterId, chapterLabel, page }) => {
   const items = await loadHistory();
   const filtered = items.filter((i) => i.mangaId !== mangaId);
-  filtered.unshift({ mangaId, title, coverUrl, chapterId, chapterLabel, page, updatedAt: Date.now() });
-  return saveHistory(filtered);
+  const entry = { mangaId, title, coverUrl, chapterId, chapterLabel, page, updatedAt: Date.now() };
+  filtered.unshift(entry);
+  await saveHistory(filtered);
+  pushHistoryItem('manga', entry);
+  return filtered;
 });
 
 ipcMain.handle('history:remove', async (_e, mangaId) => {
   const items = (await loadHistory()).filter((i) => i.mangaId !== mangaId);
-  return saveHistory(items);
+  await saveHistory(items);
+  pushHistoryRemove('manga', mangaId);
+  return items;
 });
 
-ipcMain.handle('history:clear', () => saveHistory([]));
+ipcMain.handle('history:clear', async () => {
+  const result = await saveHistory([]);
+  pushHistoryClear('manga');
+  return result;
+});
 
 ipcMain.handle('anime-library:load', () => loadAnimeLibrary());
 
 ipcMain.handle('anime-library:upsert', async (_e, item) => {
   const items = await loadAnimeLibrary();
   const idx = items.findIndex((i) => i.id === item.id);
-  if (idx >= 0) items[idx] = { ...items[idx], ...item };
-  else items.push({ ...item, addedAt: Date.now() });
-  return saveAnimeLibrary(items);
+  const merged = idx >= 0 ? { ...items[idx], ...item } : { ...item, addedAt: Date.now() };
+  if (idx >= 0) items[idx] = merged; else items.push(merged);
+  await saveAnimeLibrary(items);
+  pushLibraryItem('anime', merged);
+  return items;
 });
 
 ipcMain.handle('anime-library:remove', async (_e, id) => {
   const items = (await loadAnimeLibrary()).filter((i) => i.id !== id);
-  return saveAnimeLibrary(items);
+  await saveAnimeLibrary(items);
+  pushLibraryRemove('anime', id);
+  return items;
 });
 
 ipcMain.handle('anime-history:load', () => loadAnimeHistory());
@@ -558,16 +576,22 @@ ipcMain.handle('anime-history:progress', async (_e, { releaseId, title, coverUrl
   // серии начинаем с нуля
   const keepPosition = existing && existing.episodeLabel === episodeLabel ? (existing.positionSec || 0) : 0;
   const filtered = items.filter((i) => i.releaseId !== releaseId);
-  filtered.unshift({
+  const entry = {
     releaseId, title, coverUrl, episodeIndex, episodeLabel,
     positionSec: keepPosition,
     updatedAt: Date.now(),
-  });
-  return saveAnimeHistory(filtered);
+  };
+  filtered.unshift(entry);
+  await saveAnimeHistory(filtered);
+  // позицию (setPosition ниже) в облако не шлём — она обновляется каждые ~5 сек
+  // во время просмотра, это было бы слишком часто; смена серии/тайтла — самое
+  // важное для восстановления на другом устройстве — и так попадает сюда
+  pushHistoryItem('anime', entry);
+  return filtered;
 });
 
 // лёгкое обновление только позиции — вызывается часто (раз в ~5 сек во время
-// просмотра), поэтому не трогает остальные поля записи
+// просмотра), поэтому не трогает остальные поля записи и не шлётся в облако
 ipcMain.handle('anime-history:setPosition', async (_e, { releaseId, positionSec }) => {
   const items = await loadAnimeHistory();
   const idx = items.findIndex((i) => i.releaseId === releaseId);
@@ -580,10 +604,16 @@ ipcMain.handle('anime-history:setPosition', async (_e, { releaseId, positionSec 
 
 ipcMain.handle('anime-history:remove', async (_e, releaseId) => {
   const items = (await loadAnimeHistory()).filter((i) => i.releaseId !== releaseId);
-  return saveAnimeHistory(items);
+  await saveAnimeHistory(items);
+  pushHistoryRemove('anime', releaseId);
+  return items;
 });
 
-ipcMain.handle('anime-history:clear', () => saveAnimeHistory([]));
+ipcMain.handle('anime-history:clear', async () => {
+  const result = await saveAnimeHistory([]);
+  pushHistoryClear('anime');
+  return result;
+});
 
 ipcMain.handle('library:note', async (_e, { id, note }) => {
   const items = await loadLibrary();
@@ -591,6 +621,7 @@ ipcMain.handle('library:note', async (_e, { id, note }) => {
   if (idx >= 0) {
     items[idx].note = note;
     await saveLibrary(items);
+    pushLibraryItem('manga', items[idx]);
   }
   return items;
 });
@@ -605,6 +636,7 @@ ipcMain.handle('library:addComment', async (_e, { id, text }) => {
     comments.unshift({ id: `cm_${Date.now()}`, text: clean, createdAt: Date.now() });
     items[idx].comments = comments;
     await saveLibrary(items);
+    pushLibraryItem('manga', items[idx]);
   }
   return items;
 });
@@ -617,6 +649,7 @@ ipcMain.handle('library:removeComment', async (_e, { id, commentId }) => {
       (c) => c.id !== commentId
     );
     await saveLibrary(items);
+    pushLibraryItem('manga', items[idx]);
   }
   return items;
 });
@@ -627,6 +660,7 @@ ipcMain.handle('anime-library:note', async (_e, { id, note }) => {
   if (idx >= 0) {
     items[idx].note = note;
     await saveAnimeLibrary(items);
+    pushLibraryItem('anime', items[idx]);
   }
   return items;
 });
@@ -641,6 +675,7 @@ ipcMain.handle('anime-library:addComment', async (_e, { id, text }) => {
     comments.unshift({ id: `cm_${Date.now()}`, text: clean, createdAt: Date.now() });
     items[idx].comments = comments;
     await saveAnimeLibrary(items);
+    pushLibraryItem('anime', items[idx]);
   }
   return items;
 });
@@ -653,6 +688,7 @@ ipcMain.handle('anime-library:removeComment', async (_e, { id, commentId }) => {
       (c) => c.id !== commentId
     );
     await saveAnimeLibrary(items);
+    pushLibraryItem('anime', items[idx]);
   }
   return items;
 });
@@ -737,6 +773,46 @@ ipcMain.handle('profile:pickAvatar', async () => {
   }
 
   return saveProfile({ avatarFile: fileName });
+});
+
+// Баннер — премиум-фича, локальной копии не держим (в отличие от аватара он
+// не нужен, пока не подключён онлайн-профиль): сразу заливаем в Storage и
+// сохраняем ссылку через rpc_set_banner, которая сама проверит подписку.
+ipcMain.handle('profile:pickBanner', async () => {
+  if (!mainWindow) return null;
+  if (!onlineState.ready) throw new Error('Сначала подключись к онлайн-профилю (раздел «Аккаунт»).');
+  if (!onlineState.isPremium) throw new Error(friendlyOnlineError({ message: 'not_premium' }));
+
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Выбери баннер профиля',
+    filters: [{ name: 'Изображения', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+    properties: ['openFile'],
+  });
+  if (result.canceled || !result.filePaths[0]) return null;
+
+  const src = result.filePaths[0];
+  const ext = (path.extname(src) || '.jpg').toLowerCase();
+  const bytes = await fs.readFile(src);
+  const contentType = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' }[ext] || 'image/jpeg';
+  const storagePath = `${onlineState.myId}/banner${ext}`;
+
+  const { error: uploadErr } = await supabase.storage.from('banners').upload(storagePath, bytes, { contentType, upsert: true });
+  if (uploadErr) throw new Error(`Не удалось залить баннер: ${uploadErr.message}`);
+
+  const { data: pub } = supabase.storage.from('banners').getPublicUrl(storagePath);
+  const bustedUrl = `${pub.publicUrl}?t=${Date.now()}`;
+  const { error: rpcErr } = await supabase.rpc('rpc_set_banner', { p_url: bustedUrl });
+  if (rpcErr) throw new Error(friendlyOnlineError(rpcErr));
+
+  onlineState.bannerUrl = bustedUrl;
+  return bustedUrl;
+});
+
+ipcMain.handle('profile:removeBanner', async () => {
+  const { error } = await supabase.rpc('rpc_set_banner', { p_url: null });
+  if (error) throw new Error(friendlyOnlineError(error));
+  onlineState.bannerUrl = null;
+  return true;
 });
 
 // ---------- IPC: MangaDex (публичный открытый API, без ключа) ----------
@@ -2461,6 +2537,8 @@ function friendlyOnlineError(err) {
     request_not_found: 'Заявка не найдена — возможно, её уже отменили.',
     not_friends: 'Сначала нужно добавить друг друга.',
     empty_message: 'Сообщение пустое.',
+    not_premium: 'Это премиум-функция — нужна активная подписка.',
+    invalid_frame: 'Такой рамки не существует.',
     'User already registered': 'Эта почта уже зарегистрирована — попробуй войти, а не регистрироваться заново.',
     'Invalid login credentials': 'Неверная почта или пароль.',
     'Password should be at least': 'Пароль слишком короткий (минимум 6 символов).',
@@ -2520,6 +2598,10 @@ async function initOnline() {
       displayName: profileRow.display_name || null,
       email: authUser?.email || null,
       isAnonymous: authUser?.is_anonymous !== false,
+      premiumUntil: profileRow.premium_until || null,
+      isPremium: !!(profileRow.premium_until && new Date(profileRow.premium_until) > new Date()),
+      bannerUrl: profileRow.banner_url || null,
+      avatarFrame: profileRow.avatar_frame || null,
     };
     setupRealtimeSubscriptions(profileRow.id);
   } catch (err) {
@@ -2831,6 +2913,13 @@ ipcMain.handle('online:setBio', async (_e, bio) => {
   return true;
 });
 
+ipcMain.handle('online:setAvatarFrame', async (_e, frame) => {
+  const { error } = await supabase.rpc('rpc_set_avatar_frame', { p_frame: frame || null });
+  if (error) throw new Error(friendlyOnlineError(error));
+  onlineState.avatarFrame = frame || null;
+  return true;
+});
+
 ipcMain.handle('online:getProfile', async (_e, userId) => {
   const { data, error } = await supabase.rpc('rpc_get_profile', { p_user_id: userId }).maybeSingle();
   if (error) throw new Error(friendlyOnlineError(error));
@@ -2882,4 +2971,149 @@ ipcMain.handle('online:deleteProfileComment', async (_e, commentId) => {
   const { error } = await supabase.rpc('rpc_delete_profile_comment', { p_comment_id: commentId });
   if (error) throw new Error(friendlyOnlineError(error));
   return true;
+});
+
+// ---------- Личный бэкап библиотеки и истории (НЕ видно друзьям) ----------
+// Отдельно от bookmarks выше (та таблица — только то, что видно друзьям на
+// профиле: название/обложка/статус). Здесь — полная копия для восстановления
+// на другом ПК: заметки, свои комментарии к тайтлу и прогресс чтения/просмотра.
+// Скачанные главы сюда намеренно не входят — они тяжёлые, их проще на новом
+// устройстве просто скачать заново.
+//
+// Отправка (push) встроена прямо в обработчики library:*/history:* ниже по
+// файлу — каждое локальное изменение молча пытается уехать в облако, ошибки
+// (офлайн, не авторизован) просто проглатываются, локальная операция от этого
+// никогда не страдает.
+//
+// Восстановление (pull) — только online:syncPullAll: догружает то, чего нет
+// локально, и доливает наверх то, чего ещё нет в облаке (разовый бэкфилл для
+// уже существующей локальной библиотеки). Существующие с обеих сторон записи
+// не перезаписываются — так безопаснее, если однажды всё-таки читаешь с двух
+// устройств одновременно, ничего не затрётся.
+
+function pushLibraryItem(kind, item) {
+  if (!onlineState.ready || !item) return;
+  Promise.resolve(supabase.rpc('rpc_upsert_library_item', {
+    p_kind: kind,
+    p_item_id: item.id,
+    p_title: item.title,
+    p_cover_url: item.coverUrl || null,
+    p_status: item.status || null,
+    p_note: item.note || null,
+    p_comments: Array.isArray(item.comments) ? item.comments : [],
+    p_chapter_id: item.progress?.chapterId || null,
+    p_chapter_label: item.progress?.chapterLabel || null,
+    p_page: typeof item.progress?.page === 'number' ? item.progress.page : null,
+  })).catch(() => {});
+}
+
+function pushLibraryRemove(kind, itemId) {
+  if (!onlineState.ready) return;
+  Promise.resolve(supabase.rpc('rpc_remove_library_item', { p_kind: kind, p_item_id: itemId })).catch(() => {});
+}
+
+function pushHistoryItem(kind, entry) {
+  if (!onlineState.ready || !entry) return;
+  const itemId = kind === 'anime' ? entry.releaseId : entry.mangaId;
+  Promise.resolve(supabase.rpc('rpc_upsert_history_item', {
+    p_kind: kind,
+    p_item_id: itemId,
+    p_title: entry.title,
+    p_cover_url: entry.coverUrl || null,
+    p_chapter_id: kind === 'anime' ? null : (entry.chapterId || null),
+    p_chapter_label: kind === 'anime' ? (entry.episodeLabel || null) : (entry.chapterLabel || null),
+    p_page: kind === 'anime' ? (entry.episodeIndex ?? null) : (entry.page ?? null),
+    p_position_sec: kind === 'anime' ? (entry.positionSec ?? null) : null,
+  })).catch(() => {});
+}
+
+function pushHistoryRemove(kind, itemId) {
+  if (!onlineState.ready) return;
+  Promise.resolve(supabase.rpc('rpc_remove_history_item', { p_kind: kind, p_item_id: itemId })).catch(() => {});
+}
+
+function pushHistoryClear(kind) {
+  if (!onlineState.ready) return;
+  Promise.resolve(supabase.rpc('rpc_clear_history_items', { p_kind: kind })).catch(() => {});
+}
+
+
+ipcMain.handle('online:syncPullAll', async () => {
+  if (!onlineState.ready) return null;
+  const [libRes, histRes] = await Promise.all([
+    supabase.rpc('rpc_list_library_items'),
+    supabase.rpc('rpc_list_history_items'),
+  ]);
+  if (libRes.error || histRes.error) return null;
+
+  const cloudLibrary = libRes.data || [];
+  const cloudHistory = histRes.data || [];
+
+  const library = await loadLibrary();
+  const animeLibrary = await loadAnimeLibrary();
+  let changedLibrary = false;
+  let changedAnimeLibrary = false;
+
+  for (const row of cloudLibrary) {
+    const list = row.kind === 'anime' ? animeLibrary : library;
+    if (!list.some((i) => i.id === row.item_id)) {
+      const restored = {
+        id: row.item_id, title: row.title, coverUrl: row.cover_url, status: row.status,
+        addedAt: new Date(row.added_at).getTime(),
+      };
+      if (row.note) restored.note = row.note;
+      if (Array.isArray(row.comments) && row.comments.length) restored.comments = row.comments;
+      if (row.chapter_id || row.chapter_label || typeof row.page === 'number') {
+        restored.progress = {
+          chapterId: row.chapter_id, chapterLabel: row.chapter_label, page: row.page,
+          updatedAt: new Date(row.updated_at).getTime(),
+        };
+      }
+      list.push(restored);
+      if (row.kind === 'anime') changedAnimeLibrary = true; else changedLibrary = true;
+    }
+  }
+  if (changedLibrary) await saveLibrary(library);
+  if (changedAnimeLibrary) await saveAnimeLibrary(animeLibrary);
+
+  // локальные тайтлы, которых ещё нет в облаке — доливаем (разовый бэкфилл
+  // + подхватит то, что успели добавить, пока были офлайн)
+  const cloudLibKeys = new Set(cloudLibrary.map((r) => `${r.kind}:${r.item_id}`));
+  for (const item of library) if (!cloudLibKeys.has(`manga:${item.id}`)) pushLibraryItem('manga', item);
+  for (const item of animeLibrary) if (!cloudLibKeys.has(`anime:${item.id}`)) pushLibraryItem('anime', item);
+
+  const history = await loadHistory();
+  const animeHistory = await loadAnimeHistory();
+  let changedHistory = false;
+  let changedAnimeHistory = false;
+
+  for (const row of cloudHistory) {
+    const list = row.kind === 'anime' ? animeHistory : history;
+    const has = row.kind === 'anime'
+      ? list.some((i) => i.releaseId === row.item_id)
+      : list.some((i) => i.mangaId === row.item_id);
+    if (!has) {
+      const restored = row.kind === 'anime'
+        ? {
+            releaseId: row.item_id, title: row.title, coverUrl: row.cover_url,
+            episodeIndex: row.page, episodeLabel: row.chapter_label,
+            positionSec: row.position_sec || 0, updatedAt: new Date(row.updated_at).getTime(),
+          }
+        : {
+            mangaId: row.item_id, title: row.title, coverUrl: row.cover_url,
+            chapterId: row.chapter_id, chapterLabel: row.chapter_label, page: row.page,
+            updatedAt: new Date(row.updated_at).getTime(),
+          };
+      list.push(restored);
+      if (row.kind === 'anime') changedAnimeHistory = true; else changedHistory = true;
+    }
+  }
+  if (changedHistory) { history.sort((a, b) => b.updatedAt - a.updatedAt); await saveHistory(history); }
+  if (changedAnimeHistory) { animeHistory.sort((a, b) => b.updatedAt - a.updatedAt); await saveAnimeHistory(animeHistory); }
+
+  const cloudHistKeys = new Set(cloudHistory.map((r) => `${r.kind}:${r.item_id}`));
+  for (const entry of history) if (!cloudHistKeys.has(`manga:${entry.mangaId}`)) pushHistoryItem('manga', entry);
+  for (const entry of animeHistory) if (!cloudHistKeys.has(`anime:${entry.releaseId}`)) pushHistoryItem('anime', entry);
+
+  return { library, animeLibrary, history, animeHistory };
 });

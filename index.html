@@ -174,17 +174,30 @@
       </div>
     </header>
 
-    <section class="section profile-card">
-      <button class="profile-avatar" id="profileAvatarBtn" type="button" title="Сменить аватар">
-        <img id="profileAvatarImg" alt="" hidden />
-        <span class="profile-avatar-fallback" id="profileAvatarFallback"></span>
-        <span class="profile-avatar-hint">Сменить</span>
-      </button>
-      <div class="profile-fields">
-        <label for="profileNameInput">Имя</label>
-        <input id="profileNameInput" type="text" maxlength="40" placeholder="Как к тебе обращаться" autocomplete="off" />
-        <label for="profileBioInput">О себе</label>
-        <input id="profileBioInput" type="text" maxlength="140" placeholder="Пара слов о себе (по желанию)" autocomplete="off" />
+    <section class="section profile-card" id="profileCard">
+      <div class="profile-banner" id="profileBanner">
+        <button class="profile-banner-edit-btn" id="profileBannerBtn" type="button" title="Сменить баннер (премиум)">Баннер</button>
+        <button class="profile-banner-remove-btn" id="profileBannerRemoveBtn" type="button" title="Убрать баннер" hidden>✕</button>
+      </div>
+      <div class="profile-card-body">
+        <div class="profile-avatar-wrap" id="profileAvatarWrap">
+          <button class="profile-avatar" id="profileAvatarBtn" type="button" title="Сменить аватар">
+            <img id="profileAvatarImg" alt="" hidden />
+            <span class="profile-avatar-fallback" id="profileAvatarFallback"></span>
+            <span class="profile-avatar-hint">Сменить</span>
+          </button>
+          <button class="avatar-frame-btn" id="avatarFrameBtn" type="button" title="Рамка аватара" hidden>✦</button>
+          <div class="avatar-frame-popover" id="avatarFramePopover" hidden>
+            <p class="avatar-frame-popover-title">Рамка аватара</p>
+            <div class="premium-frames" id="avatarFramePopoverList"></div>
+          </div>
+        </div>
+        <div class="profile-fields">
+          <label for="profileNameInput">Имя</label>
+          <input id="profileNameInput" type="text" maxlength="40" placeholder="Как к тебе обращаться" autocomplete="off" />
+          <label for="profileBioInput">О себе</label>
+          <input id="profileBioInput" type="text" maxlength="140" placeholder="Пара слов о себе (по желанию)" autocomplete="off" />
+        </div>
       </div>
     </section>
 
@@ -246,6 +259,14 @@
         <h2 class="section-title">Комментарии от друзей</h2>
         <p class="empty-hint" data-icon="chat" id="myCommentsEmpty">Пока никто не оставлял комментариев — они появятся здесь, когда друг напишет что-то у тебя в профиле.</p>
         <div class="chapter-list" id="myCommentsList"></div>
+      </section>
+
+      <section class="section profile-block profile-block--wide" id="premiumBlock">
+        <div class="profile-block-header">
+          <h2 class="section-title">Премиум</h2>
+          <span class="premium-status-pill" id="premiumStatusPill">не активен</span>
+        </div>
+        <p class="view-sub" id="premiumHint" style="margin: -6px 0 0;"></p>
       </section>
 
       <section class="section profile-block profile-block--wide">
@@ -413,7 +434,8 @@
   <div class="modal-backdrop" id="friendProfileOverlay" hidden>
     <div class="modal modal--wide modal--profile" id="friendProfileModal">
       <button id="friendProfileBack" class="icon-btn modal-close" type="button" title="Закрыть">✕</button>
-      <div class="friend-profile-header">
+      <div class="friend-profile-banner" id="friendProfileBanner" hidden></div>
+      <div class="friend-profile-header" id="friendProfileHeader">
         <span id="friendProfileAvatar" class="chat-avatar friend-profile-avatar-lg"></span>
         <div class="friend-profile-header-info">
           <h3 id="friendProfileName"></h3>
