@@ -494,16 +494,9 @@
   </div>
 
 
-  <!-- ===================== ПОПАП: ПРИГЛАСИТЬ НА СОВМЕСТНЫЙ ПРОСМОТР ===================== -->
-  <div class="modal-backdrop" id="watchPartyInviteBackdrop" hidden>
-    <div class="modal" id="watchPartyInviteModal">
-      <button class="icon-btn modal-close" id="watchPartyInviteClose" type="button">✕</button>
-      <h3>Смотреть вместе</h3>
-      <p class="view-sub" style="margin: -6px 0 12px;">Онлайн-друзья — пригласи, и пауза/перемотка/серия будут синхронизироваться у всех.</p>
-      <p class="empty-hint" id="watchPartyInviteEmpty" hidden>Никто из друзей сейчас не в сети.</p>
-      <div class="chat-list" id="watchPartyInviteList"></div>
-    </div>
-  </div>
+  <!-- попап "Смотреть вместе" перенесён внутрь #animePlayerBody ниже — иначе он
+       не виден и не кликабелен, пока плеер в настоящем полноэкранном режиме
+       (Fullscreen API показывает только потомков элемента, ушедшего в fullscreen) -->
 
   <!-- ===================== ПОПАП: СТИКЕРЫ И ПОДЕЛИТЬСЯ ТАЙТЛОМ ===================== -->
   <div class="modal-backdrop" id="shareModalBackdrop" hidden>
@@ -644,10 +637,23 @@
           <span>Чат просмотра</span>
           <button type="button" class="icon-btn" id="animePartyChatCloseBtn" title="Скрыть">✕</button>
         </div>
+        <div class="anime-party-chat-who" id="animePartyChatWho"></div>
         <div class="anime-party-chat-body" id="animePartyChatBody"></div>
         <form class="anime-party-chat-form" id="animePartyChatForm">
           <input id="animePartyChatInput" type="text" placeholder="Написать…" maxlength="300" autocomplete="off" />
         </form>
+      </div>
+
+      <!-- перенесено сюда (внутрь fullscreen-элемента), а не рядом с остальными
+           попапами — иначе Fullscreen API его просто не показывает -->
+      <div class="modal-backdrop" id="watchPartyInviteBackdrop" hidden>
+        <div class="modal" id="watchPartyInviteModal">
+          <button class="icon-btn modal-close" id="watchPartyInviteClose" type="button">✕</button>
+          <h3>Смотреть вместе</h3>
+          <p class="view-sub" style="margin: -6px 0 12px;">Онлайн-друзья — пригласи, и пауза/перемотка/серия будут синхронизироваться у всех.</p>
+          <p class="empty-hint" id="watchPartyInviteEmpty" hidden>Никто из друзей сейчас не в сети.</p>
+          <div class="chat-list" id="watchPartyInviteList"></div>
+        </div>
       </div>
     </div>
   </div>

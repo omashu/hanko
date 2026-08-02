@@ -1391,6 +1391,20 @@ webview#siteWebview { flex: 1; width: 100%; }
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   flex-shrink: 0;
 }
+.anime-party-chat-who {
+  padding: 6px 12px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+.anime-party-chat-who:empty { display: none; }
+.anime-party-chat-sys {
+  align-self: center;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  font-style: italic;
+}
 .anime-party-chat-body {
   flex: 1;
   overflow-y: auto;

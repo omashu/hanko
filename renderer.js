@@ -258,6 +258,7 @@ const els = {
   partyParticipants: document.getElementById('partyParticipants'),
   animePartyChatToggleBtn: document.getElementById('animePartyChatToggleBtn'),
   animePartyChat: document.getElementById('animePartyChat'),
+  animePartyChatWho: document.getElementById('animePartyChatWho'),
   animePartyChatCloseBtn: document.getElementById('animePartyChatCloseBtn'),
   animePartyChatBody: document.getElementById('animePartyChatBody'),
   animePartyChatForm: document.getElementById('animePartyChatForm'),
@@ -2812,7 +2813,8 @@ function chatBubble(msg) {
       <img class="card-cover" src="${rich.coverUrl || ''}" alt="" loading="lazy" onerror="this.style.opacity=0" />
       <div class="chat-bubble--card-info">
         <span class="chat-bubble--card-title">🎬 ${escapeHtml(rich.title || '')}</span>
-        <span class="chat-bubble--card-sub">${escapeHtml(rich.episodeLabel || 'Совместный просмотр')} — жми, чтобы присоединиться</span>
+        <span class="chat-bubble--card-sub">${escapeHtml(rich.episodeLabel || 'Совместный просмотр')}</span>
+        <button type="button" class="btn-secondary chat-bubble--card-join-btn" style="margin:4px 0;">Войти</button>
         <span class="chat-bubble-time">${escapeHtml(time)}${readTick}</span>
       </div>
     `;
@@ -3730,6 +3732,23 @@ els.animeFiltersResetBtn.addEventListener('click', () => {
   runAnimeSearch();
 });
 
+// общая загрузка объединённого списка серий (AniLibria + AnimeOn) для тайтла —
+// раньше этот код был только внутри openAnimeTitleModal(), а joinWatchParty()
+// (присоединение по приглашению) собирал список сам, но только из "сырых"
+// данных AniLibria — без .sources/.number, которые ожидает остальной код
+// плеера. Из-за этого у присоединившегося друга серия не грузилась, список
+// озвучек был пустым, а дальнейшие его собственные приглашения улетали с
+// "Серия undefined" (ep.number было undefined у сырых данных)
+async function fetchUnifiedAnimeEpisodes(item) {
+  const [aniResult, aoResult] = await Promise.allSettled([
+    window.hanko.anilibriaEpisodes(item.id),
+    window.hanko.animeonFindForTitle(item.title),
+  ]);
+  const aniEpisodes = aniResult.status === 'fulfilled' ? aniResult.value : [];
+  const aoTranslations = (aoResult.status === 'fulfilled' && aoResult.value) ? aoResult.value.translations : [];
+  return buildUnifiedAnimeEpisodes(aniEpisodes, aoTranslations);
+}
+
 async function openAnimeTitleModal(item) {
   if (!item.description && item.id.startsWith('al:')) {
     try {
@@ -3853,16 +3872,8 @@ async function openAnimeTitleModal(item) {
   }
 
   const list = document.getElementById('animeEpisodeList');
-  // ждём оба источника сразу (Promise.allSettled — если один упал, не роняем второй)
-  const [aniResult, aoResult] = await Promise.allSettled([
-    window.hanko.anilibriaEpisodes(item.id),
-    window.hanko.animeonFindForTitle(item.title),
-  ]);
+  const unified = await fetchUnifiedAnimeEpisodes(item);
   if (!list.isConnected) return; // модалку уже закрыли/сменили тайтл, пока ждали ответ
-
-  const aniEpisodes = aniResult.status === 'fulfilled' ? aniResult.value : [];
-  const aoTranslations = (aoResult.status === 'fulfilled' && aoResult.value) ? aoResult.value.translations : [];
-  const unified = buildUnifiedAnimeEpisodes(aniEpisodes, aoTranslations);
 
   if (!unified.length) {
     list.innerHTML = '<p class="empty-hint">Серий пока не нашлось ни на одном источнике.</p>';
@@ -3945,6 +3956,11 @@ let animePlayerState = null; // { item, episodes, index }
 // поставить на паузу/перемотать/переключить серию, это применится у всех
 // остальных участников (см. main.js: обычный Broadcast-канал на roomId).
 let watchParty = null;
+// id друзей, кого уже позвали в ТЕКУЩУЮ комнату — переживает закрытие/повторное
+// открытие попапа приглашения (сам список там перерисовывается с нуля каждый
+// раз), иначе можно было заспамить одного и того же человека повторными
+// приглашениями на ту же комнату; сбрасывается при выходе/создании новой комнаты
+let partyInvitedFriendIds = new Set();
 // true на время применения ПРИШЕДШЕГО извне события (play/pause/seek) —
 // без этого флага применение чужого действия вызвало бы наш собственный
 // play/pause/seeked обработчик на <video>, и мы бы разослали его обратно,
@@ -4057,11 +4073,21 @@ els.animeQualitySelect.addEventListener('change', () => {
 function renderPartyParticipants() {
   if (!watchParty || !watchParty.participants || !watchParty.participants.length) {
     els.partyParticipants.hidden = true;
+    els.animePartyChatWho.textContent = '';
     return;
   }
   els.partyParticipants.hidden = false;
   els.partyParticipants.textContent = `👥 ${watchParty.participants.length}`;
   els.partyParticipants.title = watchParty.participants.map((p) => p.name).join(', ');
+  const names = watchParty.participants.map((p) => (p.id === onlineState.myId ? `${p.name} (ты)` : p.name));
+  els.animePartyChatWho.textContent = `В комнате: ${names.join(', ')}`;
+}
+
+function partySystemRow(text) {
+  const row = document.createElement('div');
+  row.className = 'anime-party-chat-sys';
+  row.textContent = text;
+  return row;
 }
 
 function showPartyUI() { els.animePartyChatToggleBtn.hidden = false; }
@@ -4070,6 +4096,7 @@ function hidePartyUI() {
   els.animePartyChatToggleBtn.classList.remove('has-unread');
   els.animePartyChat.hidden = true;
   els.animePartyChatBody.innerHTML = '';
+  els.animePartyChatWho.textContent = '';
   els.partyParticipants.hidden = true;
 }
 
@@ -4079,6 +4106,7 @@ async function ensureWatchParty() {
   if (watchParty) return watchParty;
   const { roomId } = await window.hanko.partyCreate();
   watchParty = { roomId, participants: [] };
+  partyInvitedFriendIds = new Set();
   showPartyUI();
   return watchParty;
 }
@@ -4086,6 +4114,7 @@ async function ensureWatchParty() {
 async function leaveWatchParty() {
   if (!watchParty) return;
   watchParty = null;
+  partyInvitedFriendIds = new Set();
   hidePartyUI();
   try { await window.hanko.partyLeave(); } catch { /* не критично */ }
 }
@@ -4107,6 +4136,8 @@ function watchPartyInviteRow(f) {
   const row = document.createElement('div');
   row.className = 'chat-list-item';
   const name = f.display_name || 'Без имени';
+  const alreadyIn = watchParty && watchParty.participants.some((p) => p.id === f.friend_id);
+  const alreadyInvited = partyInvitedFriendIds.has(f.friend_id);
   row.innerHTML = `
     <span class="chat-list-item-avatar">
       ${avatarInnerHtml(name, f.avatar_url)}
@@ -4114,10 +4145,13 @@ function watchPartyInviteRow(f) {
     </span>
     <div class="chat-list-item-info">
       <span class="chat-list-item-name">${escapeHtml(name)}</span>
-      <span class="chat-list-item-sub">Пригласить в просмотр</span>
+      <span class="chat-list-item-sub">${alreadyIn ? 'Уже в комнате' : 'Пригласить в просмотр'}</span>
     </div>
-    <button type="button" class="chat-list-item-msg-btn party-invite-btn">Позвать</button>
+    <button type="button" class="chat-list-item-msg-btn party-invite-btn" ${(alreadyIn || alreadyInvited) ? 'disabled' : ''}>
+      ${alreadyIn ? 'Уже здесь' : (alreadyInvited ? 'Позвал(а) ✓' : 'Позвать')}
+    </button>
   `;
+  if (alreadyIn || alreadyInvited) return row;
   row.querySelector('.party-invite-btn').addEventListener('click', async (e) => {
     e.stopPropagation();
     if (!animePlayerState) return;
@@ -4134,6 +4168,7 @@ function watchPartyInviteRow(f) {
           episodeIndex: index, episodeLabel: `Серия ${ep.number}`,
         }),
       });
+      partyInvitedFriendIds.add(f.friend_id);
       btn.textContent = 'Позвал(а) ✓';
       btn.disabled = true;
     } catch (err) {
@@ -4187,8 +4222,13 @@ async function joinWatchParty(rich) {
   const item = { id: rich.releaseId, title: rich.title, coverUrl: rich.coverUrl };
   let episodes;
   try {
-    episodes = await window.hanko.anilibriaEpisodes(item.id);
-    await openAnimePlayer(item, episodes, rich.episodeIndex || 0);
+    episodes = await fetchUnifiedAnimeEpisodes(item);
+    if (!episodes.length) throw new Error('Серии не найдены');
+    // индекс серии из приглашения ищем по номеру (episodeLabel), а не по
+    // сырому episodeIndex — список у присоединяющегося мог собраться в
+    // другом порядке/с другим числом источников, чем был у пригласившего
+    const idx = episodes.findIndex((ep) => `Серия ${ep.number}` === rich.episodeLabel);
+    await openAnimePlayer(item, episodes, idx >= 0 ? idx : 0);
   } catch {
     openAnimeTitleModal(item);
     return;
@@ -4212,10 +4252,26 @@ async function joinWatchParty(rich) {
 window.hanko.onPartyEvent(async (payload) => {
   if (!watchParty) return;
   switch (payload.event) {
-    case 'participants':
-      watchParty.participants = payload.participants || [];
+    case 'participants': {
+      const prevIds = new Set((watchParty.participants || []).map((p) => p.id));
+      const nextList = payload.participants || [];
+      const nextIds = new Set(nextList.map((p) => p.id));
+      // о себе самом никогда не сообщаем — только о других участниках
+      for (const p of nextList) {
+        if (!prevIds.has(p.id) && p.id !== onlineState.myId && prevIds.size > 0) {
+          els.animePartyChatBody.appendChild(partySystemRow(`${p.name} присоединился к просмотру`));
+        }
+      }
+      for (const p of (watchParty.participants || [])) {
+        if (!nextIds.has(p.id) && p.id !== onlineState.myId) {
+          els.animePartyChatBody.appendChild(partySystemRow(`${p.name} вышел из просмотра`));
+        }
+      }
+      els.animePartyChatBody.scrollTop = els.animePartyChatBody.scrollHeight;
+      watchParty.participants = nextList;
       renderPartyParticipants();
       break;
+    }
 
     case 'play':
       suppressPartyEvents = true;
@@ -4542,6 +4598,13 @@ els.animePlayerBody.addEventListener('mouseleave', () => { if (!els.animeVideo.p
 // ---- клавиатура (только пока плеер аниме открыт) ----
 document.addEventListener('keydown', (e) => {
   if (els.animePlayerOverlay.hidden) return;
+  // если фокус в текстовом поле (например, в чате просмотра) — это обычная
+  // печать, а не горячие клавиши плеера; e.code завязан на физическую клавишу,
+  // а не раскладку, поэтому без этой проверки русская "ф"/"а" (на тех же
+  // физических клавишах, что F/A) тоже срабатывала как хоткей и, например,
+  // выкидывала из полноэкранного режима прямо во время набора текста
+  const activeTag = document.activeElement?.tagName;
+  if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || document.activeElement?.isContentEditable) return;
   if (['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'KeyM', 'KeyF'].includes(e.code)) e.preventDefault();
   showAnimeControls();
   if (e.code === 'Space') toggleAnimePlayback();
