@@ -38,6 +38,7 @@
       "index.html",
       "style.css",
       "renderer.js",
+      "anime4k-loader.js",
       "assets/**/*",
       "package.json"
     ],
