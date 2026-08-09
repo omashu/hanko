@@ -67,6 +67,13 @@ contextBridge.exposeInMainWorld('hanko', {
   getNotificationIcon: () => ipcRenderer.invoke('app:notificationIcon'),
   listStickers: () => ipcRenderer.invoke('stickers:list'),
 
+  loadNewsCategories: () => ipcRenderer.invoke('news:loadCategories'),
+  upsertNewsCategory: (category) => ipcRenderer.invoke('news:upsertCategory', category),
+  removeNewsCategory: (id) => ipcRenderer.invoke('news:removeCategory', id),
+  addNewsSource: (payload) => ipcRenderer.invoke('news:addSource', payload),
+  removeNewsSource: (payload) => ipcRenderer.invoke('news:removeSource', payload),
+  fetchNewsCategory: (categoryId) => ipcRenderer.invoke('news:fetchCategory', categoryId),
+
   listDownloads: () => ipcRenderer.invoke('downloads:list'),
   startDownload: (payload) => ipcRenderer.invoke('downloads:start', payload),
   cancelDownload: (payload) => ipcRenderer.invoke('downloads:cancel', payload),

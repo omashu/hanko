@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
 <meta charset="UTF-8" />
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https:; media-src 'self' blob: https:; img-src 'self' data: https: file:;" />
+  content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https:; media-src 'self' blob: https:; img-src 'self' data: https: file:; frame-src https://www.youtube.com https://www.youtube-nocookie.com;" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Hanko</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -36,6 +37,10 @@
       <svg viewBox="0 0 24 24" width="22" height="22"><circle cx="8.5" cy="8.5" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M2.5 19c1.1-3.6 3.9-4.9 6-4.9s4.9 1.3 6 4.9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="17" cy="8" r="2.6" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M15.6 14.3c1.9.4 3.6 1.8 4.4 4.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
       <span>Друзья</span>
       <span class="rail-badge" id="friendsNavBadge" hidden></span>
+    </button>
+    <button class="rail-btn" id="navNews" type="button" title="Новости">
+      <svg viewBox="0 0 24 24" width="22" height="22"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M7 8h7M7 12h10M7 16h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <span>Новости</span>
     </button>
     <div class="rail-online-friends" id="railOnlineFriends"></div>
     <button class="rail-btn" id="navProfile" type="button" title="Профиль">
@@ -266,7 +271,7 @@
           <h2 class="section-title">Премиум</h2>
           <span class="premium-status-pill" id="premiumStatusPill">не активен</span>
         </div>
-        <p class="view-sub" id="premiumHint" style="margin: -6px 0 0;"></p>
+        <button type="button" class="btn-secondary" id="premiumInfoBtn">Что даёт премиум</button>
       </section>
 
       <section class="section profile-block profile-block--wide">
@@ -292,6 +297,31 @@
         <button class="btn-secondary" id="logoutBtn" type="button" hidden>Выйти</button>
       </section>
     </div>
+  </main>
+
+  <!-- ===================== НОВОСТИ ===================== -->
+  <main class="view" id="viewNews" hidden>
+    <header class="view-header">
+      <div>
+        <h1>Новости</h1>
+        <p class="view-sub">Последние видео и статьи по темам, которые тебе интересны.</p>
+      </div>
+      <div class="search-form" style="gap:8px;">
+        <button type="button" class="btn-secondary" id="newsManageSourcesBtn">Источники</button>
+        <button type="button" class="btn-secondary" id="newsRefreshBtn">Обновить</button>
+      </div>
+    </header>
+
+    <div class="profile-tabs" id="newsCategoryTabs"></div>
+
+    <p class="empty-hint" data-icon="book" id="newsNoCategoriesHint" hidden>Категорий пока нет — добавь первую кнопкой «+» выше.</p>
+    <p class="empty-hint" data-icon="book" id="newsNoSourcesHint" hidden>В этой категории пока нет источников — жми «Источники» и добавь YouTube-канал или RSS-ленту.</p>
+    <p class="empty-hint" id="newsLoadingHint" hidden>Загружаю и перевожу…</p>
+    <p class="empty-hint" id="newsErrorHint" hidden></p>
+
+    <section class="section">
+      <div class="news-grid" id="newsGrid"></div>
+    </section>
   </main>
 
   <!-- ===================== ДРУЗЬЯ / ЧАТЫ ===================== -->
@@ -748,6 +778,71 @@
     <div class="modal modal--wide" id="animeTitleModal">
       <button class="icon-btn modal-close" id="animeTitleModalClose">✕</button>
       <div class="title-modal-body" id="animeTitleModalBody"></div>
+    </div>
+  </div>
+
+  <!-- ===================== ПРЕМИУМ: ЧТО ДАЁТ (попап) ===================== -->
+  <div class="modal-backdrop" id="premiumModalBackdrop" hidden>
+    <div class="modal modal--wide" id="premiumModal">
+      <button class="icon-btn modal-close" id="premiumModalClose" type="button">✕</button>
+      <div class="premium-modal-header">
+        <h2>Премиум</h2>
+        <span class="premium-status-pill" id="premiumModalStatusPill">не активен</span>
+      </div>
+      <p class="premium-modal-sub">Пара приятных мелочей для профиля.</p>
+      <div class="premium-perks-grid">
+        <div class="premium-perk-card">
+          <span class="premium-perk-icon">🖼️</span>
+          <h3>Баннер профиля</h3>
+          <p>Своя картинка на фоне профиля вместо стандартного.</p>
+        </div>
+        <div class="premium-perk-card">
+          <span class="premium-perk-icon">✦</span>
+          <h3>Рамка аватара</h3>
+          <p>Цветная рамка и значок ✦ вокруг аватара — на выбор из нескольких вариантов.</p>
+        </div>
+      </div>
+      <p class="empty-hint" id="premiumModalNote" style="margin-top: 14px;"></p>
+    </div>
+  </div>
+
+  <!-- ===================== НОВОСТИ: ДОБАВИТЬ КАТЕГОРИЮ ===================== -->
+  <div class="modal-backdrop" id="newsCategoryModalBackdrop" hidden>
+    <div class="modal" id="newsCategoryModal">
+      <button class="icon-btn modal-close" id="newsCategoryModalClose" type="button">✕</button>
+      <h3>Новая категория</h3>
+      <p class="empty-hint">Например «FGO», «Аниме-новости», «Игры».</p>
+      <form id="newsCategoryForm">
+        <input id="newsCategoryNameInput" type="text" placeholder="Название категории…" autocomplete="off" maxlength="40" />
+      </form>
+    </div>
+  </div>
+
+  <!-- ===================== НОВОСТИ: ИСТОЧНИКИ КАТЕГОРИИ ===================== -->
+  <div class="modal-backdrop" id="newsSourcesModalBackdrop" hidden>
+    <div class="modal" id="newsSourcesModal">
+      <button class="icon-btn modal-close" id="newsSourcesModalClose" type="button">✕</button>
+      <h3>Источники — <span id="newsSourcesModalCategoryName"></span></h3>
+      <p class="empty-hint" id="newsSourcesEmpty" hidden>Пока нет ни одного источника.</p>
+      <div class="news-sources-list" id="newsSourcesList"></div>
+      <form id="newsSourceForm" class="news-source-form">
+        <select id="newsSourceType">
+          <option value="youtube">YouTube-канал</option>
+          <option value="rss">RSS/Atom-лента</option>
+        </select>
+        <input id="newsSourceValue" type="text" placeholder="Ссылка на канал/@хэндл или ссылка на RSS…" autocomplete="off" />
+        <button type="submit" class="btn-primary">Добавить</button>
+      </form>
+      <p class="empty-hint profile-note" id="newsSourceFeedback" hidden></p>
+      <button type="button" class="btn-secondary" id="newsRemoveCategoryBtn" style="margin-top:14px;">Удалить категорию целиком</button>
+    </div>
+  </div>
+
+  <!-- ===================== НОВОСТИ: КАРТОЧКА (видео/статья) ===================== -->
+  <div class="modal-backdrop" id="newsDetailModalBackdrop" hidden>
+    <div class="modal modal--wide" id="newsDetailModal">
+      <button class="icon-btn modal-close" id="newsDetailModalClose">✕</button>
+      <div class="news-detail-body" id="newsDetailModalBody"></div>
     </div>
   </div>
 

@@ -5,6 +5,7 @@
 const { app, BrowserWindow, ipcMain, shell, dialog, Menu, Tray, session } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
+const http = require('node:http');
 const { autoUpdater } = require('electron-updater');
 const { createClient } = require('@supabase/supabase-js');
 // у @supabase/supabase-js реалтайм (чат/уведомления вживую) работает через WebSocket;
@@ -13,16 +14,55 @@ const { createClient } = require('@supabase/supabase-js');
 if (!global.WebSocket) global.WebSocket = require('ws');
 
 const SETTINGS_PATH = () => path.join(app.getPath('userData'), 'settings.json');
-const LIBRARY_PATH = () => path.join(app.getPath('userData'), 'library.json');
-const HISTORY_PATH = () => path.join(app.getPath('userData'), 'history.json');
-const ANIME_LIBRARY_PATH = () => path.join(app.getPath('userData'), 'anime-library.json');
-const ANIME_HISTORY_PATH = () => path.join(app.getPath('userData'), 'anime-history.json');
 const SITES_PATH = () => path.join(app.getPath('userData'), 'sites.json');
 const DOWNLOADS_DIR = () => path.join(app.getPath('userData'), 'downloads');
 const DOWNLOADS_INDEX_PATH = () => path.join(DOWNLOADS_DIR(), 'index.json');
 const PROFILE_PATH = () => path.join(app.getPath('userData'), 'profile.json');
 const AVATAR_DIR = () => path.join(app.getPath('userData'), 'avatar');
 const ONLINE_SESSION_PATH = () => path.join(app.getPath('userData'), 'online-session.json');
+
+// Закладки/история манги и аниме должны быть привязаны к АККАУНТУ, а не к
+// компьютеру — иначе при входе с одного ПК под разными аккаунтами они видят
+// чужие закладки/историю. Хуже того: раньше syncPullAll ("допиши в облако то,
+// чего там ещё нет") реально дописывал чужие локальные данные в облако
+// новосозданного аккаунта, потому что не отличал "мои несинхронизированные
+// записи" от "чужих записей, оставшихся на диске от предыдущего входа".
+// Теперь у каждого аккаунта свой файл (по id профиля); для гостя (не
+// залогинен) — общий на устройство файл без суффикса, как и было раньше.
+function scopedDataPath(baseName) {
+  const uid = onlineState.myId;
+  const fileName = uid ? `${baseName}.${uid}.json` : `${baseName}.json`;
+  return path.join(app.getPath('userData'), fileName);
+}
+
+// одноразовая миграция: у файла без привязки к аккаунту могут быть данные
+// ещё с тех пор, когда разделения по аккаунтам не было (или это тот самый
+// компьютер, где всегда был только один настоящий аккаунт) — при первом
+// входе под каким-либо аккаунтом после обновления переносим их в его личный
+// файл, а не выбрасываем молча. Срабатывает только один раз на аккаунт —
+// как только свой файл появился, дальше просто читаем его.
+async function migrateLegacyDataFile(baseName) {
+  const uid = onlineState.myId;
+  if (!uid) return; // гостевой режим и так использует общий файл напрямую
+  const scoped = scopedDataPath(baseName);
+  const legacy = path.join(app.getPath('userData'), `${baseName}.json`);
+  try {
+    await fs.access(scoped);
+    return; // у аккаунта уже есть свой файл — переносить нечего
+  } catch { /* своего файла ещё нет — пробуем перенести legacy ниже */ }
+  try {
+    // именно ПЕРЕНОС (rename), а не копирование — legacy-файл должен
+    // достаться только ПЕРВОМУ аккаунту, который его затребует. Если бы
+    // копировали, второй/третий новый аккаунт на этом же компьютере унаследовал
+    // бы те же самые старые данные — тот же баг, просто на шаг позже.
+    await fs.rename(legacy, scoped);
+  } catch { /* legacy-файла нет (уже перенесён другим аккаунтом/битый) — начинаем с чистого листа, это нормально */ }
+}
+
+const LIBRARY_PATH = () => scopedDataPath('library');
+const HISTORY_PATH = () => scopedDataPath('history');
+const ANIME_LIBRARY_PATH = () => scopedDataPath('anime-library');
+const ANIME_HISTORY_PATH = () => scopedDataPath('anime-history');
 
 const DEFAULT_SETTINGS = { lastTab: 'manga', readerMode: 'paged' };
 const DEFAULT_PROFILE = { displayName: 'Читатель', bio: '', avatarFile: null };
@@ -103,6 +143,7 @@ async function saveSettings(partial) {
 }
 
 async function loadLibrary() {
+  await migrateLegacyDataFile('library');
   const l = await readJson(LIBRARY_PATH(), { items: [] });
   return Array.isArray(l.items) ? l.items : [];
 }
@@ -121,6 +162,7 @@ async function saveLibrary(items) {
 const HISTORY_MAX_ENTRIES = 300;
 
 async function loadHistory() {
+  await migrateLegacyDataFile('history');
   const h = await readJson(HISTORY_PATH(), { items: [] });
   return Array.isArray(h.items) ? h.items : [];
 }
@@ -133,6 +175,7 @@ async function saveHistory(items) {
 // Аниме-закладки — отдельный файл, полный аналог library.json, но для тайтлов
 // AniLibria (item.id — id релиза AniLibria, не пересекается с id манги).
 async function loadAnimeLibrary() {
+  await migrateLegacyDataFile('anime-library');
   const l = await readJson(ANIME_LIBRARY_PATH(), { items: [] });
   return Array.isArray(l.items) ? l.items : [];
 }
@@ -147,6 +190,7 @@ async function saveAnimeLibrary(items) {
 const ANIME_HISTORY_MAX_ENTRIES = 300;
 
 async function loadAnimeHistory() {
+  await migrateLegacyDataFile('anime-history');
   const h = await readJson(ANIME_HISTORY_PATH(), { items: [] });
   return Array.isArray(h.items) ? h.items : [];
 }
@@ -172,7 +216,9 @@ async function readProfileRaw() {
 }
 
 function attachAvatarUrl(profile) {
-  const avatarUrl = profile.avatarFile ? `file://${path.join(AVATAR_DIR(), profile.avatarFile)}` : null;
+  const avatarUrl = profile.avatarFile
+    ? `http://127.0.0.1:${appServerPort}/__userdata/avatar/${encodeURIComponent(profile.avatarFile)}`
+    : null;
   return { ...profile, avatarUrl };
 }
 
@@ -254,6 +300,81 @@ function setupRequestHeaders() {
 
 // ---------- окно ----------
 
+// ---------- локальный HTTP-сервер для содержимого окна (шаг 1) ----------
+// Раньше index.html грузился через file:// — у такой страницы физически нет
+// нормального origin, из-за чего YouTube (и в принципе любой встраиваемый
+// сторонний контент) не может провалидировать встраивание и падает с
+// ошибкой вида "player error 153". Поднимаем свой сервер на 127.0.0.1
+// (только локальная петля, наружу не торчит) на случайном свободном порту —
+// тогда у страницы появляется настоящий origin http://127.0.0.1:<port>.
+//
+// ВАЖНО (временно, до следующих шагов): это только сам index.html/
+// renderer.js/style.css и т.п. из корня приложения — аватарка/стикеры/
+// скачанные страницы манги всё ещё отдаются как file:// и на этом шаге
+// ожидаемо перестанут показываться (Chromium блокирует file:// с страницы,
+// загруженной не как file://). Это чинится следующими шагами по одному.
+const APP_SERVER_MIME_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.webp': 'image/webp',
+};
+
+let appServerPort = null;
+
+function startAppServer() {
+  return new Promise((resolve, reject) => {
+    const root = __dirname;
+    // три отдельных маршрута для данных ВНЕ корня приложения (userData, а у
+    // стикеров в собранном .exe ещё и asarUnpack-путь рядом с asar) — обычная
+    // статика ниже отдаёт только то, что физически лежит внутри __dirname
+    const USERDATA_ROUTES = [
+      { prefix: '/__userdata/avatar/', base: () => AVATAR_DIR() },
+      { prefix: '/__stickers/', base: () => stickersBaseDir() },
+      { prefix: '/__downloads/', base: () => DOWNLOADS_DIR() },
+    ];
+    const server = http.createServer(async (req, res) => {
+      try {
+        const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
+        let filePath;
+        const route = USERDATA_ROUTES.find((r) => urlPath.startsWith(r.prefix));
+        if (route) {
+          const base = route.base();
+          const rest = path.normalize(urlPath.slice(route.prefix.length)).replace(/^(\.\.[/\\])+/, '');
+          filePath = path.join(base, rest);
+          if (!filePath.startsWith(base)) { res.writeHead(403); res.end('Forbidden'); return; }
+        } else {
+          const safePath = path.normalize(urlPath === '/' ? '/index.html' : urlPath).replace(/^(\.\.[/\\])+/, '');
+          filePath = path.join(root, safePath);
+          if (!filePath.startsWith(root)) { res.writeHead(403); res.end('Forbidden'); return; }
+        }
+        const data = await fs.readFile(filePath);
+        const ext = path.extname(filePath).toLowerCase();
+        res.writeHead(200, { 'Content-Type': APP_SERVER_MIME_TYPES[ext] || 'application/octet-stream' });
+        res.end(data);
+      } catch {
+        res.writeHead(404);
+        res.end('Not found');
+      }
+    });
+    server.listen(0, '127.0.0.1', () => {
+      appServerPort = server.address().port;
+      resolve(server);
+    });
+    server.on('error', reject);
+  });
+}
+
 function createWindow() {
   Menu.setApplicationMenu(null);
   mainWindow = new BrowserWindow({
@@ -273,7 +394,7 @@ function createWindow() {
     autoHideMenuBar: true,
   });
 
-  mainWindow.loadFile(path.join(__dirname, 'index.html'));
+  mainWindow.loadURL(`http://127.0.0.1:${appServerPort}/index.html`);
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
@@ -330,8 +451,11 @@ ipcMain.handle('app:notificationIcon', () => {
 
 // ---------- стикеры (кастомные gif, по категориям-папкам) ----------
 // Та же логика unpacked-пути, что и у иконки уведомлений — assets/**
-// физически лежит рядом с asar (см. asarUnpack в package.json), так что
-// обычный fs.readdir и file:// прекрасно работают и в собранном .exe.
+// физически лежит рядом с asar (см. asarUnpack в package.json). Сами файлы
+// отдаются через локальный http-сервер (маршрут /__stickers/, см.
+// startAppServer) — раньше были прямые file://, но с переходом окна на
+// http://127.0.0.1 (чтобы у YouTube-эмбедов был нормальный origin) обычные
+// file:// с http-страницы Chromium уже не грузит.
 // Структура: assets/stickers/<Категория>/<файл>.gif — подпапка = категория
 // в интерфейсе (название папки = название категории, без отдельного
 // маппинга). Gif-файлы прямо в assets/stickers/ (не в подпапке) попадают
@@ -354,12 +478,27 @@ ipcMain.handle('stickers:list', async () => {
   }
   const categories = [];
   const loose = [];
+  // отбрасываем 0-байтные/битые файлы — раньше такой файл всё равно попадал
+  // в список и превращался в "битую иконку" на месте стикера
+  async function realGifFiles(dir, names) {
+    const out = [];
+    for (const name of names) {
+      try {
+        const stat = await fs.stat(path.join(dir, name));
+        if (stat.size > 0) out.push(name);
+      } catch {
+        // не смогли прочитать — пропускаем
+      }
+    }
+    return out;
+  }
   for (const entry of entries) {
     if (entry.isDirectory()) {
       const dir = path.join(base, entry.name);
       let files;
       try {
-        files = (await fs.readdir(dir)).filter((f) => f.toLowerCase().endsWith('.gif'));
+        const all = (await fs.readdir(dir)).filter((f) => f.toLowerCase().endsWith('.gif'));
+        files = await realGifFiles(dir, all);
       } catch {
         files = [];
       }
@@ -368,7 +507,7 @@ ipcMain.handle('stickers:list', async () => {
         name: entry.name,
         stickers: files.map((f) => ({
           name: f,
-          url: `file://${path.join(dir, f)}`,
+          url: `http://127.0.0.1:${appServerPort}/__stickers/${encodeURIComponent(entry.name)}/${encodeURIComponent(f)}`,
           // стабильный ключ для передачи в чат — не зависит от абсолютного пути
           // на конкретном компьютере (у собеседника установка в другой папке)
           key: `${entry.name}/${f}`,
@@ -378,12 +517,13 @@ ipcMain.handle('stickers:list', async () => {
       loose.push(entry.name);
     }
   }
-  if (loose.length) {
+  const looseReal = await realGifFiles(base, loose);
+  if (looseReal.length) {
     categories.push({
       name: 'Разное',
-      stickers: loose.map((f) => ({
+      stickers: looseReal.map((f) => ({
         name: f,
-        url: `file://${path.join(base, f)}`,
+        url: `http://127.0.0.1:${appServerPort}/__stickers/${encodeURIComponent(f)}`,
         key: `Разное/${f}`,
       })),
     });
@@ -459,13 +599,15 @@ ipcMain.handle('update:install', () => {
   autoUpdater.quitAndInstall(true, true);
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   if (process.platform === 'win32') app.setAppUserModelId('com.hanko.app');
+  await startAppServer();
   createWindow();
   setupRequestHeaders();
   setupAutoUpdate();
   startHealthMonitor();
   setupTray();
+  seedDefaultNewsCategoriesIfEmpty().catch(() => {});
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -716,6 +858,262 @@ ipcMain.handle('sites:note', async (_e, { id, note }) => {
     await saveSites(sites);
   }
   return sites;
+});
+
+// ---------- Новости (YouTube-каналы + RSS новостных сайтов) ----------
+// Категории полностью управляются пользователем в настройках — никакого
+// фиксированного набора source'ов внутри кода. У YouTube есть официальный
+// RSS без ключа на каждый канал (feeds/videos.xml?channel_id=), у новостных
+// сайтов (ANN и т.п.) — свой обычный RSS/Atom. Перевод — через тот же
+// нестандартный, но общеизвестный и много где используемый (в т.ч. в самом
+// Chrome под капотом) эндпоинт Google Translate, без платного API-ключа.
+const NEWS_CATEGORIES_PATH = () => path.join(app.getPath('userData'), 'news-categories.json');
+
+async function loadNewsCategories() {
+  const c = await readJson(NEWS_CATEGORIES_PATH(), { categories: [] });
+  return Array.isArray(c.categories) ? c.categories : [];
+}
+async function saveNewsCategories(categories) {
+  await writeJson(NEWS_CATEGORIES_PATH(), { categories });
+  return categories;
+}
+
+async function newsFetchText(url) {
+  const res = await fetch(url, {
+    signal: AbortSignal.timeout(15000),
+    headers: { 'User-Agent': USER_AGENT, 'Accept-Language': 'ru,en;q=0.8' },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.text();
+}
+
+function decodeXmlEntities(s) {
+  return String(s || '')
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'").replace(/&apos;/g, "'").replace(/&amp;/g, '&')
+    .replace(/<[^>]+>/g, '') // на всякий случай срезаем оставшиеся теги (иногда описание — само мини-HTML)
+    .trim();
+}
+function stripHtml(s) {
+  return decodeXmlEntities(s);
+}
+
+// YouTube-хэндл (@Aniplex_FGO) или ссылка на канал → channel_id (UCxxxx) —
+// сам YouTube RSS принимает только channel_id, не хэндл, поэтому если
+// пользователь ввёл не UC-id, вытаскиваем его со страницы канала
+async function resolveYoutubeChannelId(input) {
+  const raw = input.trim();
+  const ucMatch = raw.match(/^UC[\w-]{20,}$/);
+  if (ucMatch) return raw;
+  let url = raw;
+  if (!/^https?:\/\//.test(url)) {
+    url = `https://www.youtube.com/${url.replace(/^@?/, '@')}`;
+  }
+  const html = await newsFetchText(url);
+  const m = html.match(/"channelId":"(UC[\w-]{20,})"/) || html.match(/channel_id=(UC[\w-]{20,})/);
+  if (!m) throw new Error('Не удалось найти id канала — проверь ссылку/хэндл');
+  return m[1];
+}
+
+async function fetchYoutubeChannelFeed(channelId) {
+  const xml = await newsFetchText(`https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`);
+  const items = [];
+  const entryRe = /<entry>([\s\S]*?)<\/entry>/g;
+  let m;
+  while ((m = entryRe.exec(xml))) {
+    const block = m[1];
+    const videoId = (block.match(/<yt:videoId>([^<]+)<\/yt:videoId>/) || [])[1];
+    const title = decodeXmlEntities((block.match(/<title>([\s\S]*?)<\/title>/) || [])[1] || '');
+    const channelName = decodeXmlEntities((block.match(/<name>([\s\S]*?)<\/name>/) || [])[1] || '');
+    const published = (block.match(/<published>([^<]+)<\/published>/) || [])[1];
+    const description = decodeXmlEntities((block.match(/<media:description>([\s\S]*?)<\/media:description>/) || [])[1] || '');
+    if (!videoId) continue;
+    items.push({
+      type: 'video',
+      id: `yt:${videoId}`,
+      title,
+      description,
+      channelName,
+      publishedAt: published ? new Date(published).getTime() : 0,
+      thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+      videoId,
+      link: `https://www.youtube.com/watch?v=${videoId}`,
+    });
+  }
+  return items;
+}
+
+// обычный RSS 2.0 (<item>) или Atom (<entry>) — большинство новостных
+// сайтов отдают один из этих двух форматов под /rss, /feed, /atom.xml и т.п.
+function parseGenericFeed(xml, sourceLabel) {
+  const items = [];
+  const isAtom = !xml.includes('<item>') && xml.includes('<entry');
+  const blockRe = isAtom ? /<entry[^>]*>([\s\S]*?)<\/entry>/g : /<item[^>]*>([\s\S]*?)<\/item>/g;
+  let m;
+  while ((m = blockRe.exec(xml))) {
+    const block = m[1];
+    const title = decodeXmlEntities((block.match(/<title[^>]*>([\s\S]*?)<\/title>/) || [])[1] || '');
+    let link = '';
+    if (isAtom) {
+      const linkMatch = block.match(/<link[^>]*href="([^"]+)"[^>]*\/?>/);
+      link = linkMatch ? linkMatch[1] : '';
+    } else {
+      link = decodeXmlEntities((block.match(/<link>([\s\S]*?)<\/link>/) || [])[1] || '');
+    }
+    const dateRaw = (block.match(/<pubDate>([^<]+)<\/pubDate>/) || block.match(/<published>([^<]+)<\/published>/) || block.match(/<updated>([^<]+)<\/updated>/) || [])[1];
+    const descRaw = (block.match(/<description>([\s\S]*?)<\/description>/) || block.match(/<summary[^>]*>([\s\S]*?)<\/summary>/) || block.match(/<content[^>]*>([\s\S]*?)<\/content>/) || [])[1] || '';
+    const imgMatch = block.match(/<media:content[^>]+url="([^"]+)"/) || block.match(/<enclosure[^>]+url="([^"]+)"[^>]*type="image/) || descRaw.match(/<img[^>]+src="([^"]+)"/);
+    if (!title) continue;
+    items.push({
+      type: 'article',
+      id: `rss:${link || title}`,
+      title,
+      description: stripHtml(descRaw).slice(0, 600),
+      channelName: sourceLabel,
+      publishedAt: dateRaw ? new Date(dateRaw).getTime() : 0,
+      thumbnail: imgMatch ? imgMatch[1] : null,
+      link,
+    });
+  }
+  return items;
+}
+
+// Дефолтный набор категорий/источников — чтобы вкладка не была пустой сразу
+// после установки. Заполняется ОДИН РАЗ, только если у пользователя ещё нет
+// вообще ни одной категории (свои или уже засеянные ранее) — так что можно
+// свободно всё переудалять, ничего не пересоздастся заново само.
+// Источники резолвятся через ту же логику, что и ручное добавление
+// (resolveYoutubeChannelId/fetchRssFeed) — если конкретный источник вдруг
+// недоступен при первом запуске, просто пропускаем его, не роняя весь сид.
+const DEFAULT_NEWS_CATEGORIES = [
+  {
+    name: 'Аниме',
+    sources: [
+      { type: 'youtube', value: '@Crunchyroll' },
+      { type: 'rss', value: 'https://www.animenewsnetwork.com/newsfeed/rss.xml' },
+    ],
+  },
+  {
+    name: 'Игры',
+    sources: [
+      { type: 'youtube', value: '@FGOchannel' },
+    ],
+  },
+];
+
+async function seedDefaultNewsCategoriesIfEmpty() {
+  const existing = await loadNewsCategories();
+  if (existing.length) return;
+  const categories = [];
+  for (const def of DEFAULT_NEWS_CATEGORIES) {
+    const cat = { id: `cat-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name: def.name, sources: [] };
+    for (const src of def.sources) {
+      try {
+        if (src.type === 'youtube') {
+          const channelId = await resolveYoutubeChannelId(src.value);
+          cat.sources.push({ id: `src-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'youtube', channelId, label: src.value });
+        } else {
+          const test = await fetchRssFeed(src.value, src.value);
+          if (test.length) {
+            cat.sources.push({ id: `src-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'rss', url: src.value, label: new URL(src.value).hostname });
+          }
+        }
+      } catch { /* конкретный источник недоступен сейчас — пропускаем, не критично */ }
+    }
+    if (cat.sources.length) categories.push(cat);
+  }
+  if (categories.length) await saveNewsCategories(categories);
+}
+
+async function fetchRssFeed(url, label) {
+  const xml = await newsFetchText(url);
+  return parseGenericFeed(xml, label);
+}
+
+// бесплатный перевод через нестандартный, но крайне широко используемый
+// (в т.ч. массой опенсорсных проектов) эндпоинт Google Translate — без
+// платного API-ключа. sl=auto сам определяет язык; если текст уже на
+// русском, просто вернётся тем же (или почти тем же).
+const translateCache = new Map();
+async function translateToRu(text) {
+  if (!text) return text;
+  if (translateCache.has(text)) return translateCache.get(text);
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ru&dt=t&q=${encodeURIComponent(text.slice(0, 4500))}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const translated = (data[0] || []).map((chunk) => chunk[0]).join('');
+    translateCache.set(text, translated || text);
+    return translated || text;
+  } catch {
+    return text; // не страшно — покажем оригинал, лучше чем ничего
+  }
+}
+
+ipcMain.handle('news:loadCategories', () => loadNewsCategories());
+
+ipcMain.handle('news:upsertCategory', async (_e, category) => {
+  const categories = await loadNewsCategories();
+  const idx = categories.findIndex((c) => c.id === category.id);
+  if (idx >= 0) categories[idx] = { ...categories[idx], ...category };
+  else categories.push({ id: category.id || `cat-${Date.now()}`, name: category.name, sources: [] });
+  return saveNewsCategories(categories);
+});
+
+ipcMain.handle('news:removeCategory', async (_e, id) => {
+  const categories = (await loadNewsCategories()).filter((c) => c.id !== id);
+  return saveNewsCategories(categories);
+});
+
+ipcMain.handle('news:addSource', async (_e, { categoryId, type, value }) => {
+  const categories = await loadNewsCategories();
+  const cat = categories.find((c) => c.id === categoryId);
+  if (!cat) throw new Error('Категория не найдена');
+  if (type === 'youtube') {
+    const channelId = await resolveYoutubeChannelId(value);
+    cat.sources.push({ id: `src-${Date.now()}`, type: 'youtube', channelId, label: value });
+  } else {
+    // проверяем, что это реально парсящийся фид, а не мусорная ссылка —
+    // лучше явная ошибка сразу при добавлении, чем молчаливо пустая категория
+    const test = await fetchRssFeed(value, value);
+    if (!test.length) throw new Error('По этой ссылке не нашлось ни одной новости — проверь, что это прямая ссылка на RSS/Atom-фид');
+    cat.sources.push({ id: `src-${Date.now()}`, type: 'rss', url: value, label: new URL(value).hostname });
+  }
+  await saveNewsCategories(categories);
+  return cat;
+});
+
+ipcMain.handle('news:removeSource', async (_e, { categoryId, sourceId }) => {
+  const categories = await loadNewsCategories();
+  const cat = categories.find((c) => c.id === categoryId);
+  if (cat) cat.sources = cat.sources.filter((s) => s.id !== sourceId);
+  return saveNewsCategories(categories);
+});
+
+ipcMain.handle('news:fetchCategory', async (_e, categoryId) => {
+  const categories = await loadNewsCategories();
+  const cat = categories.find((c) => c.id === categoryId);
+  if (!cat) return [];
+  const results = await Promise.allSettled(
+    cat.sources.map((s) => (s.type === 'youtube' ? fetchYoutubeChannelFeed(s.channelId) : fetchRssFeed(s.url, s.label)))
+  );
+  let items = [];
+  for (const r of results) if (r.status === 'fulfilled') items.push(...r.value);
+  items.sort((a, b) => b.publishedAt - a.publishedAt);
+  items = items.slice(0, 60); // без лишнего — переводить будем только то, что реально покажем
+  // переводим параллельно, но не безлимитно — не хотим 60 одновременных
+  // запросов к переводчику разом
+  const CONCURRENCY = 6;
+  for (let i = 0; i < items.length; i += CONCURRENCY) {
+    const batch = items.slice(i, i + CONCURRENCY);
+    await Promise.all(batch.map(async (item) => {
+      item.titleRu = await translateToRu(item.title);
+      if (item.description) item.descriptionRu = await translateToRu(item.description);
+    }));
+  }
+  return items;
 });
 
 // ---------- IPC: профиль (локально: имя, аватар, "о себе") ----------
@@ -1791,19 +2189,62 @@ ipcMain.handle('anilibria:details', async (_e, animeId) => {
   }
 });
 
-// ---------- AnimeOn (animeon.fun) — второй источник аниме. Своё видео на
-// своём CDN (cloud.solodcdn.com) — в отличие от YummyAnime, тут не нужен
-// webview: ссылка на серию хоть изначально и ведёт на Kodik, но у AnimeOn
-// есть свой бэкенд /api/stream/resolve, который сам её расшифровывает и
-// отдаёт чистый .m3u8 — проигрывается прямо в нашем собственном плеере,
-// как и AniLibria. Ни подписей запросов, ни anti-bot защиты на API нет
-// (в отличие от проверенного и отклонённого yamianime.com).
-const ANIMEON_API = 'https://animeon.fun/api';
-const ANIMEON_SITE = 'https://animeon.fun';
+// ---------- AnimeOn (несколько зеркал: .cc/.fun) — второй источник аниме.
+// Своё видео на своём CDN (cloud.solodcdn.com) — в отличие от YummyAnime,
+// тут не нужен webview: ссылка на серию хоть изначально и ведёт на Kodik, но
+// у AnimeOn есть свой бэкенд /api/stream/resolve, который сам её
+// расшифровывает и отдаёт чистый .m3u8 — проигрывается прямо в нашем
+// собственном плеере, как и AniLibria. Ни подписей запросов, ни anti-bot
+// защиты на API нет (в отличие от проверенного и отклонённого yamianime.com).
+//
+// Домен периодически меняется/падает (проект уже переезжал с .fun на .cc,
+// бэкенд/API при этом остался тот же — проверено вручную: /api/search и
+// /api/stream/resolve отвечают идентично на обоих). Пробуем зеркала по
+// очереди, запоминаем, какое сейчас живое, и НЕ показываем оба одновременно —
+// если активное упадёт, следующий запрос сам пере-проверит все зеркала и
+// переключится на первое живое (тот же принцип, что у sourceHealth для
+// манга-источников, но применён внутри одного логического источника).
+const ANIMEON_MIRRORS = ['animeon.cc', 'animeon.fun'];
+let animeonActiveMirror = null;
+let animeonMirrorCheckedAt = 0;
+const ANIMEON_MIRROR_RECHECK_MS = 5 * 60 * 1000;
+
+async function pingAnimeonMirror(domain) {
+  const res = await fetch(`https://${domain}/api/search?q=a&limit=1`, {
+    signal: AbortSignal.timeout(HEALTH_FETCH_TIMEOUT_MS),
+    headers: { Accept: 'application/json', 'User-Agent': USER_AGENT },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return true;
+}
+
+async function resolveAnimeonMirror() {
+  const now = Date.now();
+  // уже знаем рабочее зеркало и недавно проверяли — не дёргаем сеть заново
+  // на каждый чих, доверяем результату ещё ANIMEON_MIRROR_RECHECK_MS
+  if (animeonActiveMirror && now - animeonMirrorCheckedAt < ANIMEON_MIRROR_RECHECK_MS) {
+    return animeonActiveMirror;
+  }
+  // сначала пробуем уже известное активное зеркало (не теряем его без
+  // причины), остальные — по порядку из ANIMEON_MIRRORS
+  const order = animeonActiveMirror
+    ? [animeonActiveMirror, ...ANIMEON_MIRRORS.filter((m) => m !== animeonActiveMirror)]
+    : ANIMEON_MIRRORS;
+  for (const domain of order) {
+    try {
+      await pingAnimeonMirror(domain);
+      animeonActiveMirror = domain;
+      animeonMirrorCheckedAt = now;
+      return domain;
+    } catch { /* пробуем следующее зеркало */ }
+  }
+  throw new Error('AnimeOn недоступен ни на одном известном зеркале');
+}
 
 async function aoFetch(path, options = {}, attempt = 1) {
+  const domain = await resolveAnimeonMirror();
   try {
-    const res = await fetch(`${ANIMEON_API}${path}`, {
+    const res = await fetch(`https://${domain}/api${path}`, {
       signal: AbortSignal.timeout(15000),
       headers: { Accept: 'application/json', 'User-Agent': USER_AGENT, ...(options.headers || {}) },
       ...options,
@@ -1811,7 +2252,12 @@ async function aoFetch(path, options = {}, attempt = 1) {
     if (!res.ok) throw new Error(`AnimeOn вернул HTTP ${res.status}`);
     return await res.json();
   } catch (err) {
-    if (attempt < 2) return aoFetch(path, options, attempt + 1);
+    if (attempt < 2) {
+      // возможно, именно активное зеркало легло между проверками — сбрасываем
+      // кэш живости, чтобы следующая попытка пере-проверила все зеркала заново
+      animeonMirrorCheckedAt = 0;
+      return aoFetch(path, options, attempt + 1);
+    }
     throw new Error(`AnimeOn не отвечает (${err.message})`);
   }
 }
@@ -1820,7 +2266,7 @@ function aoAbsoluteUrl(u) {
   if (!u) return null;
   if (u.startsWith('http')) return u;
   if (u.startsWith('//')) return `https:${u}`;
-  return `${ANIMEON_SITE}${u}`;
+  return `https://${animeonActiveMirror || ANIMEON_MIRRORS[0]}${u}`;
 }
 
 // translations{studio}.episodes{"1":{link,screenshots,skipbuttons}} → плоская
@@ -2329,7 +2775,10 @@ ipcMain.handle('downloads:pages', async (_e, { mangaId, chapterId }) => {
   const folder = downloadEntryFolder(mangaId, chapterId);
   const files = (await fs.readdir(folder).catch(() => [])).filter((f) => /^\d+\.\w+$/.test(f));
   files.sort((a, b) => parseInt(a) - parseInt(b));
-  return files.map((f) => `file://${path.join(folder, f)}`);
+  // относительный путь от DOWNLOADS_DIR (папка уже прошла safePathSegment при
+  // скачивании) — кодируем каждый сегмент отдельно на случай пробелов и т.п.
+  const relDir = path.relative(DOWNLOADS_DIR(), folder).split(path.sep).map(encodeURIComponent).join('/');
+  return files.map((f) => `http://127.0.0.1:${appServerPort}/__downloads/${relDir}/${encodeURIComponent(f)}`);
 });
 
 ipcMain.handle('downloads:remove', async (_e, { mangaId, chapterId }) => {

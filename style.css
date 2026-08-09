@@ -732,6 +732,11 @@ webview#siteWebview { flex: 1; width: 100%; }
 /* открывается поверх плеера аниме (у него z-index: 100) — иначе, пока плеер
    открыт, попап приглашения рисуется визуально позади него и не виден до тех
    пор, пока плеер не закроют */
+/* appConfirmBackdrop может открываться поверх ЛЮБОЙ другой модалки (как
+   "точно уверен?" поверх уже открытого диалога) — должен быть выше всех
+   остальных .modal-backdrop независимо от порядка в HTML, иначе рисуется
+   позади уже открытой модалки и становится невидимым/некликабельным */
+#appConfirmBackdrop { z-index: 250; }
 #watchPartyInviteBackdrop { z-index: 150; }
 
 .modal {
@@ -1921,6 +1926,30 @@ webview#siteWebview { flex: 1; width: 100%; }
 .premium-frame-swatch.is-selected { outline: 2px solid var(--accent); outline-offset: 3px; }
 .premium-frame-swatch:hover { transform: scale(1.06); }
 
+.premium-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.premium-modal-header h2 { margin: 0; font-size: 20px; }
+.premium-modal-sub { color: var(--text-muted); font-size: 13px; margin: 0 0 18px; }
+
+.premium-perks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+}
+.premium-perk-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+.premium-perk-icon { font-size: 26px; display: block; margin-bottom: 8px; }
+.premium-perk-card h3 { margin: 0 0 6px; font-size: 14px; }
+.premium-perk-card p { margin: 0; font-size: 12.5px; color: var(--text-muted); line-height: 1.4; }
+
 .friend-profile-banner {
   height: 84px;
   border-radius: var(--radius);
@@ -2750,3 +2779,150 @@ webview#siteWebview { flex: 1; width: 100%; }
   border-radius: 999px;
   transition: width .3s ease;
 }
+/* ---------- новости ---------- */
+
+#newsCategoryTabs { flex-wrap: wrap; }
+.news-add-category-tab {
+  font-weight: 700;
+  font-size: 15px;
+  padding: 7px 14px;
+  color: var(--accent);
+}
+.news-add-category-tab:hover { border-color: var(--accent); background: var(--surface-3); }
+
+.news-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 18px;
+}
+.news-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform .12s, border-color .12s;
+  display: flex;
+  flex-direction: column;
+}
+.news-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.news-card-thumb {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: var(--surface-2);
+}
+.news-card-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.news-card-type {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  font-size: 11px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+.news-card-body { padding: 10px 12px 12px; }
+.news-card-title {
+  font-size: 13.5px;
+  line-height: 1.35;
+  margin: 0 0 6px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.news-card-meta { font-size: 11.5px; color: var(--text-muted); margin: 0; }
+
+/* ---- модалка "источники категории" ---- */
+.news-sources-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; max-height: 240px; overflow-y: auto; }
+.news-source-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+.news-source-type { flex-shrink: 0; color: var(--text-muted); font-size: 11px; }
+.news-source-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.news-source-remove { flex-shrink: 0; width: 26px; height: 26px; }
+.news-source-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.news-source-form select {
+  flex-shrink: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 0 8px;
+  font-size: 12.5px;
+}
+.news-source-form input {
+  flex: 1;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--text);
+  font-size: 12.5px;
+}
+.news-source-form input:focus { outline: none; border-color: var(--accent); }
+
+/* ---- модалка деталей новости ---- */
+.news-detail-body { max-width: 640px; }
+.news-detail-video {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #000;
+  margin-bottom: 14px;
+}
+.news-detail-video iframe { width: 100%; height: 100%; border: 0; }
+.news-detail-video--thumb { cursor: pointer; }
+.news-detail-video--thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.news-detail-play-btn {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  transition: background .15s, transform .15s;
+}
+.news-detail-video--thumb:hover .news-detail-play-btn {
+  background: var(--accent);
+  transform: translate(-50%, -50%) scale(1.08);
+}
+.news-detail-cover {
+  width: 100%;
+  max-height: 320px;
+  object-fit: cover;
+  border-radius: 10px;
+  margin-bottom: 14px;
+}
+.news-detail-title { font-size: 19px; margin: 0 0 6px; line-height: 1.3; }
+.news-detail-meta { font-size: 12.5px; color: var(--text-muted); margin: 0 0 4px; }
+.news-detail-toggle-btn { margin: 8px 0; }
+.news-detail-desc {
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  margin: 0 0 16px;
+}
+.news-detail-open-btn { display: block; }

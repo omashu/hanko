@@ -7,6 +7,7 @@ const els = {
   navAnime: document.getElementById('navAnime'),
   navProfile: document.getElementById('navProfile'),
   navFriends: document.getElementById('navFriends'),
+  navNews: document.getElementById('navNews'),
   friendsNavBadge: document.getElementById('friendsNavBadge'),
   railOnlineFriends: document.getElementById('railOnlineFriends'),
   viewHome: document.getElementById('viewHome'),
@@ -14,6 +15,33 @@ const els = {
   viewAnime: document.getElementById('viewAnime'),
   viewProfile: document.getElementById('viewProfile'),
   viewFriends: document.getElementById('viewFriends'),
+  viewNews: document.getElementById('viewNews'),
+
+  newsManageSourcesBtn: document.getElementById('newsManageSourcesBtn'),
+  newsRefreshBtn: document.getElementById('newsRefreshBtn'),
+  newsCategoryTabs: document.getElementById('newsCategoryTabs'),
+  newsNoCategoriesHint: document.getElementById('newsNoCategoriesHint'),
+  newsNoSourcesHint: document.getElementById('newsNoSourcesHint'),
+  newsLoadingHint: document.getElementById('newsLoadingHint'),
+  newsErrorHint: document.getElementById('newsErrorHint'),
+  newsGrid: document.getElementById('newsGrid'),
+  newsCategoryModalBackdrop: document.getElementById('newsCategoryModalBackdrop'),
+  newsCategoryModalClose: document.getElementById('newsCategoryModalClose'),
+  newsCategoryForm: document.getElementById('newsCategoryForm'),
+  newsCategoryNameInput: document.getElementById('newsCategoryNameInput'),
+  newsSourcesModalBackdrop: document.getElementById('newsSourcesModalBackdrop'),
+  newsSourcesModalClose: document.getElementById('newsSourcesModalClose'),
+  newsSourcesModalCategoryName: document.getElementById('newsSourcesModalCategoryName'),
+  newsSourcesEmpty: document.getElementById('newsSourcesEmpty'),
+  newsSourcesList: document.getElementById('newsSourcesList'),
+  newsSourceForm: document.getElementById('newsSourceForm'),
+  newsSourceType: document.getElementById('newsSourceType'),
+  newsSourceValue: document.getElementById('newsSourceValue'),
+  newsSourceFeedback: document.getElementById('newsSourceFeedback'),
+  newsRemoveCategoryBtn: document.getElementById('newsRemoveCategoryBtn'),
+  newsDetailModalBackdrop: document.getElementById('newsDetailModalBackdrop'),
+  newsDetailModalClose: document.getElementById('newsDetailModalClose'),
+  newsDetailModalBody: document.getElementById('newsDetailModalBody'),
 
   profileAvatarWrap: document.getElementById('profileAvatarWrap'),
   profileAvatarBtn: document.getElementById('profileAvatarBtn'),
@@ -26,7 +54,11 @@ const els = {
   profileBannerBtn: document.getElementById('profileBannerBtn'),
   profileBannerRemoveBtn: document.getElementById('profileBannerRemoveBtn'),
   premiumStatusPill: document.getElementById('premiumStatusPill'),
-  premiumHint: document.getElementById('premiumHint'),
+  premiumInfoBtn: document.getElementById('premiumInfoBtn'),
+  premiumModalBackdrop: document.getElementById('premiumModalBackdrop'),
+  premiumModalClose: document.getElementById('premiumModalClose'),
+  premiumModalStatusPill: document.getElementById('premiumModalStatusPill'),
+  premiumModalNote: document.getElementById('premiumModalNote'),
   friendProfileBanner: document.getElementById('friendProfileBanner'),
   profileNameInput: document.getElementById('profileNameInput'),
   profileBioInput: document.getElementById('profileBioInput'),
@@ -425,21 +457,25 @@ function showView(name) {
   const isAnime = name === 'anime';
   const isProfile = name === 'profile';
   const isFriends = name === 'friends';
+  const isNews = name === 'news';
   els.viewHome.hidden = !isHome;
   els.viewManga.hidden = !isManga;
   els.viewAnime.hidden = !isAnime;
   els.viewProfile.hidden = !isProfile;
   els.viewFriends.hidden = !isFriends;
+  els.viewNews.hidden = !isNews;
   els.navHome.classList.toggle('is-active', isHome);
   els.navManga.classList.toggle('is-active', isManga);
   els.navAnime.classList.toggle('is-active', isAnime);
   els.navProfile.classList.toggle('is-active', isProfile);
   els.navFriends.classList.toggle('is-active', isFriends);
+  els.navNews.classList.toggle('is-active', isNews);
   window.hanko.saveSettings({ lastTab: name });
   if (isHome) { renderHomeContinue(); loadHomeContent(); }
   if (isManga) loadMangaPopular();
   if (isAnime) loadAnimePopular();
   if (isProfile) loadProfileView();
+  if (isNews) loadNewsView();
   // если чат с кем-то уже был открыт раньше, а пользователь был на другой
   // вкладке (Манга/Аниме/Профиль) — сообщения, пришедшие в это время, не
   // попадали в DOM и не сбрасывали бейдж непрочитанных (isChatPaneVisible()
@@ -459,6 +495,7 @@ els.navManga.addEventListener('click', () => showView('manga'));
 els.navAnime.addEventListener('click', () => showView('anime'));
 els.navProfile.addEventListener('click', () => showView('profile'));
 els.navFriends.addEventListener('click', () => showView('friends'));
+els.navNews.addEventListener('click', () => showView('news'));
 
 function applyTheme(theme) {
   document.body.dataset.theme = theme === 'dark' ? 'dark' : 'light';
@@ -2264,7 +2301,6 @@ function renderPremiumBlock() {
   if (!onlineState.ready) {
     els.premiumStatusPill.textContent = 'нужен онлайн-аккаунт';
     els.premiumStatusPill.classList.remove('is-active');
-    els.premiumHint.textContent = 'Баннер и рамка аватара станут доступны, как только подключится онлайн-профиль.';
     els.avatarFrameBtn.hidden = true;
     closeAvatarFramePopover();
     return;
@@ -2274,12 +2310,10 @@ function renderPremiumBlock() {
     const until = onlineState.premiumUntil ? new Date(onlineState.premiumUntil).toLocaleDateString('ru-RU') : '';
     els.premiumStatusPill.textContent = until ? `активен до ${until}` : 'активен';
     els.premiumStatusPill.classList.add('is-active');
-    els.premiumHint.textContent = 'Можешь поставить баннер (кнопка над ним) и рамку аватара — значок ✦ на самом аватаре.';
     els.avatarFrameBtn.hidden = false;
   } else {
     els.premiumStatusPill.textContent = 'не активен';
     els.premiumStatusPill.classList.remove('is-active');
-    els.premiumHint.textContent = 'Премиум пока не подключён — баннер профиля и рамка аватара с ним станут доступны.';
     els.avatarFrameBtn.hidden = true;
     closeAvatarFramePopover();
   }
@@ -2306,6 +2340,36 @@ function renderPremiumBlock() {
     els.avatarFramePopoverList.appendChild(swatch);
   }
 }
+
+// содержимое попапа "Что даёт премиум" — отдельно от статус-пилюли в самом
+// профиле, чтобы объяснение перков не висело постоянным блоком на странице,
+// а появлялось только по запросу (кнопка "Что даёт премиум")
+function renderPremiumModal() {
+  if (!onlineState.ready) {
+    els.premiumModalStatusPill.textContent = 'нужен онлайн-аккаунт';
+    els.premiumModalStatusPill.classList.remove('is-active');
+    els.premiumModalNote.textContent = 'Баннер и рамка аватара станут доступны, как только подключится онлайн-профиль.';
+    return;
+  }
+  if (onlineState.isPremium) {
+    const until = onlineState.premiumUntil ? new Date(onlineState.premiumUntil).toLocaleDateString('ru-RU') : '';
+    els.premiumModalStatusPill.textContent = until ? `активен до ${until}` : 'активен';
+    els.premiumModalStatusPill.classList.add('is-active');
+    els.premiumModalNote.textContent = 'У тебя уже подключено — настраивай баннер и рамку прямо в профиле.';
+  } else {
+    els.premiumModalStatusPill.textContent = 'не активен';
+    els.premiumModalStatusPill.classList.remove('is-active');
+    els.premiumModalNote.textContent = 'Оформление подписки появится позже — пока подключается вручную.';
+  }
+}
+els.premiumInfoBtn.addEventListener('click', () => {
+  renderPremiumModal();
+  els.premiumModalBackdrop.hidden = false;
+});
+els.premiumModalClose.addEventListener('click', () => { els.premiumModalBackdrop.hidden = true; });
+els.premiumModalBackdrop.addEventListener('click', (e) => {
+  if (e.target === els.premiumModalBackdrop) els.premiumModalBackdrop.hidden = true;
+});
 
 function closeAvatarFramePopover() {
   els.avatarFramePopover.hidden = true;
@@ -2365,6 +2429,7 @@ els.registerForm.addEventListener('submit', async (e) => {
   try {
     onlineState = await window.hanko.onlineRegister({ email, password });
     renderOnlineStatus();
+    if (onlineState.ready) await syncLibraryAndHistoryOnce();
     showAuthFeedback(
       onlineState.isAnonymous
         ? 'Готово — проверь почту и подтверди адрес, чтобы вход по паролю заработал.'
@@ -2386,7 +2451,15 @@ els.loginForm.addEventListener('submit', async (e) => {
   try {
     onlineState = await window.hanko.onlineLogin({ email, password });
     renderOnlineStatus();
-    if (onlineState.ready) await Promise.all([refreshIncoming(), refreshOutgoing(), refreshFriends()]);
+    if (onlineState.ready) {
+      await Promise.all([refreshIncoming(), refreshOutgoing(), refreshFriends()]);
+      // библиотека/история привязаны к аккаунту — со входом под другим
+      // аккаунтом main.js уже смотрит в его файл, но в памяти рендерера ещё
+      // данные предыдущего профиля; заодно подтягиваем то, что есть в облаке
+      // у этого аккаунта (при обычном автоподключении при старте это уже
+      // делает connectOnline(), а вот вход посреди сессии этим не покрыт)
+      await syncLibraryAndHistoryOnce();
+    }
     showAuthFeedback('Вошёл.', false);
     els.loginEmail.value = '';
     els.loginPassword.value = '';
@@ -2399,7 +2472,10 @@ els.logoutBtn.addEventListener('click', async () => {
   if (!(await showAppConfirm('Выйти из аккаунта? На этом компьютере снова станет анонимный (гостевой) профиль.', { title: 'Выйти из аккаунта?', okText: 'Выйти', danger: false }))) return;
   onlineState = await window.hanko.onlineLogout();
   renderOnlineStatus();
-  if (onlineState.ready) await Promise.all([refreshIncoming(), refreshOutgoing(), refreshFriends()]);
+  if (onlineState.ready) {
+    await Promise.all([refreshIncoming(), refreshOutgoing(), refreshFriends()]);
+    await syncLibraryAndHistoryOnce();
+  }
 });
 
 // ---------------- ник (вместо кода — по нему теперь ищут друзей) ----------------
@@ -3375,6 +3451,364 @@ window.hanko.onOnlineEvent(async (event) => {
   }
 });
 
+// ---------------- новости ----------------
+
+let newsCategories = [];
+// специальный псевдо-id — не настоящая категория, а агрегированная лента
+// сразу по всем категориям; выбрана по умолчанию при первом открытии вкладки
+const NEWS_ALL_ID = '__all__';
+let activeNewsCategoryId = NEWS_ALL_ID;
+// фиды кэшируются в памяти на сессию — переключение между вкладками/
+// категориями не должно каждый раз заново дёргать сеть и переводчик;
+// { force: true } (кнопка "Обновить", добавление/удаление источника) сбрасывает кэш
+const newsItemsCache = new Map();
+
+function newsFormatDate(ts) {
+  if (!ts) return '';
+  return new Date(ts).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' });
+}
+
+async function loadNewsView() {
+  try {
+    newsCategories = await window.hanko.loadNewsCategories();
+  } catch {
+    newsCategories = [];
+  }
+  if (activeNewsCategoryId !== NEWS_ALL_ID && !newsCategories.some((c) => c.id === activeNewsCategoryId)) {
+    activeNewsCategoryId = NEWS_ALL_ID;
+  }
+  renderNewsCategoryTabs();
+  loadNewsFeed(activeNewsCategoryId);
+}
+
+function updateNewsToolbar() {
+  // "Источники" относится к конкретной категории — на агрегированной "Всё"
+  // не показываем. Плюс сама кнопка целиком только для модератора (isDevMode,
+  // тот же флаг, что уже скрывает служебные вещи от обычных пользователей).
+  els.newsManageSourcesBtn.hidden = !isDevMode || activeNewsCategoryId === NEWS_ALL_ID;
+}
+
+function renderNewsCategoryTabs() {
+  els.newsCategoryTabs.innerHTML = '';
+  const allTab = document.createElement('button');
+  allTab.type = 'button';
+  allTab.className = `profile-tab ${activeNewsCategoryId === NEWS_ALL_ID ? 'is-active' : ''}`;
+  allTab.textContent = 'Всё';
+  allTab.addEventListener('click', () => {
+    if (activeNewsCategoryId === NEWS_ALL_ID) return;
+    activeNewsCategoryId = NEWS_ALL_ID;
+    renderNewsCategoryTabs();
+    updateNewsToolbar();
+    loadNewsFeed(NEWS_ALL_ID);
+  });
+  els.newsCategoryTabs.appendChild(allTab);
+
+  for (const cat of newsCategories) {
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.className = `profile-tab ${cat.id === activeNewsCategoryId ? 'is-active' : ''}`;
+    tab.textContent = cat.name;
+    tab.addEventListener('click', () => {
+      if (activeNewsCategoryId === cat.id) return;
+      activeNewsCategoryId = cat.id;
+      renderNewsCategoryTabs();
+      updateNewsToolbar();
+      loadNewsFeed(cat.id);
+    });
+    els.newsCategoryTabs.appendChild(tab);
+  }
+
+  // управление категориями — только для модератора; обычные пользователи
+  // видят готовую статичную подборку и просто читают
+  if (isDevMode) {
+    const addTab = document.createElement('button');
+    addTab.type = 'button';
+    addTab.className = 'profile-tab news-add-category-tab';
+    addTab.textContent = '+';
+    addTab.title = 'Добавить категорию';
+    addTab.addEventListener('click', openAddNewsCategoryModal);
+    els.newsCategoryTabs.appendChild(addTab);
+  }
+  updateNewsToolbar();
+}
+
+// ---- добавление категории ----
+function openAddNewsCategoryModal() {
+  els.newsCategoryNameInput.value = '';
+  els.newsCategoryModalBackdrop.hidden = false;
+  els.newsCategoryNameInput.focus();
+}
+els.newsCategoryModalClose.addEventListener('click', () => { els.newsCategoryModalBackdrop.hidden = true; });
+els.newsCategoryModalBackdrop.addEventListener('click', (e) => {
+  if (e.target === els.newsCategoryModalBackdrop) els.newsCategoryModalBackdrop.hidden = true;
+});
+els.newsCategoryForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = els.newsCategoryNameInput.value.trim();
+  if (!name) return;
+  const categories = await window.hanko.upsertNewsCategory({ id: `cat-${Date.now()}`, name });
+  newsCategories = categories;
+  activeNewsCategoryId = categories[categories.length - 1].id;
+  els.newsCategoryModalBackdrop.hidden = true;
+  renderNewsCategoryTabs();
+  els.newsGrid.innerHTML = '';
+  els.newsNoCategoriesHint.hidden = true;
+  els.newsNoSourcesHint.hidden = false;
+  // сразу предлагаем добавить источник — в свежесозданной категории их пока нет
+  openNewsSourcesModal();
+});
+
+// ---- источники внутри категории ----
+function renderNewsSourcesList(cat) {
+  els.newsSourcesList.innerHTML = '';
+  els.newsSourcesEmpty.hidden = cat.sources.length > 0;
+  for (const src of cat.sources) {
+    const row = document.createElement('div');
+    row.className = 'news-source-row';
+    row.innerHTML = `
+      <span class="news-source-type">${src.type === 'youtube' ? '▶ YouTube' : '📰 RSS'}</span>
+      <span class="news-source-label">${escapeHtml(src.label || src.url || src.channelId || '')}</span>
+      <button type="button" class="icon-btn news-source-remove" title="Удалить источник">✕</button>
+    `;
+    row.querySelector('.news-source-remove').addEventListener('click', async () => {
+      const categories = await window.hanko.removeNewsSource({ categoryId: cat.id, sourceId: src.id });
+      newsCategories = categories;
+      renderNewsSourcesList(categories.find((c) => c.id === cat.id) || { sources: [] });
+      newsItemsCache.delete(cat.id);
+      if (activeNewsCategoryId === cat.id) loadNewsFeed(cat.id, { force: true });
+    });
+    els.newsSourcesList.appendChild(row);
+  }
+}
+
+function openNewsSourcesModal() {
+  const cat = newsCategories.find((c) => c.id === activeNewsCategoryId);
+  if (!cat) { showAppAlert('Сначала создай категорию (кнопка «+» рядом с вкладками).'); return; }
+  els.newsSourcesModalCategoryName.textContent = cat.name;
+  renderNewsSourcesList(cat);
+  els.newsSourceValue.value = '';
+  els.newsSourceFeedback.hidden = true;
+  els.newsRemoveCategoryBtn.hidden = !isDevMode;
+  els.newsSourcesModalBackdrop.hidden = false;
+}
+els.newsManageSourcesBtn.addEventListener('click', openNewsSourcesModal);
+els.newsSourcesModalClose.addEventListener('click', () => { els.newsSourcesModalBackdrop.hidden = true; });
+els.newsSourcesModalBackdrop.addEventListener('click', (e) => {
+  if (e.target === els.newsSourcesModalBackdrop) els.newsSourcesModalBackdrop.hidden = true;
+});
+
+els.newsSourceForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const cat = newsCategories.find((c) => c.id === activeNewsCategoryId);
+  if (!cat) return;
+  const type = els.newsSourceType.value;
+  const value = els.newsSourceValue.value.trim();
+  if (!value) return;
+  els.newsSourceFeedback.hidden = true;
+  const submitBtn = els.newsSourceForm.querySelector('button[type="submit"]');
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Проверяю…';
+  try {
+    await window.hanko.addNewsSource({ categoryId: cat.id, type, value });
+    newsCategories = await window.hanko.loadNewsCategories();
+    renderNewsSourcesList(newsCategories.find((c) => c.id === cat.id));
+    els.newsSourceValue.value = '';
+    newsItemsCache.delete(cat.id);
+    if (activeNewsCategoryId === cat.id) loadNewsFeed(cat.id, { force: true });
+  } catch (err) {
+    els.newsSourceFeedback.hidden = false;
+    els.newsSourceFeedback.textContent = cleanIpcError(err);
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Добавить';
+  }
+});
+
+els.newsRemoveCategoryBtn.addEventListener('click', async () => {
+  const cat = newsCategories.find((c) => c.id === activeNewsCategoryId);
+  if (!cat) return;
+  const ok = await showAppConfirm(`Удалить категорию «${cat.name}» вместе со всеми её источниками?`, { okText: 'Удалить' });
+  if (!ok) return;
+  const categories = await window.hanko.removeNewsCategory(cat.id);
+  newsCategories = categories;
+  newsItemsCache.delete(cat.id);
+  activeNewsCategoryId = categories[0]?.id || null;
+  els.newsSourcesModalBackdrop.hidden = true;
+  renderNewsCategoryTabs();
+  if (activeNewsCategoryId) {
+    loadNewsFeed(activeNewsCategoryId);
+  } else {
+    els.newsGrid.innerHTML = '';
+    els.newsNoCategoriesHint.hidden = false;
+    els.newsNoSourcesHint.hidden = true;
+  }
+});
+
+// ---- сама лента ----
+// ---- агрегированная лента "Всё" — сразу по всем категориям ----
+async function loadAllNewsFeed({ force = false } = {}) {
+  els.newsErrorHint.hidden = true;
+  if (!newsCategories.length) {
+    els.newsGrid.innerHTML = '';
+    els.newsNoCategoriesHint.hidden = false;
+    els.newsNoSourcesHint.hidden = true;
+    els.newsLoadingHint.hidden = true;
+    return;
+  }
+  const withSources = newsCategories.filter((c) => c.sources.length);
+  if (!withSources.length) {
+    els.newsGrid.innerHTML = '';
+    els.newsNoCategoriesHint.hidden = true;
+    els.newsNoSourcesHint.hidden = false;
+    els.newsLoadingHint.hidden = true;
+    return;
+  }
+  els.newsNoCategoriesHint.hidden = true;
+  els.newsNoSourcesHint.hidden = true;
+  if (!force && newsItemsCache.has(NEWS_ALL_ID)) {
+    renderNewsGrid(newsItemsCache.get(NEWS_ALL_ID));
+    return;
+  }
+  els.newsGrid.innerHTML = '';
+  els.newsLoadingHint.hidden = false;
+  try {
+    const perCategory = await Promise.all(withSources.map(async (c) => {
+      if (!force && newsItemsCache.has(c.id)) return newsItemsCache.get(c.id);
+      try {
+        const items = await window.hanko.fetchNewsCategory(c.id);
+        newsItemsCache.set(c.id, items);
+        return items;
+      } catch {
+        return [];
+      }
+    }));
+    const seen = new Set();
+    const merged = [];
+    for (const items of perCategory) {
+      for (const item of items) {
+        if (seen.has(item.link)) continue;
+        seen.add(item.link);
+        merged.push(item);
+      }
+    }
+    merged.sort((a, b) => (b.publishedAt || 0) - (a.publishedAt || 0));
+    const capped = merged.slice(0, 60);
+    newsItemsCache.set(NEWS_ALL_ID, capped);
+    if (activeNewsCategoryId === NEWS_ALL_ID) renderNewsGrid(capped);
+  } catch (err) {
+    if (activeNewsCategoryId === NEWS_ALL_ID) {
+      els.newsErrorHint.hidden = false;
+      els.newsErrorHint.textContent = `Не удалось загрузить новости: ${cleanIpcError(err)}`;
+    }
+  } finally {
+    if (activeNewsCategoryId === NEWS_ALL_ID) els.newsLoadingHint.hidden = true;
+  }
+}
+
+async function loadNewsFeed(categoryId, { force = false } = {}) {
+  if (categoryId === NEWS_ALL_ID) {
+    await loadAllNewsFeed({ force });
+    return;
+  }
+  els.newsErrorHint.hidden = true;
+  const cat = newsCategories.find((c) => c.id === categoryId);
+  if (!cat) return;
+  els.newsNoCategoriesHint.hidden = true;
+  if (!cat.sources.length) {
+    els.newsGrid.innerHTML = '';
+    els.newsNoSourcesHint.hidden = false;
+    els.newsLoadingHint.hidden = true;
+    return;
+  }
+  els.newsNoSourcesHint.hidden = true;
+  if (!force && newsItemsCache.has(categoryId)) {
+    renderNewsGrid(newsItemsCache.get(categoryId));
+    return;
+  }
+  els.newsGrid.innerHTML = '';
+  els.newsLoadingHint.hidden = false;
+  try {
+    const items = await window.hanko.fetchNewsCategory(categoryId);
+    newsItemsCache.set(categoryId, items);
+    if (activeNewsCategoryId === categoryId) renderNewsGrid(items);
+  } catch (err) {
+    if (activeNewsCategoryId === categoryId) {
+      els.newsErrorHint.hidden = false;
+      els.newsErrorHint.textContent = `Не удалось загрузить новости: ${cleanIpcError(err)}`;
+    }
+  } finally {
+    if (activeNewsCategoryId === categoryId) els.newsLoadingHint.hidden = true;
+  }
+}
+els.newsRefreshBtn.addEventListener('click', () => {
+  if (activeNewsCategoryId) loadNewsFeed(activeNewsCategoryId, { force: true });
+});
+
+function newsCard(item) {
+  const card = document.createElement('div');
+  card.className = 'news-card';
+  const title = item.titleRu || item.title;
+  card.innerHTML = `
+    <div class="news-card-thumb">
+      ${item.thumbnail ? `<img src="${item.thumbnail}" alt="" loading="lazy" onerror="this.style.opacity=0" />` : ''}
+      <span class="news-card-type">${item.type === 'video' ? '▶' : '📰'}</span>
+    </div>
+    <div class="news-card-body">
+      <p class="news-card-title">${escapeHtml(title)}</p>
+      <p class="news-card-meta">${escapeHtml(item.channelName || '')}${item.publishedAt ? ' · ' + escapeHtml(newsFormatDate(item.publishedAt)) : ''}</p>
+    </div>
+  `;
+  card.addEventListener('click', () => openNewsDetail(item));
+  return card;
+}
+
+function renderNewsGrid(items) {
+  els.newsGrid.innerHTML = '';
+  if (!items.length) {
+    els.newsGrid.innerHTML = '<p class="empty-hint">Пока ничего нового не нашлось.</p>';
+    return;
+  }
+  for (const item of items) els.newsGrid.appendChild(newsCard(item));
+}
+
+// ---- детальный просмотр (видео встроенным плеером / статья с переводом) ----
+let newsShowOriginal = false;
+
+function renderNewsDetailBody(item) {
+  const title = newsShowOriginal ? item.title : (item.titleRu || item.title);
+  const description = newsShowOriginal ? item.description : (item.descriptionRu || item.description || '');
+  const hasTranslation = (item.titleRu && item.titleRu !== item.title) || (item.descriptionRu && item.descriptionRu !== item.description);
+  els.newsDetailModalBody.innerHTML = `
+    ${item.type === 'video'
+      ? `<div class="news-detail-video"><iframe src="https://www.youtube-nocookie.com/embed/${escapeHtml(item.videoId)}?autoplay=1" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></div>`
+      : (item.thumbnail ? `<img class="news-detail-cover" src="${item.thumbnail}" alt="" onerror="this.style.display='none'" />` : '')}
+    <h2 class="news-detail-title">${escapeHtml(title)}</h2>
+    <p class="news-detail-meta">${escapeHtml(item.channelName || '')}${item.publishedAt ? ' · ' + escapeHtml(newsFormatDate(item.publishedAt)) : ''}</p>
+    ${hasTranslation ? `<button type="button" class="btn-secondary news-detail-toggle-btn">${newsShowOriginal ? 'Показать перевод' : 'Показать оригинал'}</button>` : ''}
+    <p class="news-detail-desc">${description ? escapeHtml(description) : '<i>Без описания</i>'}</p>
+    <button type="button" class="btn-primary news-detail-open-btn">${item.type === 'video' ? 'Открыть на YouTube' : 'Открыть статью в браузере'}</button>
+  `;
+  const toggleBtn = els.newsDetailModalBody.querySelector('.news-detail-toggle-btn');
+  if (toggleBtn) toggleBtn.addEventListener('click', () => { newsShowOriginal = !newsShowOriginal; renderNewsDetailBody(item); });
+  els.newsDetailModalBody.querySelector('.news-detail-open-btn').addEventListener('click', () => window.hanko.openExternal(item.link));
+}
+
+function openNewsDetail(item) {
+  newsShowOriginal = false;
+  renderNewsDetailBody(item);
+  els.newsDetailModalBackdrop.hidden = false;
+}
+function closeNewsDetail() {
+  // сбрасываем innerHTML, а не просто прячем — иначе встроенное YouTube-видео
+  // продолжит играть (и звучать) в закрытой модалке
+  els.newsDetailModalBody.innerHTML = '';
+  els.newsDetailModalBackdrop.hidden = true;
+}
+els.newsDetailModalClose.addEventListener('click', closeNewsDetail);
+els.newsDetailModalBackdrop.addEventListener('click', (e) => {
+  if (e.target === els.newsDetailModalBackdrop) closeNewsDetail();
+});
+
 // ---------------- старт ----------------
 
 async function init() {
@@ -3398,7 +3832,7 @@ async function init() {
   renderLibrary();
   renderAnimeLibrary();
   renderDownloads();
-  const lastTab = ['anime', 'home', 'profile', 'friends'].includes(settings.lastTab) ? settings.lastTab : 'manga';
+  const lastTab = ['anime', 'home', 'profile', 'friends', 'news'].includes(settings.lastTab) ? settings.lastTab : 'manga';
   showView(lastTab);
   // подключаемся к онлайну в фоне — не блокируем остальной запуск и не ждём,
   // пока откроют «Профиль», чтобы заявки/сообщения могли прийти в любой момент
