@@ -2244,6 +2244,7 @@ function renderOnlineStatus() {
   renderUsernameUI();
   renderProfileStats();
   renderPremiumBlock();
+  if (newsViewLoaded) renderNewsCategoryTabs();
 
   if (onlineState.error) {
     els.onlineStatusHint.hidden = false;
@@ -3478,6 +3479,7 @@ let activeNewsCategoryId = NEWS_ALL_ID;
 // категориями не должно каждый раз заново дёргать сеть и переводчик;
 // { force: true } (кнопка "Обновить", добавление/удаление источника) сбрасывает кэш
 const newsItemsCache = new Map();
+let newsViewLoaded = false;
 
 function newsFormatDate(ts) {
   if (!ts) return '';
@@ -3493,15 +3495,22 @@ async function loadNewsView() {
   if (activeNewsCategoryId !== NEWS_ALL_ID && !newsCategories.some((c) => c.id === activeNewsCategoryId)) {
     activeNewsCategoryId = NEWS_ALL_ID;
   }
+  newsViewLoaded = true;
   renderNewsCategoryTabs();
   loadNewsFeed(activeNewsCategoryId);
 }
 
+// isDevMode остаётся как локальный запасной вариант для разработки, но
+// основной источник правды — is_moderator из Supabase (проверяется и на
+// сервере в самих rpc_admin_* функциях, так что это только про UI).
+function canModerateNews() {
+  return isDevMode || !!(onlineState && onlineState.isModerator);
+}
+
 function updateNewsToolbar() {
   // "Источники" относится к конкретной категории — на агрегированной "Всё"
-  // не показываем. Плюс сама кнопка целиком только для модератора (isDevMode,
-  // тот же флаг, что уже скрывает служебные вещи от обычных пользователей).
-  els.newsManageSourcesBtn.hidden = !isDevMode || activeNewsCategoryId === NEWS_ALL_ID;
+  // не показываем. Плюс сама кнопка целиком только для модератора.
+  els.newsManageSourcesBtn.hidden = !canModerateNews() || activeNewsCategoryId === NEWS_ALL_ID;
 }
 
 function renderNewsCategoryTabs() {
@@ -3536,7 +3545,7 @@ function renderNewsCategoryTabs() {
 
   // управление категориями — только для модератора; обычные пользователи
   // видят готовую статичную подборку и просто читают
-  if (isDevMode) {
+  if (canModerateNews()) {
     const addTab = document.createElement('button');
     addTab.type = 'button';
     addTab.className = 'profile-tab news-add-category-tab';
@@ -3604,7 +3613,7 @@ function openNewsSourcesModal() {
   renderNewsSourcesList(cat);
   els.newsSourceValue.value = '';
   els.newsSourceFeedback.hidden = true;
-  els.newsRemoveCategoryBtn.hidden = !isDevMode;
+  els.newsRemoveCategoryBtn.hidden = !canModerateNews();
   els.newsSourcesModalBackdrop.hidden = false;
 }
 els.newsManageSourcesBtn.addEventListener('click', openNewsSourcesModal);

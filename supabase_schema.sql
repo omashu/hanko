@@ -54,6 +54,17 @@ alter table public.profiles add column if not exists banner_url text;
 -- на клиенте), тоже только для премиума, см. rpc_set_avatar_frame
 alter table public.profiles add column if not exists avatar_frame text;
 
+-- ---------- модерация ----------
+-- is_moderator — доверенный человек (не обязательно только ты), который через
+-- приложение может редактировать ОБЩИЙ список категорий/источников новостей
+-- (раздел "Новости"): изменения сразу видят все, потому что список теперь
+-- общий (таблицы news_categories/news_sources ниже), а не локальный файл на
+-- каждом отдельном компьютере по отдельности. Выдать/забрать право — так же
+-- вручную одной строкой, как и premium_until выше:
+--   update public.profiles set is_moderator = true where username = 'ник';
+--   update public.profiles set is_moderator = false where username = 'ник';
+alter table public.profiles add column if not exists is_moderator boolean not null default false;
+
 create table if not exists public.friend_requests (
   id uuid primary key default gen_random_uuid(),
   from_id uuid not null references public.profiles(id) on delete cascade,
@@ -118,6 +129,34 @@ create table if not exists public.profile_likes (
   primary key (profile_id, liker_id)
 );
 
+-- ---------- новости: общий список категорий/источников ----------
+-- Раньше это был локальный JSON-файл на каждом компьютере отдельно — поэтому
+-- "удалил у себя" не значило "удалил у всех" (сколько компьютеров, столько
+-- независимых копий списка). Теперь это одна общая таблица: читают её все
+-- (см. RLS ниже — публичное чтение), а редактируют только модераторы
+-- (is_moderator на profiles, см. выше) — и только через rpc_admin_* функции
+-- ниже, никогда прямой записью в таблицу.
+create table if not exists public.news_categories (
+  id text primary key,
+  name text not null,
+  created_at timestamptz not null default now(),
+  created_by uuid references public.profiles(id) on delete set null
+);
+
+create table if not exists public.news_sources (
+  id text primary key,
+  category_id text not null references public.news_categories(id) on delete cascade,
+  type text not null check (type in ('rss', 'youtube')),
+  -- rss: прямая ссылка на фид; youtube: уже резолвнутый channelId (UCxxxx…),
+  -- резолвится на клиенте до вызова rpc_admin_add_news_source (см. main.js)
+  value text not null,
+  label text not null,
+  created_at timestamptz not null default now(),
+  created_by uuid references public.profiles(id) on delete set null
+);
+
+create index if not exists news_sources_category_idx on public.news_sources (category_id);
+
 -- ---------- Storage: аватары ----------
 -- Публичный бакет — сами картинки не секрет, а чтение публичного файла по
 -- прямой ссылке не требует токена/сессии, поэтому такой URL можно просто
@@ -171,9 +210,11 @@ create policy "banner own delete" on storage.objects
 -- ---------- RLS ----------
 -- Прямой доступ к таблицам закрыт почти полностью: всё чтение/запись идёт
 -- через функции ниже (security definer), которые сами проверяют auth.uid().
--- Единственное исключение — SELECT на friend_requests/messages: он нужен,
--- чтобы работали живые уведомления (Supabase Realtime применяет RLS и не
--- пришлёт ничего без разрешающей политики SELECT).
+-- Исключения — SELECT на friend_requests/messages (нужен для живых
+-- уведомлений через Supabase Realtime, который сам применяет RLS) и на
+-- news_categories/news_sources (список источников новостей публичный и
+-- читается всеми, а не только своим владельцем — записывать в обход
+-- rpc_admin_* всё равно нельзя, INSERT/UPDATE/DELETE политик для них нет).
 
 alter table public.profiles enable row level security;
 alter table public.friend_requests enable row level security;
@@ -182,6 +223,8 @@ alter table public.messages enable row level security;
 alter table public.bookmarks enable row level security;
 alter table public.profile_comments enable row level security;
 alter table public.profile_likes enable row level security;
+alter table public.news_categories enable row level security;
+alter table public.news_sources enable row level security;
 
 drop policy if exists "own profile" on public.profiles;
 create policy "own profile" on public.profiles
@@ -210,6 +253,14 @@ create policy "see own or authored comments" on public.profile_comments
 drop policy if exists "see own or authored likes" on public.profile_likes;
 create policy "see own or authored likes" on public.profile_likes
   for select using (profile_id = auth.uid() or liker_id = auth.uid());
+
+drop policy if exists "news categories public read" on public.news_categories;
+create policy "news categories public read" on public.news_categories
+  for select using (true);
+
+drop policy if exists "news sources public read" on public.news_sources;
+create policy "news sources public read" on public.news_sources
+  for select using (true);
 
 -- ---------- автосоздание профиля при регистрации (анонимной) ----------
 
@@ -256,13 +307,13 @@ drop function if exists public.rpc_get_my_profile();
 create or replace function public.rpc_get_my_profile()
 returns table(
   id uuid, friend_code text, username text, display_name text,
-  premium_until timestamptz, banner_url text, avatar_frame text
+  premium_until timestamptz, banner_url text, avatar_frame text, is_moderator boolean
 )
 language sql
 security definer
 set search_path = public
 as $$
-  select id, friend_code, username, display_name, premium_until, banner_url, avatar_frame
+  select id, friend_code, username, display_name, premium_until, banner_url, avatar_frame, is_moderator
   from public.profiles where id = auth.uid();
 $$;
 
@@ -1000,6 +1051,117 @@ as $$
   select * from public.history_items where user_id = auth.uid() order by updated_at desc;
 $$;
 
+-- ---------- RPC: новости (общий список + модерация) ----------
+-- Чтение (rpc_list_news_*) доступно всем — источники публичные, ничего
+-- личного. Запись (rpc_admin_*) — только тем, у кого is_moderator = true на
+-- profiles (см. колонку и как её выдать в начале файла); каждая admin-функция
+-- сама это проверяет, так что даже прямой вызов из консоли DevTools в обход
+-- интерфейса ничего не даст немодератору.
+
+drop function if exists public.is_moderator();
+create or replace function public.is_moderator()
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select coalesce((select is_moderator from public.profiles where id = auth.uid()), false);
+$$;
+
+drop function if exists public.rpc_list_news_categories();
+create or replace function public.rpc_list_news_categories()
+returns table(id text, name text)
+language sql
+security definer
+set search_path = public
+as $$
+  select id, name from public.news_categories order by created_at;
+$$;
+
+drop function if exists public.rpc_list_news_sources();
+create or replace function public.rpc_list_news_sources()
+returns table(id text, category_id text, type text, value text, label text)
+language sql
+security definer
+set search_path = public
+as $$
+  select id, category_id, type, value, label from public.news_sources order by created_at;
+$$;
+
+drop function if exists public.rpc_admin_upsert_news_category(text, text);
+create or replace function public.rpc_admin_upsert_news_category(p_id text, p_name text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_moderator() then
+    raise exception 'not_moderator';
+  end if;
+  if trim(coalesce(p_name, '')) = '' then
+    raise exception 'empty_name';
+  end if;
+  insert into public.news_categories (id, name, created_by)
+  values (p_id, trim(p_name), auth.uid())
+  on conflict (id) do update set name = trim(p_name);
+end;
+$$;
+
+drop function if exists public.rpc_admin_remove_news_category(text);
+create or replace function public.rpc_admin_remove_news_category(p_id text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_moderator() then
+    raise exception 'not_moderator';
+  end if;
+  delete from public.news_categories where id = p_id;
+end;
+$$;
+
+drop function if exists public.rpc_admin_add_news_source(text, text, text, text, text);
+create or replace function public.rpc_admin_add_news_source(
+  p_id text, p_category_id text, p_type text, p_value text, p_label text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_moderator() then
+    raise exception 'not_moderator';
+  end if;
+  if p_type not in ('rss', 'youtube') then
+    raise exception 'invalid_type';
+  end if;
+  if not exists (select 1 from public.news_categories where id = p_category_id) then
+    raise exception 'category_not_found';
+  end if;
+  insert into public.news_sources (id, category_id, type, value, label, created_by)
+  values (p_id, p_category_id, p_type, p_value, p_label, auth.uid());
+end;
+$$;
+
+drop function if exists public.rpc_admin_remove_news_source(text);
+create or replace function public.rpc_admin_remove_news_source(p_id text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_moderator() then
+    raise exception 'not_moderator';
+  end if;
+  delete from public.news_sources where id = p_id;
+end;
+$$;
+
 -- ---------- права на выполнение функций ----------
 -- Анонимный вход в Supabase выдаёт роль authenticated (с флагом is_anonymous),
 -- поэтому даём права именно ей — анонимным "без сессии" эти функции не нужны.
@@ -1040,6 +1202,13 @@ revoke all on function public.rpc_upsert_history_item(text, text, text, text, te
 revoke all on function public.rpc_remove_history_item(text, text) from public;
 revoke all on function public.rpc_clear_history_items(text) from public;
 revoke all on function public.rpc_list_history_items() from public;
+revoke all on function public.is_moderator() from public;
+revoke all on function public.rpc_list_news_categories() from public;
+revoke all on function public.rpc_list_news_sources() from public;
+revoke all on function public.rpc_admin_upsert_news_category(text, text) from public;
+revoke all on function public.rpc_admin_remove_news_category(text) from public;
+revoke all on function public.rpc_admin_add_news_source(text, text, text, text, text) from public;
+revoke all on function public.rpc_admin_remove_news_source(text) from public;
 
 grant execute on function public.rpc_get_my_profile() to authenticated;
 grant execute on function public.rpc_set_display_name(text) to authenticated;
@@ -1077,6 +1246,13 @@ grant execute on function public.rpc_upsert_history_item(text, text, text, text,
 grant execute on function public.rpc_remove_history_item(text, text) to authenticated;
 grant execute on function public.rpc_clear_history_items(text) to authenticated;
 grant execute on function public.rpc_list_history_items() to authenticated;
+grant execute on function public.is_moderator() to authenticated;
+grant execute on function public.rpc_list_news_categories() to authenticated;
+grant execute on function public.rpc_list_news_sources() to authenticated;
+grant execute on function public.rpc_admin_upsert_news_category(text, text) to authenticated;
+grant execute on function public.rpc_admin_remove_news_category(text) to authenticated;
+grant execute on function public.rpc_admin_add_news_source(text, text, text, text, text) to authenticated;
+grant execute on function public.rpc_admin_remove_news_source(text) to authenticated;
 
 -- ---------- реалтайм ----------
 -- Без этого живые уведомления (новая заявка / принятая заявка / новое

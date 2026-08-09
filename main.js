@@ -638,7 +638,6 @@ app.whenReady().then(async () => {
   setupAutoUpdate();
   startHealthMonitor();
   setupTray();
-  seedDefaultNewsCategoriesIfEmpty().catch(() => {});
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -892,21 +891,49 @@ ipcMain.handle('sites:note', async (_e, { id, note }) => {
 });
 
 // ---------- Новости (YouTube-каналы + RSS новостных сайтов) ----------
-// Категории полностью управляются пользователем в настройках — никакого
-// фиксированного набора source'ов внутри кода. У YouTube есть официальный
-// RSS без ключа на каждый канал (feeds/videos.xml?channel_id=), у новостных
-// сайтов (ANN и т.п.) — свой обычный RSS/Atom. Перевод — через тот же
-// нестандартный, но общеизвестный и много где используемый (в т.ч. в самом
-// Chrome под капотом) эндпоинт Google Translate, без платного API-ключа.
-const NEWS_CATEGORIES_PATH = () => path.join(app.getPath('userData'), 'news-categories.json');
+// Список категорий/источников теперь ОБЩИЙ — хранится в Supabase
+// (news_categories/news_sources, см. supabase_schema.sql), а не в локальном
+// файле на каждом компьютере по отдельности (раньше было так, из-за чего
+// "удалил у себя" не значило "удалил у всех" — разные компьютеры просто не
+// знали друг о друге). Читать может любой; добавлять/удалять — только
+// модератор (is_moderator на profiles), см. rpc_admin_* в supabase_schema.sql
+// и обработчики news:upsertCategory/addSource/removeSource/removeCategory
+// ниже — каждый требует supabase.rpc(...), которая сама проверяет права на
+// сервере (клиентская проверка isModerator в renderer.js — только чтобы не
+// показывать кнопки зря, не единственная защита).
+// Локальный файл остался только как КЭШ на случай отсутствия сети/онлайна —
+// последний успешно полученный список, чтобы вкладка не была пустой офлайн.
+const NEWS_CACHE_PATH = () => path.join(app.getPath('userData'), 'news-categories-cache.json');
 
-async function loadNewsCategories() {
-  const c = await readJson(NEWS_CATEGORIES_PATH(), { categories: [] });
+async function loadNewsCategoriesCache() {
+  const c = await readJson(NEWS_CACHE_PATH(), { categories: [] });
   return Array.isArray(c.categories) ? c.categories : [];
 }
-async function saveNewsCategories(categories) {
-  await writeJson(NEWS_CATEGORIES_PATH(), { categories });
-  return categories;
+
+async function loadNewsCategories() {
+  try {
+    const [{ data: cats, error: catErr }, { data: srcs, error: srcErr }] = await Promise.all([
+      supabase.rpc('rpc_list_news_categories'),
+      supabase.rpc('rpc_list_news_sources'),
+    ]);
+    if (catErr) throw catErr;
+    if (srcErr) throw srcErr;
+    const categories = (cats || []).map((c) => ({
+      id: c.id,
+      name: c.name,
+      sources: (srcs || [])
+        .filter((s) => s.category_id === c.id)
+        .map((s) => (s.type === 'youtube'
+          ? { id: s.id, type: 'youtube', channelId: s.value, label: s.label }
+          : { id: s.id, type: 'rss', url: s.value, label: s.label })),
+    }));
+    writeJson(NEWS_CACHE_PATH(), { categories }).catch(() => {});
+    return categories;
+  } catch {
+    // онлайн ещё не подключился / сети нет — отдаём последний известный кэш,
+    // а не пустоту
+    return loadNewsCategoriesCache();
+  }
 }
 
 async function newsFetchText(url) {
@@ -1010,53 +1037,6 @@ function parseGenericFeed(xml, sourceLabel) {
   return items;
 }
 
-// Дефолтный набор категорий/источников — чтобы вкладка не была пустой сразу
-// после установки. Заполняется ОДИН РАЗ, только если у пользователя ещё нет
-// вообще ни одной категории (свои или уже засеянные ранее) — так что можно
-// свободно всё переудалять, ничего не пересоздастся заново само.
-// Источники резолвятся через ту же логику, что и ручное добавление
-// (resolveYoutubeChannelId/fetchRssFeed) — если конкретный источник вдруг
-// недоступен при первом запуске, просто пропускаем его, не роняя весь сид.
-const DEFAULT_NEWS_CATEGORIES = [
-  {
-    name: 'Аниме',
-    sources: [
-      { type: 'youtube', value: '@Crunchyroll' },
-      { type: 'rss', value: 'https://www.animenewsnetwork.com/newsfeed/rss.xml' },
-    ],
-  },
-  {
-    name: 'Игры',
-    sources: [
-      { type: 'youtube', value: '@FGOchannel' },
-    ],
-  },
-];
-
-async function seedDefaultNewsCategoriesIfEmpty() {
-  const existing = await loadNewsCategories();
-  if (existing.length) return;
-  const categories = [];
-  for (const def of DEFAULT_NEWS_CATEGORIES) {
-    const cat = { id: `cat-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name: def.name, sources: [] };
-    for (const src of def.sources) {
-      try {
-        if (src.type === 'youtube') {
-          const channelId = await resolveYoutubeChannelId(src.value);
-          cat.sources.push({ id: `src-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'youtube', channelId, label: src.value });
-        } else {
-          const test = await fetchRssFeed(src.value, src.value);
-          if (test.length) {
-            cat.sources.push({ id: `src-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'rss', url: src.value, label: new URL(src.value).hostname });
-          }
-        }
-      } catch { /* конкретный источник недоступен сейчас — пропускаем, не критично */ }
-    }
-    if (cat.sources.length) categories.push(cat);
-  }
-  if (categories.length) await saveNewsCategories(categories);
-}
-
 async function fetchRssFeed(url, label) {
   const xml = await newsFetchText(url);
   return parseGenericFeed(xml, label);
@@ -1086,41 +1066,43 @@ async function translateToRu(text) {
 ipcMain.handle('news:loadCategories', () => loadNewsCategories());
 
 ipcMain.handle('news:upsertCategory', async (_e, category) => {
-  const categories = await loadNewsCategories();
-  const idx = categories.findIndex((c) => c.id === category.id);
-  if (idx >= 0) categories[idx] = { ...categories[idx], ...category };
-  else categories.push({ id: category.id || `cat-${Date.now()}`, name: category.name, sources: [] });
-  return saveNewsCategories(categories);
+  const id = category.id || `cat-${Date.now()}`;
+  const { error } = await supabase.rpc('rpc_admin_upsert_news_category', {
+    p_id: id, p_name: category.name,
+  });
+  if (error) throw new Error(friendlyOnlineError(error));
+  return loadNewsCategories();
 });
 
 ipcMain.handle('news:removeCategory', async (_e, id) => {
-  const categories = (await loadNewsCategories()).filter((c) => c.id !== id);
-  return saveNewsCategories(categories);
+  const { error } = await supabase.rpc('rpc_admin_remove_news_category', { p_id: id });
+  if (error) throw new Error(friendlyOnlineError(error));
+  return loadNewsCategories();
 });
 
 ipcMain.handle('news:addSource', async (_e, { categoryId, type, value }) => {
-  const categories = await loadNewsCategories();
-  const cat = categories.find((c) => c.id === categoryId);
-  if (!cat) throw new Error('Категория не найдена');
+  let payload;
   if (type === 'youtube') {
     const channelId = await resolveYoutubeChannelId(value);
-    cat.sources.push({ id: `src-${Date.now()}`, type: 'youtube', channelId, label: value });
+    payload = { id: `src-${Date.now()}`, type: 'youtube', value: channelId, label: value };
   } else {
     // проверяем, что это реально парсящийся фид, а не мусорная ссылка —
     // лучше явная ошибка сразу при добавлении, чем молчаливо пустая категория
     const test = await fetchRssFeed(value, value);
     if (!test.length) throw new Error('По этой ссылке не нашлось ни одной новости — проверь, что это прямая ссылка на RSS/Atom-фид');
-    cat.sources.push({ id: `src-${Date.now()}`, type: 'rss', url: value, label: new URL(value).hostname });
+    payload = { id: `src-${Date.now()}`, type: 'rss', value, label: new URL(value).hostname };
   }
-  await saveNewsCategories(categories);
-  return cat;
+  const { error } = await supabase.rpc('rpc_admin_add_news_source', {
+    p_id: payload.id, p_category_id: categoryId, p_type: payload.type, p_value: payload.value, p_label: payload.label,
+  });
+  if (error) throw new Error(friendlyOnlineError(error));
+  return loadNewsCategories();
 });
 
-ipcMain.handle('news:removeSource', async (_e, { categoryId, sourceId }) => {
-  const categories = await loadNewsCategories();
-  const cat = categories.find((c) => c.id === categoryId);
-  if (cat) cat.sources = cat.sources.filter((s) => s.id !== sourceId);
-  return saveNewsCategories(categories);
+ipcMain.handle('news:removeSource', async (_e, { sourceId }) => {
+  const { error } = await supabase.rpc('rpc_admin_remove_news_source', { p_id: sourceId });
+  if (error) throw new Error(friendlyOnlineError(error));
+  return loadNewsCategories();
 });
 
 ipcMain.handle('news:fetchCategory', async (_e, categoryId) => {
@@ -3019,6 +3001,10 @@ function friendlyOnlineError(err) {
     empty_message: 'Сообщение пустое.',
     not_premium: 'Это премиум-функция — нужна активная подписка.',
     invalid_frame: 'Такой рамки не существует.',
+    not_moderator: 'Управлять источниками новостей могут только модераторы.',
+    empty_name: 'Название категории не может быть пустым.',
+    invalid_type: 'Источник может быть только RSS или YouTube.',
+    category_not_found: 'Такой категории не существует — возможно, её уже удалили.',
     'User already registered': 'Эта почта уже зарегистрирована — попробуй войти, а не регистрироваться заново.',
     'Invalid login credentials': 'Неверная почта или пароль.',
     'Password should be at least': 'Пароль слишком короткий (минимум 6 символов).',
@@ -3082,6 +3068,7 @@ async function initOnline() {
       isPremium: !!(profileRow.premium_until && new Date(profileRow.premium_until) > new Date()),
       bannerUrl: profileRow.banner_url || null,
       avatarFrame: profileRow.avatar_frame || null,
+      isModerator: !!profileRow.is_moderator,
     };
     setupRealtimeSubscriptions(profileRow.id);
   } catch (err) {
@@ -3095,6 +3082,7 @@ async function initOnline() {
       displayName: null,
       email: null,
       isAnonymous: true,
+      isModerator: false,
     };
   }
   return onlineState;
