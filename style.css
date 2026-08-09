@@ -1,11 +1,11 @@
 :root {
   --bg: transparent;
-  --surface: rgba(255, 255, 255, 0.58);
-  --surface-2: rgba(255, 255, 255, 0.4);
-  --surface-3: rgba(255, 255, 255, 0.26);
-  --border: rgba(120, 138, 178, 0.28);
+  --surface: rgba(255, 255, 255, 0.74);
+  --surface-2: rgba(255, 255, 255, 0.66);
+  --surface-3: rgba(255, 255, 255, 0.5);
+  --border: rgba(110, 126, 168, 0.38);
   --text: #2e3350;
-  --text-muted: #5c6488;
+  --text-muted: #454b6e;
   --accent: #ff8a7a;
   --accent-bright: #ff6a55;
   --gold: #c98a3a;
@@ -89,14 +89,17 @@ html, body {
   will-change: transform;
 }
 
-/* лёгкая вуаль поверх картинки — чуть притемняет края, чтобы стеклянные
-   панели интерфейса читались поверх любого участка иллюстрации */
+/* вуаль поверх фоновой картинки — притемняет/выравнивает её, чтобы стеклянные
+   панели интерфейса читались поверх любого участка иллюстрации. Для светлой
+   темы это должно быть настолько же сильно, насколько для тёмной, просто в
+   другую сторону (светлеет, а не темнеет) — иначе пёстрая картинка продолжает
+   просвечивать и тёмный текст на светлом стекле теряет контраст */
 .app-background-veil {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse at 50% 15%, rgba(255, 255, 255, 0.10), transparent 55%),
-    linear-gradient(180deg, rgba(18, 20, 40, 0.14) 0%, rgba(18, 20, 40, 0) 26%, rgba(18, 20, 40, 0) 62%, rgba(10, 14, 30, 0.22) 100%);
+    radial-gradient(ellipse at 50% 15%, rgba(255, 255, 255, 0.3), transparent 55%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.6) 0%, rgba(255, 255, 255, 0.42) 30%, rgba(255, 255, 255, 0.46) 65%, rgba(255, 255, 255, 0.62) 100%);
   pointer-events: none;
 }
 
@@ -426,6 +429,35 @@ body[data-theme="dark"] .theme-toggle-btn .icon-sun { display: block; }
   transform: translateY(-3px);
   border-color: var(--accent);
   box-shadow: 0 12px 28px rgba(70, 50, 100, 0.16);
+}
+
+/* «последний открытый тайтл» — переливающаяся неоновая обводка. .card уже
+   has overflow:hidden (чтобы обложка обрезалась по скруглённым углам), так
+   что внешний светящийся ::before тут не сработал бы — обводка сделана самим
+   border'ом карточки через приём padding-box/border-box, он вписывается
+   ровно в толщину border и не обрезается */
+.card--glow {
+  border: 2px solid transparent;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(120deg, #ff6a55, #6c5ce7, #57e0ff, #f592c0, #ff6a55) border-box;
+  background-size: 100% 100%, 300% 300%;
+  background-position: 0% 50%, 0% 50%;
+  animation: hanko-glow-shift 6s ease-in-out infinite alternate, hanko-glow-pulse 3s ease-in-out infinite;
+}
+
+.card--glow:hover { border-color: transparent; }
+
+/* важно: позиция второго слоя (градиент) гуляет только в пределах 0–100% и
+   ходит "туда-обратно" (alternate) — если увести её за 100%, background
+   начинает тайлиться по кругу, и на стыке тайлов возникает жёсткая полоса */
+@keyframes hanko-glow-shift {
+  to { background-position: 0% 50%, 100% 50%; }
+}
+
+@keyframes hanko-glow-pulse {
+  0%, 100% { box-shadow: 0 0 10px rgba(255, 106, 85, .35), 0 0 22px rgba(87, 224, 255, .16); }
+  50% { box-shadow: 0 0 16px rgba(108, 92, 231, .5), 0 0 30px rgba(245, 146, 192, .28); }
 }
 
 .card-cover {
@@ -1178,6 +1210,17 @@ webview#siteWebview { flex: 1; width: 100%; }
   position: relative;
 }
 .anime-player-body video { width: 100%; height: 100%; object-fit: contain; }
+#animeUpscaleCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none; /* клики проваливаются на video под ним — play/pause и т.д. не трогаем */
+  display: none;
+}
+.anime-player-body.is-upscaled #animeUpscaleCanvas { display: block; }
+#animeUpscaleBtn.is-active { color: var(--accent); }
 
 /* ---------- кастомный плеер аниме ---------- */
 
@@ -1895,6 +1938,14 @@ webview#siteWebview { flex: 1; width: 100%; }
 }
 
 .premium-status-pill.is-active {
+  background: rgba(201, 138, 58, .16);
+  color: var(--gold);
+  border-color: rgba(201, 138, 58, .45);
+}
+
+/* в тёмной теме этот же --gold смотрится тускло — используем более яркий
+   светлый оттенок, который на тёмном стекле остаётся тёплым и не блёклым */
+body[data-theme="dark"] .premium-status-pill.is-active {
   background: rgba(237, 199, 95, .15);
   color: #edc75f;
   border-color: rgba(237, 199, 95, .4);

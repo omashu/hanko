@@ -4,7 +4,7 @@
   <meta name="referrer" content="strict-origin-when-cross-origin" />
 <meta charset="UTF-8" />
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https:; media-src 'self' blob: https:; img-src 'self' data: https: file:; frame-src https://www.youtube.com https://www.youtube-nocookie.com;" />
+  content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://cdn.jsdelivr.net; worker-src 'self' blob:; connect-src 'self' https:; media-src 'self' blob: https:; img-src 'self' data: https: file:; frame-src https://www.youtube.com https://www.youtube-nocookie.com;" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Hanko</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -304,7 +304,7 @@
     <header class="view-header">
       <div>
         <h1>Новости</h1>
-        <p class="view-sub">Последние видео и статьи по темам, которые тебе интересны.</p>
+        <p class="view-sub">Последние видео и статьи.</p>
       </div>
       <div class="search-form" style="gap:8px;">
         <button type="button" class="btn-secondary" id="newsManageSourcesBtn">Источники</button>
@@ -596,6 +596,11 @@
   <div class="reader-overlay anime-player" id="animePlayerOverlay" hidden>
     <div class="anime-player-body" id="animePlayerBody">
       <video id="animeVideo" autoplay></video>
+      <!-- поверх видео, тот же размер — сюда рисует anime4k-webgpu, когда апскейл
+           включён; сам <video> продолжает играть как обычно (он и остаётся
+           источником кадров и тем, к чему привязаны play/pause/перемотка/watch
+           party) — canvas просто визуально перекрывает его сверху -->
+      <canvas id="animeUpscaleCanvas"></canvas>
 
       <button class="anime-center-btn" id="animeCenterBtn" title="Воспроизвести" type="button">
         <svg viewBox="0 0 24 24" width="30" height="30"><path d="M8 5v14l12-7L8 5z" fill="currentColor"/></svg>
@@ -653,6 +658,9 @@
               <button id="animeSpeedBtn" class="anime-speed-btn" title="Скорость воспроизведения" type="button">1x</button>
               <button id="animePartyChatToggleBtn" class="icon-btn" title="Чат просмотра" type="button" hidden>
                 <svg viewBox="0 0 24 24" width="18" height="18"><path d="M21 11.5a8.38 8.38 0 0 1-4.9 7.6A8.5 8.5 0 0 1 3 12.5 8.38 8.38 0 0 1 10.6 4a8.5 8.5 0 0 1 10.4 7.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <button id="animeUpscaleBtn" class="icon-btn" title="Апскейл качества (экспериментально)" type="button">
+                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M5 3v4M3 5h4M19 17v4M17 19h4M11 3l2.5 6L20 11.5 13.5 14 11 20l-2.5-6L2 11.5 8.5 9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
               <button id="animeFullscreenBtn" class="icon-btn" title="На весь экран (F)" type="button">
                 <svg id="animeFullscreenIcon" viewBox="0 0 24 24" width="18" height="18"><path d="M8 3H4v4M16 3h4v4M8 21H4v-4M16 21h4v-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -861,6 +869,9 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+<!-- anime4k-webgpu — ESM-пакет; сам import вынесен в anime4k-loader.js, потому
+     что CSP блокирует инлайн-скрипты (см. коммент в самом файле) -->
+<script type="module" src="anime4k-loader.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>

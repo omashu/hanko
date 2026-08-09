@@ -3,6 +3,12 @@
 // Окно (renderer) ничего не может напрямую — только через preload.js + ipc.
 
 const { app, BrowserWindow, ipcMain, shell, dialog, Menu, Tray, session } = require('electron');
+// WebGPU нужен апскейлу видео (anime4k-webgpu) — в отличие от обычного
+// Chrome, Electron не всегда включает его по умолчанию (зависит от версии/
+// сборки), из-за чего navigator.gpu в renderer'е может быть undefined, и
+// библиотека падает прямо при импорте, даже не доходя до попытки отрисовки.
+// Флаг нужно ставить ДО app.whenReady() — после команда не подействует.
+app.commandLine.appendSwitch('enable-unsafe-webgpu');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const http = require('node:http');
@@ -367,11 +373,27 @@ function startAppServer() {
         res.end('Not found');
       }
     });
-    server.listen(0, '127.0.0.1', () => {
+    // порт был случайным (listen(0, ...)) — из-за этого Origin приложения
+    // менялся при каждом запуске, а браузерный HTTP-кэш на диске иногда
+    // отдавал ЗАКЭШИРОВАННЫЙ (с предыдущего запуска, другой Origin) CORS-
+    // заголовок стороннего CDN — с несовпадающим портом в
+    // Access-Control-Allow-Origin запрос блокировался. Фиксированный порт
+    // убирает саму причину; если он вдруг занят (например, одновременно
+    // открыты dev-версия и собранный .exe) — откатываемся на случайный,
+    // это редкий случай и лучше так, чем не запуститься вовсе.
+    const FIXED_APP_SERVER_PORT = 47812;
+    server.once('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        server.listen(0, '127.0.0.1');
+      } else {
+        reject(err);
+      }
+    });
+    server.once('listening', () => {
       appServerPort = server.address().port;
       resolve(server);
     });
-    server.on('error', reject);
+    server.listen(FIXED_APP_SERVER_PORT, '127.0.0.1');
   });
 }
 
@@ -398,6 +420,15 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  // Menu.setApplicationMenu(null) выше убирает вместе с меню и стандартный
+  // шорткат Ctrl+Shift+I/F12 на DevTools — он живёт именно в этом меню, не
+  // на уровне ОС. Возвращаем его отдельно, раз меню решили не показывать.
+  mainWindow.webContents.on('before-input-event', (_e, input) => {
+    const isToggleCombo = input.key === 'F12'
+      || (input.key.toUpperCase() === 'I' && input.control && input.shift);
+    if (isToggleCombo) mainWindow.webContents.toggleDevTools();
   });
 }
 

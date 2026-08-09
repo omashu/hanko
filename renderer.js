@@ -271,6 +271,8 @@ const els = {
   animeQualitySelect: document.getElementById('animeQualitySelect'),
   animeTranslationSelect: document.getElementById('animeTranslationSelect'),
   animeVideo: document.getElementById('animeVideo'),
+  animeUpscaleCanvas: document.getElementById('animeUpscaleCanvas'),
+  animeUpscaleBtn: document.getElementById('animeUpscaleBtn'),
   animeEpPrevBtn: document.getElementById('animeEpPrevBtn'),
   animeEpNextBtn: document.getElementById('animeEpNextBtn'),
   animeEpLabel: document.getElementById('animeEpLabel'),
@@ -650,6 +652,12 @@ const MANGA_STATUS_RU = {
 function mangaCard(item, { inLibrary }) {
   const card = document.createElement('div');
   card.className = 'card';
+  // подсветка последней прочитанной главы — readingHistory отсортирована по
+  // свежести (unshift при каждом прогрессе, см. main.js), так что [0] — это
+  // именно то, что открывали последним
+  if (readingHistory[0] && readingHistory[0].mangaId === item.id) {
+    card.classList.add('card--glow');
+  }
 
   const fold = item.progress
     ? `<div class="card-fold"></div><span class="card-fold-label">${escapeHtml(item.progress.chapterLabel || '')}</span>`
@@ -1658,6 +1666,10 @@ async function recordHistoryProgress(payload) {
     readingHistory = await window.hanko.setHistoryProgress(payload);
   } catch { /* история — best-effort, не мешаем чтению, если вдруг не записалось */ }
   if (!els.viewProfile.hidden) renderReadingHistory();
+  // подсветка «последний открытый тайтл» на карточках библиотеки/«Продолжить» —
+  // чтобы переехала на новый тайтл сразу, а не после переключения вкладки
+  if (!els.viewManga.hidden) renderLibrary();
+  if (!els.viewHome.hidden) renderHomeContinue();
 }
 
 let progressSaveTimer = null;
@@ -1778,6 +1790,10 @@ window.hanko.onDownloadProgress(async ({ mangaId, chapterId, done, total, finish
 function animeLibraryCard(item) {
   const card = document.createElement('div');
   card.className = 'card';
+  // та же логика, что и в mangaCard, но по animeHistory (releaseId вместо mangaId)
+  if (animeHistory[0] && animeHistory[0].releaseId === item.id) {
+    card.classList.add('card--glow');
+  }
   const hist = animeHistory.find((h) => h.releaseId === item.id);
   const fold = hist
     ? `<div class="card-fold"></div><span class="card-fold-label">${escapeHtml(hist.episodeLabel || '')}</span>`
@@ -4470,6 +4486,7 @@ async function loadAnimeSource(item, ep, sourceIndex) {
   els.animeQualitySelect.innerHTML = qualities
     .map((q, i) => `<option value="${i}">${escapeHtml(q.label)}</option>`).join('');
   attachAnimeSource(qualities[0].url);
+  resetAnimeUpscale(); // новый источник — старый WebGPU-пайплайн апскейла мог быть настроен под другое разрешение
   // если для этой же серии уже есть сохранённая позиция просмотра (в истории,
   // см. anime-history:setPosition) — продолжаем именно с неё, а не с начала;
   // совсем маленькие значения (только открыли и почти сразу закрыли) не
@@ -4498,6 +4515,7 @@ els.animeQualitySelect.addEventListener('change', () => {
   if (q) {
     const time = els.animeVideo.currentTime;
     attachAnimeSource(q.url);
+    resetAnimeUpscale(); // другое разрешение — старый пайплайн апскейла для него не годится
     els.animeVideo.addEventListener('loadedmetadata', () => { els.animeVideo.currentTime = time; }, { once: true });
   }
 });
@@ -4793,6 +4811,7 @@ function closeAnimePlayer() {
   els.animeVideo.pause();
   els.animeVideo.removeAttribute('src');
   if (hlsPlayer) { hlsPlayer.detachMedia(); }
+  resetAnimeUpscale();
   animePlayerState = null;
   clearTimeout(animeIdleTimer);
   els.animePlayerOverlay.classList.remove('is-idle');
@@ -5011,6 +5030,134 @@ document.addEventListener('fullscreenchange', () => {
   els.animeFullscreenIcon.innerHTML = isAnimeFullscreen()
     ? '<path d="M9 3v4a2 2 0 0 1-2 2H3M15 3v4a2 2 0 0 0 2 2h4M9 21v-4a2 2 0 0 0-2-2H3M15 21v-4a2 2 0 0 1 2-2h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
     : '<path d="M8 3H4v4M16 3h4v4M8 21H4v-4M16 21h4v-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
+});
+
+// ---- апскейл качества видео (anime4k-webgpu) ----
+// <video> остаётся как есть и продолжает быть источником для всей остальной
+// логики плеера (play/pause/перемотка/watch party/история) — canvas просто
+// визуально перекрывает его сверху, когда апскейл включён (см. CSS
+// #animeUpscaleCanvas / .is-upscaled). Требует WebGPU — если браузер/видеокарта
+// не потянут, ловим ошибку и тихо откатываемся с понятным сообщением.
+// У библиотеки нет официального метода "stop"/"destroy" для render() — но
+// весь её цикл рендера привязан к конкретному GPUDevice, а device этот нам
+// отдают в pipelineBuilder(device, ...). Ловим его в замыкание и просто
+// убиваем через device.destroy() при выключении/смене серии/закрытии плеера —
+// это стандартный приём для WebGPU-библиотек без штатного стоп-метода, и
+// именно его не хватало: раньше при resetAnimeUpscale() только сбрасывались
+// JS-флаги, а сам GPU-цикл продолжал крутиться в фоне и копился с каждым
+// включением/переключением серии — отсюда и лаг, не пропадавший при выключении.
+let animeUpscaleOn = false;
+let animeUpscaleDevice = null; // текущий GPUDevice активного пайплайна апскейла, если он запущен
+
+function resetAnimeUpscale() {
+  animeUpscaleOn = false;
+  els.animePlayerBody.classList.remove('is-upscaled');
+  els.animeUpscaleBtn.classList.remove('is-active');
+  if (animeUpscaleDevice) {
+    // после destroy() внутренний render-цикл библиотеки может разово
+    // плюнуть ошибкой в консоль, пытаясь обратиться к уже убитому device —
+    // это ожидаемо и безвредно (сам цикл на этом останавливается), в отличие
+    // от бесконечно копящегося GPU-лага, который был при простом сокрытии canvas
+    try { animeUpscaleDevice.destroy(); } catch (err) { console.error('[anime4k] ошибка при остановке device:', err); }
+    animeUpscaleDevice = null;
+  }
+  // подменяем canvas на свежий клон (id/классы/CSS сохраняются, clone без
+  // потомков и без WebGPU-контекста) — так следующий render() гарантированно
+  // получает НЕ сконфигурированный контекст, а не остаток от уже уничтоженного
+  // device на старом canvas (это могло быть отдельным источником артефактов
+  // при повторных включениях апскейла на одной и той же серии)
+  const freshCanvas = els.animeUpscaleCanvas.cloneNode(false);
+  els.animeUpscaleCanvas.replaceWith(freshCanvas);
+  els.animeUpscaleCanvas = freshCanvas;
+}
+
+async function startAnimeUpscale() {
+  const video = els.animeVideo;
+  const canvas = els.animeUpscaleCanvas;
+  if (video.readyState < 1) {
+    await new Promise((resolve) => video.addEventListener('loadedmetadata', resolve, { once: true }));
+  }
+  // ВАЖНО: render() создаёт свою внутреннюю inputTexture (в которую копирует
+  // сырой кадр видео через copyExternalImageToTexture) ДО вызова pipelineBuilder
+  // и, похоже, берёт для неё размер из canvas.width/height на тот момент — если
+  // заранее раздуть canvas в 2 раза, получется "Copy rect is out of bounds of
+  // external image" (пытается скопировать из видео нативного размера в текстуру
+  // вдвое больше). Поэтому сначала оставляем canvas нативного размера видео —
+  // именно под ним и создастся inputTexture правильного (нативного) размера —
+  // а увеличиваем canvas до 2x уже НИЖЕ, внутри pipelineBuilder, когда
+  // inputTexture для копии кадра уже создан и зафиксирован: на неё это больше
+  // не влияет, а вот итоговый swap-chain на canvas получит нужное 2x разрешение.
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  // раньше тут стоял window.Anime4KWebGPU.ModeA — такого класса в пакете нет
+  // вообще (см. лог "реальные экспорты модуля" в консоли — там его не будет).
+  // Настоящий API (подтверждено на npmjs.com/package/anime4k-webgpu и в самом
+  // репозитории пакета): CNNx2UL — апскейл x2, GANUUL — деблюр/восстановление
+  // после него; оба принимают только { device, inputTexture }, без ручных
+  // nativeDimensions/targetDimensions — масштаб CNNx2UL всегда x2 сам по себе.
+  // Object.keys(mod) в anime4k-loader.js показал имена "anime4k-webgpu" и
+  // "default" — а не render/CNNx2UL/GANUUL напрямую. Похоже, jsdelivr завернул
+  // CJS/UMD-сборку пакета, и настоящие классы лежат в mod.default, а не на
+  // верхнем уровне. Подстраховываемся на оба варианта, а не гадаем вслепую.
+  const api = window.Anime4KWebGPU.render ? window.Anime4KWebGPU : window.Anime4KWebGPU.default;
+  if (!api || !api.render) {
+    throw new Error('Не нашёл render() ни в модуле, ни в mod.default — смотри лог "[anime4k]" в консоли');
+  }
+  await api.render({
+    video,
+    canvas,
+    pipelineBuilder: (device, inputTexture) => {
+      animeUpscaleDevice = device; // сохраняем именно тот device, что реально используется этим пайплайном
+      // CNNx2UL масштабирует строго в 2 раза (у пакета нет параметра "на
+      // сколько апскейлить") — inputTexture (нативный размер) библиотека уже
+      // создала сама выше, копия кадра видео на него больше не завязана, так
+      // что теперь можно спокойно раздуть canvas под итоговый 2x-результат
+      canvas.width = inputTexture.width * 2;
+      canvas.height = inputTexture.height * 2;
+      // GANUUL (второй проход — деблюр/восстановление после апскейла) убрал:
+      // два полных прохода нейросети на каждый кадр видео в реальном времени —
+      // тяжело для GPU, и именно это, похоже, роняет FPS всей серии, а не
+      // только "картинки апскейла". Один CNNx2UL всё ещё даёт честный апскейл
+      // x2, просто без дополнительной шлифовки после него — заметно дешевле.
+      const upscale = new api.CNNx2UL({ device, inputTexture });
+      return [upscale];
+    },
+  });
+}
+
+els.animeUpscaleBtn.addEventListener('click', async () => {
+  if (!animePlayerState) return;
+  if (!window.Anime4KWebGPU) {
+    if (window.Anime4KWebGPULoadError) {
+      showAppAlert(`Апскейл не смог загрузиться: ${window.Anime4KWebGPULoadError}`);
+    } else {
+      showAppAlert('Апскейл ещё загружается, попробуй через пару секунд.');
+    }
+    return;
+  }
+  if (animeUpscaleOn) {
+    // выключаем по-настоящему — не просто прячем canvas, а останавливаем
+    // сам GPU-цикл (см. resetAnimeUpscale), иначе именно это и вызывало лаг
+    resetAnimeUpscale();
+    return;
+  }
+  els.animeUpscaleBtn.disabled = true;
+  try {
+    // раньше тут был короткий путь "уже запускали на этой серии — просто
+    // показать canvas обратно" (по флагу-ссылке на video-элемент). Теперь,
+    // когда выключение реально останавливает device, этот путь больше не
+    // годится — старый пайплайн после выключения уже уничтожен, показывать
+    // нечего, нужен новый вызов startAnimeUpscale() при каждом включении
+    await startAnimeUpscale();
+    animeUpscaleOn = true;
+    els.animePlayerBody.classList.add('is-upscaled');
+    els.animeUpscaleBtn.classList.add('is-active');
+  } catch (err) {
+    console.error('Апскейл не запустился:', err);
+    showAppAlert('Не удалось включить апскейл — похоже, видеокарта или драйверы не поддерживают WebGPU.');
+  } finally {
+    els.animeUpscaleBtn.disabled = false;
+  }
 });
 
 // ---- автоскрытие панели управления во время просмотра ----
