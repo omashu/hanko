@@ -994,7 +994,7 @@ async function fetchYoutubeChannelFeed(channelId) {
       description,
       channelName,
       publishedAt: published ? new Date(published).getTime() : 0,
-      thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+      thumbnail: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
       videoId,
       link: `https://www.youtube.com/watch?v=${videoId}`,
     });
@@ -1136,6 +1136,17 @@ ipcMain.handle('news:fetchCategory', async (_e, categoryId) => {
 ipcMain.handle('profile:load', () => loadProfile());
 ipcMain.handle('profile:save', (_e, partial) => saveProfile(partial || {}));
 
+// Раньше сюда просто копировался исходный файл как есть, любого размера и
+// пропорций — а дальше каждое место, где показывается аватар (большой в
+// профиле, крошечный кружок в боковой панели друзей, в чате...) само вырезало
+// центр через object-fit: cover. Для не-квадратных фото (и вообще фото с
+// высоким разрешением) в маленьких кружках это давало разный, часто "неполный"
+// результат — видно было только случайный центральный кусок картинки.
+// Теперь: диалог выбора файла остаётся здесь (Electron), но сам кроп в квадрат
+// делает рендерер через <canvas> (там это на порядок проще и виднее
+// пользователю, что именно будет видно) — а сюда, в profile:saveCroppedAvatar,
+// присылается уже готовый квадратный PNG. Так все размеры показа получают
+// один и тот же, заранее выбранный кроп.
 ipcMain.handle('profile:pickAvatar', async () => {
   if (!mainWindow) return null;
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -1144,9 +1155,20 @@ ipcMain.handle('profile:pickAvatar', async () => {
     properties: ['openFile'],
   });
   if (result.canceled || !result.filePaths[0]) return null;
-
   const src = result.filePaths[0];
   const ext = (path.extname(src) || '.png').toLowerCase();
+  const contentType = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif' }[ext] || 'image/png';
+  const bytes = await fs.readFile(src);
+  return { dataUrl: `data:${contentType};base64,${bytes.toString('base64')}` };
+});
+
+ipcMain.handle('profile:saveCroppedAvatar', async (_e, dataUrl) => {
+  const match = /^data:(image\/\w+);base64,(.+)$/.exec(String(dataUrl || ''));
+  if (!match) throw new Error('Некорректные данные аватара.');
+  const contentType = match[1];
+  const bytes = Buffer.from(match[2], 'base64');
+  const ext = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp', 'image/gif': '.gif' }[contentType] || '.png';
+
   await fs.mkdir(AVATAR_DIR(), { recursive: true });
 
   // подчищаем файл предыдущего аватара, если он был
@@ -1156,7 +1178,7 @@ ipcMain.handle('profile:pickAvatar', async () => {
   }
 
   const fileName = `avatar_${Date.now()}${ext}`;
-  await fs.copyFile(src, path.join(AVATAR_DIR(), fileName));
+  await fs.writeFile(path.join(AVATAR_DIR(), fileName), bytes);
 
   // Показываем этот же аватар друзьям — заливаем в публичный бакет Storage и
   // сохраняем ссылку в profiles.avatar_url. Если онлайн не готов или заливка
@@ -1164,8 +1186,6 @@ ipcMain.handle('profile:pickAvatar', async () => {
   // друзья пока не увидят обновление (см. rpc_set_avatar_url в supabase_schema.sql).
   if (onlineState.ready && onlineState.myId) {
     try {
-      const bytes = await fs.readFile(src);
-      const contentType = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif' }[ext] || 'image/png';
       const storagePath = `${onlineState.myId}/avatar${ext}`;
       const { error: uploadErr } = await supabase.storage.from('avatars').upload(storagePath, bytes, { contentType, upsert: true });
       if (uploadErr) {
@@ -1184,6 +1204,31 @@ ipcMain.handle('profile:pickAvatar', async () => {
   }
 
   return saveProfile({ avatarFile: fileName });
+});
+
+// аватар группы — тот же bucket 'avatars', та же логика кропа на стороне
+// renderer'а, но путь в Storage ОБЯЗАН начинаться с id текущего пользователя
+// (см. RLS-политику "avatar own write" в supabase_schema.sql — она проверяет
+// именно первый сегмент пути), поэтому кладём в подпапку своего id, а не
+// группы напрямую
+ipcMain.handle('group:saveCroppedAvatar', async (_e, { groupId, dataUrl }) => {
+  const match = /^data:(image\/\w+);base64,(.+)$/.exec(String(dataUrl || ''));
+  if (!match) throw new Error('Некорректные данные аватара.');
+  if (!onlineState.ready || !onlineState.myId) throw new Error('Нужно быть в сети, чтобы поменять аватар группы.');
+  const contentType = match[1];
+  const bytes = Buffer.from(match[2], 'base64');
+  const ext = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp', 'image/gif': '.gif' }[contentType] || '.png';
+
+  const storagePath = `${onlineState.myId}/group_${groupId}${ext}`;
+  const { error: uploadErr } = await supabase.storage.from('avatars').upload(storagePath, bytes, { contentType, upsert: true });
+  if (uploadErr) throw new Error(`Не удалось загрузить: ${uploadErr.message}`);
+  const { data: pub } = supabase.storage.from('avatars').getPublicUrl(storagePath);
+  // метка времени — иначе у остальных участников, уже видевших старую
+  // картинку, браузерный/файловый кэш может не подхватить новую
+  const bustedUrl = `${pub.publicUrl}?t=${Date.now()}`;
+  const { error: rpcErr } = await supabase.rpc('rpc_set_group_avatar', { p_group_id: groupId, p_avatar_url: bustedUrl });
+  if (rpcErr) throw new Error(friendlyOnlineError(rpcErr));
+  return bustedUrl;
 });
 
 // Баннер — премиум-фича, локальной копии не держим (в отличие от аватара он
@@ -3002,9 +3047,11 @@ function friendlyOnlineError(err) {
     not_premium: 'Это премиум-функция — нужна активная подписка.',
     invalid_frame: 'Такой рамки не существует.',
     not_moderator: 'Управлять источниками новостей могут только модераторы.',
-    empty_name: 'Название категории не может быть пустым.',
+    empty_name: 'Название не может быть пустым.',
     invalid_type: 'Источник может быть только RSS или YouTube.',
     category_not_found: 'Такой категории не существует — возможно, её уже удалили.',
+    not_a_member: 'Ты не состоишь в этой группе — возможно, тебя уже удалили или ты вышел.',
+    not_group_creator: 'Удалять участников может только создатель группы.',
     'User already registered': 'Эта почта уже зарегистрирована — попробуй войти, а не регистрироваться заново.',
     'Invalid login credentials': 'Неверная почта или пароль.',
     'Password should be at least': 'Пароль слишком короткий (минимум 6 символов).',
@@ -3129,6 +3176,21 @@ function setupRealtimeSubscriptions(myId) {
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'messages', filter: `to_id=eq.${myId}` },
       (payload) => sendOnlineEvent({ type: 'message', message: payload.new })
+    )
+    .subscribe();
+
+  // группового сообщения нет конкретного получателя (to_id) — оно относится
+  // ко всей группе, поэтому фильтр по колонке тут не поставить. Подписываемся
+  // без фильтра на всю таблицу — Supabase Realtime сам ограничивает то, что
+  // реально долетит до клиента, той же RLS-политикой SELECT, что и обычные
+  // запросы ("see messages of own groups") — то есть сюда и так прилетят
+  // только сообщения из групп, где я состою, не нужно фильтровать вручную.
+  supabase
+    .channel('hanko-incoming-group-messages')
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'group_messages' },
+      (payload) => sendOnlineEvent({ type: 'group-message', message: payload.new })
     )
     .subscribe();
 
@@ -3371,6 +3433,74 @@ ipcMain.handle('online:listMessages', async (_e, friendId) => {
 
 ipcMain.handle('online:markMessagesRead', async (_e, friendId) => {
   const { error } = await supabase.rpc('rpc_mark_messages_read', { p_friend_id: friendId });
+  if (error) throw new Error(friendlyOnlineError(error));
+  return true;
+});
+
+// ---------- групповые чаты (см. таблицы groups/group_members/group_messages в supabase_schema.sql) ----------
+
+ipcMain.handle('online:createGroup', async (_e, { name, memberIds }) => {
+  const { data, error } = await supabase.rpc('rpc_create_group', { p_name: name, p_member_ids: memberIds || [] });
+  if (error) throw new Error(friendlyOnlineError(error));
+  return data;
+});
+
+ipcMain.handle('online:listGroups', async () => {
+  const { data, error } = await supabase.rpc('rpc_list_groups');
+  if (error) throw new Error(friendlyOnlineError(error));
+  return data || [];
+});
+
+ipcMain.handle('online:listGroupMembers', async (_e, groupId) => {
+  const { data, error } = await supabase.rpc('rpc_list_group_members', { p_group_id: groupId });
+  if (error) throw new Error(friendlyOnlineError(error));
+  return data || [];
+});
+
+ipcMain.handle('online:addGroupMember', async (_e, { groupId, userId }) => {
+  const { error } = await supabase.rpc('rpc_add_group_member', { p_group_id: groupId, p_user_id: userId });
+  if (error) throw new Error(friendlyOnlineError(error));
+  return true;
+});
+
+ipcMain.handle('online:leaveGroup', async (_e, groupId) => {
+  const { error } = await supabase.rpc('rpc_leave_group', { p_group_id: groupId });
+  if (error) throw new Error(friendlyOnlineError(error));
+  return true;
+});
+
+ipcMain.handle('online:removeGroupMember', async (_e, { groupId, userId }) => {
+  const { error } = await supabase.rpc('rpc_remove_group_member', { p_group_id: groupId, p_user_id: userId });
+  if (error) throw new Error(friendlyOnlineError(error));
+  return true;
+});
+
+ipcMain.handle('online:setGroupName', async (_e, { groupId, name }) => {
+  const { error } = await supabase.rpc('rpc_set_group_name', { p_group_id: groupId, p_name: name });
+  if (error) throw new Error(friendlyOnlineError(error));
+  return true;
+});
+
+ipcMain.handle('online:setGroupAvatar', async (_e, { groupId, avatarUrl }) => {
+  const { error } = await supabase.rpc('rpc_set_group_avatar', { p_group_id: groupId, p_avatar_url: avatarUrl });
+  if (error) throw new Error(friendlyOnlineError(error));
+  return true;
+});
+
+ipcMain.handle('online:sendGroupMessage', async (_e, { groupId, body }) => {
+  const { data, error } = await supabase.rpc('rpc_send_group_message', { p_group_id: groupId, p_body: body });
+  if (error) throw new Error(friendlyOnlineError(error));
+  return data;
+});
+
+ipcMain.handle('online:listGroupMessages', async (_e, groupId) => {
+  const { data, error } = await supabase.rpc('rpc_list_group_messages', { p_group_id: groupId });
+  if (error) throw new Error(friendlyOnlineError(error));
+  return data || [];
+});
+
+ipcMain.handle('online:markGroupRead', async (_e, groupId) => {
+  const { error } = await supabase.rpc('rpc_mark_group_read', { p_group_id: groupId });
   if (error) throw new Error(friendlyOnlineError(error));
   return true;
 });

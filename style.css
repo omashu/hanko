@@ -1113,6 +1113,27 @@ webview#siteWebview { flex: 1; width: 100%; }
   flex-direction: column;
 }
 
+.video-only-overlay {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  z-index: 100;
+}
+.video-only-frame, .video-only-frame iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+.video-only-overlay .modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+}
+
 .reader-top-group {
   position: absolute;
   top: 0;
@@ -2375,6 +2396,48 @@ body[data-theme="dark"] .premium-status-pill.is-active {
 .chat-bubble--card-sub { font-size: 11px; opacity: .8; }
 .chat-bubble--card-note { font-size: 13px; margin-top: 4px; white-space: pre-wrap; }
 
+/* видео из новостей, отправленное в чат — превью с кнопкой play, по клику
+   превращается в встроенный YouTube-плеер прямо в пузыре сообщения */
+.news-chat-video-thumb {
+  position: relative;
+  width: 128px;
+  height: 72px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+  cursor: pointer;
+}
+.news-chat-video-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.news-chat-video-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.28);
+  transition: background .15s ease;
+}
+.news-chat-video-thumb:hover .news-chat-video-play { background: rgba(0, 0, 0, 0.42); }
+.news-chat-video-thumb.is-playing {
+  width: 220px;
+  height: 124px;
+  cursor: default;
+}
+.news-chat-video-thumb.is-playing iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
 /* ---------- попап: стикеры / поделиться тайтлом ---------- */
 
 .share-tabs { display: flex; gap: 8px; margin: 14px 0; }
@@ -2507,6 +2570,7 @@ body[data-theme="dark"] .premium-status-pill.is-active {
 
 .share-title-row { display: flex; align-items: center; gap: 12px; padding: 10px 4px; }
 .share-title-row .card-cover { width: 40px; height: 56px; border-radius: 5px; object-fit: cover; flex-shrink: 0; }
+.share-title-row .card-cover--video { width: 64px; height: 36px; border-radius: 5px; }
 .share-title-row-info { flex: 1; min-width: 0; }
 .share-title-row-info .chapter-row-label { display: block; }
 .share-title-row-actions { display: flex; gap: 6px; flex-shrink: 0; }
@@ -2580,6 +2644,124 @@ body[data-theme="dark"] .premium-status-pill.is-active {
 .chat-list-search input:focus { outline: none; border-color: var(--accent); }
 
 .chat-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+/* список групп сидит НАД списком друзей в той же колонке — если оба будут
+   flex:1, они поделят всю высоту сайдбара пополам, и при одной-двух группах
+   получается гигантский пустой отступ. Растягиваться должен только последний
+   (друзья), группы — ровно под своё содержимое. */
+#groupsList { flex: none; max-height: 40%; }
+
+.chat-list-section-label {
+  padding: 10px 16px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-muted);
+}
+
+.group-info-header { display: flex; align-items: center; gap: 14px; margin-bottom: 4px; }
+
+/* ---------- окно создания группы ---------- */
+.group-create-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 12px;
+  background: linear-gradient(160deg, var(--accent-bright), var(--gold));
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(209, 69, 61, 0.28);
+}
+#createGroupModal h3 { text-align: center; margin-bottom: 18px; }
+
+.modal-field { margin-bottom: 16px; }
+.modal-field label { display: block; margin-bottom: 6px; font-weight: 600; }
+.modal-field input {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 14.5px;
+  padding: 11px 14px;
+}
+.modal-field input:focus { outline: none; border-color: var(--accent); }
+
+.group-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.group-picker-count {
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.group-picker-list {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 4px;
+  background: var(--surface-2);
+}
+
+.group-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background .12s;
+}
+.group-picker-row:hover { background: var(--surface-3); }
+.group-picker-row.is-selected { background: rgba(255, 138, 122, 0.16); }
+.group-picker-check {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  transition: background .12s, border-color .12s;
+}
+.group-picker-row.is-selected .group-picker-check {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.group-picker-check svg {
+  width: 13px;
+  height: 13px;
+  opacity: 0;
+  transform: scale(.5);
+  transition: opacity .12s, transform .12s;
+}
+.group-picker-row.is-selected .group-picker-check svg { opacity: 1; transform: scale(1); }
+
+/* имя отправителя над сообщением в групповом чате — только на чужих сообщениях */
+.chat-bubble-sender {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-bright);
+  margin-bottom: 2px;
+}
 
 .chat-list-item {
   display: flex;

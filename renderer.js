@@ -42,6 +42,9 @@ const els = {
   newsDetailModalBackdrop: document.getElementById('newsDetailModalBackdrop'),
   newsDetailModalClose: document.getElementById('newsDetailModalClose'),
   newsDetailModalBody: document.getElementById('newsDetailModalBody'),
+  videoOnlyOverlay: document.getElementById('videoOnlyOverlay'),
+  videoOnlyFrame: document.getElementById('videoOnlyFrame'),
+  videoOnlyCloseBtn: document.getElementById('videoOnlyCloseBtn'),
 
   profileAvatarWrap: document.getElementById('profileAvatarWrap'),
   profileAvatarBtn: document.getElementById('profileAvatarBtn'),
@@ -105,6 +108,7 @@ const els = {
   usernameInput: document.getElementById('usernameInput'),
   usernameFeedback: document.getElementById('usernameFeedback'),
   addFriendBtn: document.getElementById('addFriendBtn'),
+  createGroupBtn: document.getElementById('createGroupBtn'),
   addFriendModalBackdrop: document.getElementById('addFriendModalBackdrop'),
   addFriendModalClose: document.getElementById('addFriendModalClose'),
   addFriendForm: document.getElementById('addFriendForm'),
@@ -137,15 +141,19 @@ const els = {
   shareModalClose: document.getElementById('shareModalClose'),
   shareTabStickers: document.getElementById('shareTabStickers'),
   shareTabTitles: document.getElementById('shareTabTitles'),
+  shareTabVideos: document.getElementById('shareTabVideos'),
   shareNoteInput: document.getElementById('shareNoteInput'),
   shareStickerPanel: document.getElementById('shareStickerPanel'),
   shareTitlesPanel: document.getElementById('shareTitlesPanel'),
+  shareVideosPanel: document.getElementById('shareVideosPanel'),
   stickerCategories: document.getElementById('stickerCategories'),
   stickerGridWrap: document.getElementById('stickerGridWrap'),
   stickerBackBtn: document.getElementById('stickerBackBtn'),
   stickerGrid: document.getElementById('stickerGrid'),
   shareTitlesEmpty: document.getElementById('shareTitlesEmpty'),
   shareTitlesList: document.getElementById('shareTitlesList'),
+  shareVideosEmpty: document.getElementById('shareVideosEmpty'),
+  shareVideosList: document.getElementById('shareVideosList'),
 
   updateBanner: document.getElementById('updateBanner'),
   updateBannerTitle: document.getElementById('updateBannerTitle'),
@@ -153,6 +161,9 @@ const els = {
   updateBannerBtn: document.getElementById('updateBannerBtn'),
   friendsList: document.getElementById('friendsList'),
   friendsListEmpty: document.getElementById('friendsListEmpty'),
+  groupsList: document.getElementById('groupsList'),
+  groupsListLabel: document.getElementById('groupsListLabel'),
+  friendsListLabel: document.getElementById('friendsListLabel'),
   chatListSearch: document.getElementById('chatListSearch'),
 
   chatPanePlaceholder: document.getElementById('chatPanePlaceholder'),
@@ -162,6 +173,28 @@ const els = {
   chatStatusDot: document.getElementById('chatStatusDot'),
   chatTitle: document.getElementById('chatTitle'),
   chatOnlineLabel: document.getElementById('chatOnlineLabel'),
+  createGroupBackdrop: document.getElementById('createGroupBackdrop'),
+  createGroupClose: document.getElementById('createGroupClose'),
+  createGroupNameInput: document.getElementById('createGroupNameInput'),
+  createGroupFriendsList: document.getElementById('createGroupFriendsList'),
+  createGroupFriendsEmpty: document.getElementById('createGroupFriendsEmpty'),
+  createGroupFeedback: document.getElementById('createGroupFeedback'),
+  createGroupSelectedCount: document.getElementById('createGroupSelectedCount'),
+  createGroupSubmitBtn: document.getElementById('createGroupSubmitBtn'),
+  groupInfoBackdrop: document.getElementById('groupInfoBackdrop'),
+  groupInfoClose: document.getElementById('groupInfoClose'),
+  groupInfoAvatarBtn: document.getElementById('groupInfoAvatarBtn'),
+  groupInfoAvatar: document.getElementById('groupInfoAvatar'),
+  groupInfoNameInput: document.getElementById('groupInfoNameInput'),
+  groupInfoFeedback: document.getElementById('groupInfoFeedback'),
+  groupInfoMemberCount: document.getElementById('groupInfoMemberCount'),
+  groupInfoMembersList: document.getElementById('groupInfoMembersList'),
+  groupInfoAddMemberBtn: document.getElementById('groupInfoAddMemberBtn'),
+  groupInfoLeaveBtn: document.getElementById('groupInfoLeaveBtn'),
+  groupAddMemberBackdrop: document.getElementById('groupAddMemberBackdrop'),
+  groupAddMemberClose: document.getElementById('groupAddMemberClose'),
+  groupAddMemberList: document.getElementById('groupAddMemberList'),
+  groupAddMemberEmpty: document.getElementById('groupAddMemberEmpty'),
   chatBody: document.getElementById('chatBody'),
   chatStickerAttach: document.getElementById('chatStickerAttach'),
   chatStickerAttachImg: document.getElementById('chatStickerAttachImg'),
@@ -403,6 +436,9 @@ let downloads = [];
 let readingHistory = [];
 let animeLibrary = [];
 let animeHistory = [];
+let groups = []; // список моих групп (rpc_list_groups) — id, name, avatar_url, member_count, unread_count
+let unreadGroupIds = new Set(); // группы с непрочитанными — тот же принцип, что unreadFriendIds
+let activeGroupMembers = []; // участники сейчас открытой группы — нужно для подписи отправителя над сообщением
 // список категорий/gif стикеров с диска (assets/stickers/), грузится один раз
 // при старте — нужен и для рендера уже полученных стикеров в чате (у обоих
 // собеседников один и тот же набор файлов в установке), и для самого пикера
@@ -427,7 +463,7 @@ let outgoingRequests = [];
 let friendsList = [];
 const unreadFriendIds = new Set();
 let onlineFriendIds = new Set();
-let activeChat = null; // { friendId, name }
+let activeChat = null; // { kind: 'friend', friendId, name } | { kind: 'group', groupId, name }
 // счётчик "актуальности" загрузки чата — см. openChat(): нужен, чтобы устаревший
 // (запоздавший) ответ сервера от предыдущего открытия чата не перезаписал
 // свежую переписку, если пользователь успел переключиться на другой диалог
@@ -488,7 +524,8 @@ function showView(name) {
   // это заодно и подтягивает пропущенные сообщения, и сбрасывает бейдж.
   if (isFriends) {
     loadFriendsView();
-    if (activeChat) openChat(activeChat.friendId, activeChat.name);
+    if (activeChat?.kind === 'group') openGroupChat(activeChat.groupId, activeChat.name);
+    else if (activeChat) openChat(activeChat.friendId, activeChat.name);
   }
 }
 
@@ -1979,12 +2016,37 @@ els.watchHistoryClearBtn.addEventListener('click', async () => {
   renderWatchHistory();
 });
 
+// Кроп в квадрат по центру — минимальная короткая сторона картинки. Это то,
+// что раньше не делалось вовсе: любое фото заливалось как есть, а каждый
+// круглый аватар (особенно маленький, в боковой панели друзей) сам вырезал
+// центр через object-fit: cover — на не-квадратных фото это выглядело как
+// "обрезанная как попало" картинка. Теперь кроп один и тот же везде.
+function cropImageToSquareDataUrl(image) {
+  const side = Math.min(image.naturalWidth, image.naturalHeight);
+  const sx = (image.naturalWidth - side) / 2;
+  const sy = (image.naturalHeight - side) / 2;
+  const size = Math.min(side, 640); // не храним аватар тяжелее, чем нужно для показа
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(image, sx, sy, side, side, 0, 0, size, size);
+  return canvas.toDataURL('image/png');
+}
+
 els.profileAvatarBtn.addEventListener('click', async () => {
-  const updated = await window.hanko.pickAvatar();
-  if (updated) {
-    profile = updated;
-    renderProfileHeader();
-  }
+  const picked = await window.hanko.pickAvatar();
+  if (!picked || !picked.dataUrl) return;
+  const image = new Image();
+  image.onload = async () => {
+    const croppedDataUrl = cropImageToSquareDataUrl(image);
+    const updated = await window.hanko.saveCroppedAvatar(croppedDataUrl);
+    if (updated) {
+      profile = updated;
+      renderProfileHeader();
+    }
+  };
+  image.src = picked.dataUrl;
 });
 
 let profileNameTimer = null;
@@ -2502,6 +2564,7 @@ function renderUsernameUI() {
   els.usernameRow.hidden = !hasUsername;
   els.usernameForm.hidden = !onlineState.ready || hasUsername;
   els.addFriendBtn.hidden = !hasUsername;
+  els.createGroupBtn.hidden = !hasUsername;
   if (hasUsername) els.usernameValue.textContent = `@${onlineState.username}`;
 }
 
@@ -2546,6 +2609,220 @@ els.addFriendModalBackdrop.addEventListener('click', (e) => {
   if (e.target === els.addFriendModalBackdrop) closeAddFriendModal();
 });
 els.addFriendForm.addEventListener('submit', (e) => e.preventDefault());
+
+// ---------- создание группы ----------
+let createGroupSelectedIds = new Set();
+
+function createGroupFriendRow(f) {
+  const row = document.createElement('div');
+  row.className = 'group-picker-row';
+  const name = f.display_name || 'Без имени';
+  const selected = createGroupSelectedIds.has(f.friend_id);
+  if (selected) row.classList.add('is-selected');
+  row.innerHTML = `
+    <span class="chat-list-item-avatar">${avatarInnerHtml(name, f.avatar_url)}</span>
+    <div class="chat-list-item-info"><span class="chat-list-item-name">${escapeHtml(name)}</span></div>
+    <span class="group-picker-check">
+      <svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </span>
+  `;
+  row.addEventListener('click', () => {
+    const nowSelected = !row.classList.contains('is-selected');
+    row.classList.toggle('is-selected', nowSelected);
+    if (nowSelected) createGroupSelectedIds.add(f.friend_id); else createGroupSelectedIds.delete(f.friend_id);
+    updateCreateGroupSelectedCount();
+  });
+  return row;
+}
+
+function updateCreateGroupSelectedCount() {
+  const n = createGroupSelectedIds.size;
+  els.createGroupSelectedCount.hidden = n === 0;
+  els.createGroupSelectedCount.textContent = String(n);
+}
+
+function openCreateGroupModal() {
+  createGroupSelectedIds = new Set();
+  updateCreateGroupSelectedCount();
+  els.createGroupNameInput.value = '';
+  els.createGroupFeedback.hidden = true;
+  els.createGroupFriendsList.innerHTML = '';
+  els.createGroupFriendsEmpty.hidden = friendsList.length > 0;
+  for (const f of friendsList) els.createGroupFriendsList.appendChild(createGroupFriendRow(f));
+  els.createGroupBackdrop.hidden = false;
+  els.createGroupNameInput.focus();
+}
+function closeCreateGroupModal() { els.createGroupBackdrop.hidden = true; }
+els.createGroupBtn.addEventListener('click', openCreateGroupModal);
+els.createGroupClose.addEventListener('click', closeCreateGroupModal);
+els.createGroupBackdrop.addEventListener('click', (e) => { if (e.target === els.createGroupBackdrop) closeCreateGroupModal(); });
+
+els.createGroupSubmitBtn.addEventListener('click', async () => {
+  const name = els.createGroupNameInput.value.trim();
+  els.createGroupFeedback.hidden = true;
+  if (!name) {
+    els.createGroupFeedback.hidden = false;
+    els.createGroupFeedback.textContent = 'Название не может быть пустым.';
+    return;
+  }
+  els.createGroupSubmitBtn.disabled = true;
+  try {
+    // rpc_create_group отдаёт "сырую" строку таблицы groups — там поле id,
+    // а не group_id (group_id — это алиас только в rpc_list_groups)
+    const group = await window.hanko.onlineCreateGroup({ name, memberIds: [...createGroupSelectedIds] });
+    closeCreateGroupModal();
+    await refreshFriends(); // заодно подтянет и обновлённый список групп
+    openGroupChat(group.id, group.name);
+  } catch (err) {
+    els.createGroupFeedback.hidden = false;
+    els.createGroupFeedback.textContent = cleanIpcError(err);
+  } finally {
+    els.createGroupSubmitBtn.disabled = false;
+  }
+});
+
+// ---------- информация о группе: аватар/название/участники/выход ----------
+let groupInfoCurrentId = null;
+
+function groupMemberRow(m, isCreator) {
+  const row = document.createElement('div');
+  row.className = 'chat-list-item';
+  const canRemove = isCreator && m.user_id !== onlineState.myId;
+  row.innerHTML = `
+    <span class="chat-list-item-avatar">${avatarInnerHtml(m.display_name, m.avatar_url)}</span>
+    <div class="chat-list-item-info"><span class="chat-list-item-name">${escapeHtml(m.display_name)}${m.user_id === onlineState.myId ? ' (ты)' : ''}</span></div>
+    ${canRemove ? '<button class="friend-request-remove" title="Убрать из группы" style="margin-left:auto;">✕</button>' : ''}
+  `;
+  const removeBtn = row.querySelector('.friend-request-remove');
+  if (removeBtn) {
+    removeBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const ok = await showAppConfirm(`Убрать ${m.display_name} из группы?`, { title: 'Убрать участника', okText: 'Убрать' });
+      if (!ok) return;
+      try {
+        await window.hanko.onlineRemoveGroupMember({ groupId: groupInfoCurrentId, userId: m.user_id });
+        openGroupInfo(groupInfoCurrentId);
+      } catch (err) {
+        showAppAlert(cleanIpcError(err));
+      }
+    });
+  }
+  return row;
+}
+
+async function openGroupInfo(groupId) {
+  groupInfoCurrentId = groupId;
+  const g = groups.find((x) => x.group_id === groupId);
+  els.groupInfoBackdrop.hidden = false;
+  els.groupInfoFeedback.hidden = true;
+  els.groupInfoNameInput.value = g?.name || '';
+  els.groupInfoAvatar.innerHTML = avatarInnerHtml(g?.name || '', g?.avatar_url);
+  els.groupInfoMembersList.innerHTML = '<p class="empty-hint">Загружаю…</p>';
+  try {
+    const members = await window.hanko.onlineListGroupMembers(groupId);
+    if (groupInfoCurrentId !== groupId) return; // окно уже закрыли/открыли другую группу
+    const isCreator = g?.created_by === onlineState.myId;
+    els.groupInfoMemberCount.textContent = String(members.length);
+    els.groupInfoMembersList.innerHTML = '';
+    for (const m of members) els.groupInfoMembersList.appendChild(groupMemberRow(m, isCreator));
+    if (activeChat?.kind === 'group' && activeChat.groupId === groupId) activeGroupMembers = members;
+  } catch (err) {
+    els.groupInfoMembersList.innerHTML = `<p class="empty-hint">Не удалось загрузить: ${escapeHtml(err.message)}</p>`;
+  }
+}
+function closeGroupInfo() { els.groupInfoBackdrop.hidden = true; groupInfoCurrentId = null; }
+els.groupInfoClose.addEventListener('click', closeGroupInfo);
+els.groupInfoBackdrop.addEventListener('click', (e) => { if (e.target === els.groupInfoBackdrop) closeGroupInfo(); });
+
+els.groupInfoNameInput.addEventListener('change', async () => {
+  const name = els.groupInfoNameInput.value.trim();
+  if (!name || !groupInfoCurrentId) return;
+  try {
+    await window.hanko.onlineSetGroupName({ groupId: groupInfoCurrentId, name });
+    await refreshFriends();
+    if (activeChat?.kind === 'group' && activeChat.groupId === groupInfoCurrentId) els.chatTitle.textContent = name;
+  } catch (err) {
+    showAppAlert(cleanIpcError(err));
+  }
+});
+
+els.groupInfoAvatarBtn.addEventListener('click', async () => {
+  if (!groupInfoCurrentId) return;
+  const picked = await window.hanko.pickAvatar();
+  if (!picked || !picked.dataUrl) return;
+  const image = new Image();
+  image.onload = async () => {
+    try {
+      const croppedDataUrl = cropImageToSquareDataUrl(image);
+      const avatarUrl = await window.hanko.groupSaveCroppedAvatar({ groupId: groupInfoCurrentId, dataUrl: croppedDataUrl });
+      els.groupInfoAvatar.innerHTML = avatarInnerHtml(els.groupInfoNameInput.value, avatarUrl);
+      await refreshFriends();
+      if (activeChat?.kind === 'group' && activeChat.groupId === groupInfoCurrentId) {
+        els.chatAvatar.innerHTML = avatarInnerHtml(activeChat.name, avatarUrl);
+      }
+    } catch (err) {
+      showAppAlert(cleanIpcError(err));
+    }
+  };
+  image.src = picked.dataUrl;
+});
+
+els.groupInfoLeaveBtn.addEventListener('click', async () => {
+  if (!groupInfoCurrentId) return;
+  const ok = await showAppConfirm('Выйти из этой группы? Вернуться можно будет только по новому приглашению.', { title: 'Выйти из группы', okText: 'Выйти' });
+  if (!ok) return;
+  try {
+    await window.hanko.onlineLeaveGroup(groupInfoCurrentId);
+    closeGroupInfo();
+    if (activeChat?.kind === 'group' && activeChat.groupId === groupInfoCurrentId) {
+      activeChat = null;
+      els.chatPaneActive.hidden = true;
+      els.chatPanePlaceholder.hidden = false;
+    }
+    await refreshFriends();
+  } catch (err) {
+    showAppAlert(cleanIpcError(err));
+  }
+});
+
+// ---------- добавление участника в уже существующую группу ----------
+function groupAddMemberRow(f) {
+  const row = document.createElement('div');
+  row.className = 'chat-list-item';
+  const name = f.display_name || 'Без имени';
+  row.innerHTML = `
+    <span class="chat-list-item-avatar">${avatarInnerHtml(name, f.avatar_url)}</span>
+    <div class="chat-list-item-info"><span class="chat-list-item-name">${escapeHtml(name)}</span></div>
+  `;
+  row.addEventListener('click', async () => {
+    try {
+      await window.hanko.onlineAddGroupMember({ groupId: groupInfoCurrentId, userId: f.friend_id });
+      els.groupAddMemberBackdrop.hidden = true;
+      openGroupInfo(groupInfoCurrentId);
+    } catch (err) {
+      showAppAlert(cleanIpcError(err));
+    }
+  });
+  return row;
+}
+
+els.groupInfoAddMemberBtn.addEventListener('click', async () => {
+  if (!groupInfoCurrentId) return;
+  els.groupAddMemberList.innerHTML = '<p class="empty-hint">Загружаю…</p>';
+  els.groupAddMemberBackdrop.hidden = false;
+  try {
+    const current = await window.hanko.onlineListGroupMembers(groupInfoCurrentId);
+    const currentIds = new Set(current.map((m) => m.user_id));
+    const candidates = friendsList.filter((f) => !currentIds.has(f.friend_id));
+    els.groupAddMemberEmpty.hidden = candidates.length > 0;
+    els.groupAddMemberList.innerHTML = '';
+    for (const f of candidates) els.groupAddMemberList.appendChild(groupAddMemberRow(f));
+  } catch (err) {
+    els.groupAddMemberList.innerHTML = `<p class="empty-hint">Не удалось загрузить: ${escapeHtml(err.message)}</p>`;
+  }
+});
+els.groupAddMemberClose.addEventListener('click', () => { els.groupAddMemberBackdrop.hidden = true; });
+els.groupAddMemberBackdrop.addEventListener('click', (e) => { if (e.target === els.groupAddMemberBackdrop) els.groupAddMemberBackdrop.hidden = true; });
 
 function showAddFriendFeedback(text, isError) {
   els.addFriendFeedback.hidden = false;
@@ -2662,6 +2939,15 @@ async function refreshFriends() {
   friendsList = await window.hanko.onlineListFriends();
   renderFriendsList();
   renderProfileStats();
+  // группы дозагружаем прямо тут же, а не заводим кучу отдельных
+  // refreshGroups() по всем местам, где уже вызывается refreshFriends —
+  // они по смыслу относятся к тому же списку в сайдбаре "Друзья"
+  try {
+    groups = await window.hanko.onlineListGroups();
+    unreadGroupIds = new Set(groups.filter((g) => Number(g.unread_count || 0) > 0).map((g) => g.group_id));
+    renderGroupsList();
+    updateFriendsNavBadge();
+  } catch { /* группы не критичны — если не подтянулись, просто список пуст */ }
 }
 
 function incomingRequestRow(req) {
@@ -2724,7 +3010,7 @@ function renderOutgoingRequests() {
 function friendRow(f) {
   const row = document.createElement('div');
   row.className = 'chat-list-item';
-  if (activeChat && activeChat.friendId === f.friend_id) row.classList.add('is-active');
+  if (activeChat && activeChat.kind === 'friend' && activeChat.friendId === f.friend_id) row.classList.add('is-active');
   const unread = unreadFriendIds.has(f.friend_id);
   const online = onlineFriendIds.has(f.friend_id);
   const name = f.display_name || 'Без имени';
@@ -2852,13 +3138,19 @@ function chatDateDivider(dateKey) {
 // добавляет сообщение в чат, вставляя перед ним разделитель даты, если день
 // сменился по сравнению с последним элементом в чате (сообщением или уже
 // стоящим разделителем)
-function appendChatMessage(msg, container = els.chatBody) {
+function appendChatMessage(msg, opts = {}) {
   const bubble = chatBubble(msg);
-  const lastEl = container.lastElementChild;
-  if (!lastEl || lastEl.dataset.dateKey !== bubble.dataset.dateKey) {
-    container.appendChild(chatDateDivider(bubble.dataset.dateKey));
+  if (opts.senderName) {
+    const label = document.createElement('div');
+    label.className = 'chat-bubble-sender';
+    label.textContent = opts.senderName;
+    bubble.prepend(label);
   }
-  container.appendChild(bubble);
+  const lastEl = els.chatBody.lastElementChild;
+  if (!lastEl || lastEl.dataset.dateKey !== bubble.dataset.dateKey) {
+    els.chatBody.appendChild(chatDateDivider(bubble.dataset.dateKey));
+  }
+  els.chatBody.appendChild(bubble);
   return bubble;
 }
 
@@ -2915,6 +3207,25 @@ function chatBubble(msg) {
     return bubble;
   }
 
+  if (rich && rich.kind === 'share_news_video') {
+    bubble.className = `chat-bubble chat-bubble--card ${mine ? 'is-mine' : 'is-theirs'}`;
+    bubble.innerHTML = `
+      <div class="news-chat-video-thumb" title="Смотреть">
+        ${rich.thumbnail ? `<img src="${rich.thumbnail}" alt="" loading="lazy" onerror="this.style.opacity=0" />` : ''}
+        <span class="news-chat-video-play">▶</span>
+      </div>
+      <div class="chat-bubble--card-info">
+        <span class="chat-bubble--card-title">${escapeHtml(rich.title || '')}</span>
+        ${rich.channelName ? `<span class="chat-bubble--card-sub">${escapeHtml(rich.channelName)}</span>` : ''}
+        ${rich.note ? `<span class="chat-bubble--card-note">${escapeHtml(rich.note)}</span>` : ''}
+        <span class="chat-bubble-time">${escapeHtml(time)}${readTick}</span>
+      </div>
+    `;
+    const thumb = bubble.querySelector('.news-chat-video-thumb');
+    thumb.addEventListener('click', () => openVideoOnlyPlayer(rich.videoId));
+    return bubble;
+  }
+
   if (rich && (rich.kind === 'share_title' || rich.kind === 'share_chapter')) {
     bubble.className = `chat-bubble chat-bubble--card is-clickable ${mine ? 'is-mine' : 'is-theirs'}`;
     const sub = rich.kind === 'share_chapter' ? (rich.chapterLabel || 'Глава') : (rich.status || '');
@@ -2938,7 +3249,8 @@ function chatBubble(msg) {
 
 async function openChat(friendId, name) {
   const myToken = ++chatLoadToken;
-  activeChat = { friendId, name };
+  activeChat = { kind: 'friend', friendId, name };
+  activeGroupMembers = [];
   unreadFriendIds.delete(friendId);
   renderFriendsList();
   updateFriendsNavBadge();
@@ -2972,6 +3284,85 @@ function isChatPaneVisible() {
   return !els.viewFriends.hidden && !els.chatPaneActive.hidden;
 }
 
+async function openGroupChat(groupId, name) {
+  const myToken = ++chatLoadToken;
+  activeChat = { kind: 'group', groupId, name };
+  unreadGroupIds.delete(groupId);
+  const g = groups.find((x) => x.group_id === groupId);
+  if (g) g.unread_count = 0;
+  renderGroupsList();
+  updateFriendsNavBadge();
+  els.chatPanePlaceholder.hidden = true;
+  els.chatPaneActive.hidden = false;
+  els.chatTitle.textContent = name;
+  els.chatAvatar.innerHTML = avatarInnerHtml(name, g?.avatar_url);
+  els.chatBody.innerHTML = '<p class="empty-hint" style="padding:20px;">Загружаю сообщения…</p>';
+  try {
+    const [messages, members] = await Promise.all([
+      window.hanko.onlineListGroupMessages(groupId),
+      window.hanko.onlineListGroupMembers(groupId),
+    ]);
+    if (myToken !== chatLoadToken) return;
+    activeGroupMembers = members;
+    updateChatOnlineLabel();
+    renderGroupChatMessages(messages);
+    window.hanko.onlineMarkGroupRead(groupId).catch(() => {});
+  } catch (err) {
+    if (myToken !== chatLoadToken) return;
+    els.chatBody.innerHTML = `<p class="empty-hint" style="padding:20px;">Не удалось загрузить: ${escapeHtml(err.message)}</p>`;
+  }
+  els.chatInput.focus();
+}
+
+function groupSenderOpts(fromId) {
+  if (fromId === onlineState.myId) return {};
+  const sender = activeGroupMembers.find((m) => m.user_id === fromId);
+  return { senderName: sender?.display_name || 'Участник' };
+}
+
+function renderGroupChatMessages(messages) {
+  const incomingIds = new Set(messages.map((m) => m.id));
+  const liveExtras = Array.from(els.chatBody.querySelectorAll('[data-msg-id]'))
+    .filter((el) => !incomingIds.has(el.dataset.msgId));
+  els.chatBody.innerHTML = '';
+  for (const m of messages) appendChatMessage(m, groupSenderOpts(m.from_id));
+  for (const el of liveExtras) {
+    const lastEl = els.chatBody.lastElementChild;
+    if (!lastEl || lastEl.dataset.dateKey !== el.dataset.dateKey) {
+      els.chatBody.appendChild(chatDateDivider(el.dataset.dateKey));
+    }
+    els.chatBody.appendChild(el);
+  }
+  els.chatBody.scrollTop = els.chatBody.scrollHeight;
+}
+
+function groupRow(g) {
+  const row = document.createElement('div');
+  row.className = 'chat-list-item';
+  if (activeChat && activeChat.kind === 'group' && activeChat.groupId === g.group_id) row.classList.add('is-active');
+  const unread = unreadGroupIds.has(g.group_id) || Number(g.unread_count || 0) > 0;
+  row.innerHTML = `
+    <span class="chat-list-item-avatar">
+      ${avatarInnerHtml(g.name, g.avatar_url)}
+      ${unread ? '<span class="chat-list-item-unread" title="Новое сообщение"></span>' : ''}
+    </span>
+    <div class="chat-list-item-info">
+      <span class="chat-list-item-name">${escapeHtml(g.name)}</span>
+      <span class="chat-list-item-sub">${g.member_count} участник${g.member_count === 1 ? '' : g.member_count < 5 ? 'а' : 'ов'}</span>
+    </div>
+  `;
+  row.addEventListener('click', () => openGroupChat(g.group_id, g.name));
+  return row;
+}
+
+function renderGroupsList() {
+  els.groupsList.innerHTML = '';
+  const hasGroups = groups.length > 0;
+  els.groupsListLabel.hidden = !hasGroups;
+  els.friendsListLabel.hidden = !hasGroups;
+  for (const g of groups) els.groupsList.appendChild(groupRow(g));
+}
+
 function renderChatMessages(messages) {
   // если пока шёл этот самый REST-запрос, по realtime уже прилетело более
   // новое сообщение и попало в DOM — не теряем его при полной перерисовке
@@ -2991,13 +3382,17 @@ function renderChatMessages(messages) {
 }
 
 els.chatProfileBtn.addEventListener('click', () => {
-  if (activeChat) openFriendProfile(activeChat.friendId, activeChat.name);
+  if (!activeChat) return;
+  if (activeChat.kind === 'group') openGroupInfo(activeChat.groupId);
+  else openFriendProfile(activeChat.friendId, activeChat.name);
 });
 
 async function sendChatPayload(body) {
   if (!activeChat) return;
   try {
-    const msg = await window.hanko.onlineSendMessage({ friendId: activeChat.friendId, body });
+    const msg = activeChat.kind === 'group'
+      ? await window.hanko.onlineSendGroupMessage({ groupId: activeChat.groupId, body })
+      : await window.hanko.onlineSendMessage({ friendId: activeChat.friendId, body });
     appendChatMessage(msg);
     els.chatBody.scrollTop = els.chatBody.scrollHeight;
   } catch (err) {
@@ -3042,6 +3437,7 @@ function openShareModal() {
   renderStickerCategories();
   showStickerCategories();
   renderShareTitlesList();
+  renderShareVideosList();
   switchShareTab('stickers');
   els.shareModalBackdrop.hidden = false;
 }
@@ -3049,10 +3445,19 @@ function closeShareModal() { els.shareModalBackdrop.hidden = true; }
 
 function switchShareTab(tab) {
   const isStickers = tab === 'stickers';
+  const isTitles = tab === 'titles';
+  const isVideos = tab === 'videos';
   els.shareTabStickers.classList.toggle('is-active', isStickers);
-  els.shareTabTitles.classList.toggle('is-active', !isStickers);
+  els.shareTabTitles.classList.toggle('is-active', isTitles);
+  els.shareTabVideos.classList.toggle('is-active', isVideos);
   els.shareStickerPanel.hidden = !isStickers;
-  els.shareTitlesPanel.hidden = isStickers;
+  els.shareTitlesPanel.hidden = !isTitles;
+  els.shareVideosPanel.hidden = !isVideos;
+  // список видео берём из кэша новостей — если ещё ни разу не открывали
+  // вкладку «Новости» в этой сессии, кэш пуст, подгружаем его именно сейчас
+  if (isVideos && !newsItemsCache.has(NEWS_ALL_ID)) {
+    loadAllNewsFeed().then(renderShareVideosList);
+  }
 }
 
 // шаг 1: плитки категорий (название папки = название категории)
@@ -3141,6 +3546,38 @@ function renderShareTitlesList() {
   for (const item of library) els.shareTitlesList.appendChild(shareTitleRow(item));
 }
 
+// видео из уже загруженных новостей (кэш «Всё» из вкладки «Новости») —
+// то же самое, что список тайтлов выше, просто источник другой
+function shareVideoRow(item) {
+  const row = document.createElement('div');
+  row.className = 'share-title-row';
+  row.innerHTML = `
+    <img class="card-cover card-cover--video" src="${item.thumbnail || ''}" alt="" loading="lazy" onerror="this.style.opacity=0" />
+    <div class="share-title-row-info">
+      <span class="chapter-row-label">${escapeHtml(item.titleRu || item.title)}</span>
+    </div>
+    <div class="share-title-row-actions">
+      <button type="button" class="share-title-btn">Отправить</button>
+    </div>
+  `;
+  row.querySelector('.share-title-btn').addEventListener('click', async () => {
+    const note = els.shareNoteInput.value.trim();
+    closeShareModal();
+    await sendChatPayload(encodeRichMessage({
+      kind: 'share_news_video', videoId: item.videoId, title: item.titleRu || item.title,
+      thumbnail: item.thumbnail, channelName: item.channelName, link: item.link, note,
+    }));
+  });
+  return row;
+}
+
+function renderShareVideosList() {
+  const videos = (newsItemsCache.get(NEWS_ALL_ID) || []).filter((item) => item.type === 'video');
+  els.shareVideosList.innerHTML = '';
+  els.shareVideosEmpty.hidden = videos.length > 0;
+  for (const item of videos) els.shareVideosList.appendChild(shareVideoRow(item));
+}
+
 els.chatShareBtn.addEventListener('click', openShareModal);
 els.shareModalClose.addEventListener('click', closeShareModal);
 els.shareModalBackdrop.addEventListener('click', (e) => {
@@ -3148,17 +3585,25 @@ els.shareModalBackdrop.addEventListener('click', (e) => {
 });
 els.shareTabStickers.addEventListener('click', () => switchShareTab('stickers'));
 els.shareTabTitles.addEventListener('click', () => switchShareTab('titles'));
+els.shareTabVideos.addEventListener('click', () => switchShareTab('videos'));
 
 // живые уведомления из главного процесса (реалтайм Supabase) — обновляем то,
 // что сейчас видно, а остальное подтянется, когда откроют раздел «Профиль»
 function updateFriendsNavBadge() {
-  const count = unreadFriendIds.size;
+  const count = unreadFriendIds.size + unreadGroupIds.size;
   els.friendsNavBadge.hidden = count === 0;
   els.friendsNavBadge.textContent = count > 9 ? '9+' : String(count);
 }
 
 function updateChatOnlineLabel() {
   if (!activeChat || els.chatPaneActive.hidden) return;
+  if (activeChat.kind === 'group') {
+    const g = groups.find((x) => x.group_id === activeChat.groupId);
+    els.chatOnlineLabel.hidden = false;
+    els.chatOnlineLabel.textContent = g ? `${g.member_count} участников` : '';
+    els.chatStatusDot.classList.remove('is-online');
+    return;
+  }
   const online = onlineFriendIds.has(activeChat.friendId);
   els.chatOnlineLabel.hidden = !online;
   els.chatStatusDot.classList.toggle('is-online', online);
@@ -3381,6 +3826,7 @@ function richPreviewText(rich) {
   if (rich.kind === 'share_title') return `Поделился(-ась) тайтлом «${rich.title}»`;
   if (rich.kind === 'share_chapter') return `Поделился(-ась) главой «${rich.title}»`;
   if (rich.kind === 'watch_invite') return `Приглашает смотреть «${rich.title}» вместе`;
+  if (rich.kind === 'share_news_video') return `Поделился(-ась) видео «${rich.title}»`;
   return 'Сообщение';
 }
 
@@ -3417,6 +3863,31 @@ function notifyIncomingMessage(msg) {
   } catch { /* нативные уведомления не критичны */ }
 }
 
+function notifyIncomingGroupMessage(msg) {
+  playNotificationSound();
+  try {
+    const g = groups.find((x) => x.group_id === msg.group_id);
+    const sender = activeGroupMembers.find((m) => m.user_id === msg.from_id);
+    const senderName = sender?.display_name || 'Кто-то';
+    const groupName = g?.name || 'Группа';
+    let bodyText = msg.body || '';
+    if (bodyText.startsWith(RICH_PREFIX)) {
+      try { bodyText = richPreviewText(JSON.parse(bodyText.slice(RICH_PREFIX.length))); } catch { bodyText = 'Сообщение'; }
+    }
+    const notif = new Notification(groupName, {
+      body: `${senderName}: ${bodyText}`,
+      icon: notificationIconPath || 'assets/icon.png',
+      silent: true,
+    });
+    notif.onclick = async () => {
+      await window.hanko.focusApp();
+      showView('friends');
+      openGroupChat(msg.group_id, groupName);
+    };
+    setTimeout(() => { try { notif.close(); } catch {} }, 6000);
+  } catch { /* нативные уведомления не критичны */ }
+}
+
 window.hanko.onOnlineEvent(async (event) => {
   if (event.type === 'friend-request-incoming') {
     if (!els.viewFriends.hidden) await refreshIncoming();
@@ -3432,7 +3903,7 @@ window.hanko.onOnlineEvent(async (event) => {
     updateFriendProfileOnlineLabel();
   } else if (event.type === 'message') {
     const msg = event.message;
-    const isActiveChatOpen = activeChat && msg.from_id === activeChat.friendId && isChatPaneVisible();
+    const isActiveChatOpen = activeChat && activeChat.kind === 'friend' && msg.from_id === activeChat.friendId && isChatPaneVisible();
     if (isActiveChatOpen) {
       // сообщение уже могло попасть в DOM через REST-подгрузку истории в
       // openChat() (гонка запросов) — не дублируем бабл, если он уже есть
@@ -3453,11 +3924,33 @@ window.hanko.onOnlineEvent(async (event) => {
       if (!els.viewFriends.hidden) renderFriendsList();
       notifyIncomingMessage(msg);
     }
+  } else if (event.type === 'group-message') {
+    const msg = event.message;
+    // сообщения из СВОИХ групп прилетают по этой же подписке и на мои же
+    // исходящие (postgres_changes не различает, кто вставил строку) — их уже
+    // показали оптимистично в sendChatPayload, повторно обрабатывать не нужно
+    if (msg.from_id === onlineState.myId) return;
+    const isActiveGroupOpen = activeChat && activeChat.kind === 'group' && msg.group_id === activeChat.groupId && isChatPaneVisible();
+    if (isActiveGroupOpen) {
+      if (!els.chatBody.querySelector(`[data-msg-id="${CSS.escape(msg.id)}"]`)) {
+        appendChatMessage(msg, groupSenderOpts(msg.from_id));
+        els.chatBody.scrollTop = els.chatBody.scrollHeight;
+      }
+      window.hanko.onlineMarkGroupRead(msg.group_id).catch(() => {});
+      if (!document.hasFocus()) notifyIncomingGroupMessage(msg);
+    } else {
+      unreadGroupIds.add(msg.group_id);
+      const g = groups.find((x) => x.group_id === msg.group_id);
+      if (g) g.unread_count = Number(g.unread_count || 0) + 1;
+      updateFriendsNavBadge();
+      if (!els.viewFriends.hidden) renderGroupsList();
+      notifyIncomingGroupMessage(msg);
+    }
   } else if (event.type === 'message-read') {
     // друг прочитал одно из моих сообщений — если этот чат сейчас открыт,
     // проставляем двойную галочку прямо в DOM, без перезагрузки всей истории
     const msg = event.message;
-    if (activeChat && msg.to_id === activeChat.friendId) {
+    if (activeChat && activeChat.kind === 'friend' && msg.to_id === activeChat.friendId) {
       const bubble = els.chatBody.querySelector(`[data-msg-id="${CSS.escape(msg.id)}"] .chat-bubble-read`);
       if (bubble) {
         bubble.classList.add('is-read');
@@ -3805,7 +4298,7 @@ function renderNewsDetailBody(item) {
   const hasTranslation = (item.titleRu && item.titleRu !== item.title) || (item.descriptionRu && item.descriptionRu !== item.description);
   els.newsDetailModalBody.innerHTML = `
     ${item.type === 'video'
-      ? `<div class="news-detail-video"><iframe src="https://www.youtube-nocookie.com/embed/${escapeHtml(item.videoId)}?autoplay=1" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></div>`
+      ? `<div class="news-detail-video"><iframe src="https://www.youtube-nocookie.com/embed/${escapeHtml(item.videoId)}?autoplay=1" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe></div>`
       : (item.thumbnail ? `<img class="news-detail-cover" src="${item.thumbnail}" alt="" onerror="this.style.display='none'" />` : '')}
     <h2 class="news-detail-title">${escapeHtml(title)}</h2>
     <p class="news-detail-meta">${escapeHtml(item.channelName || '')}${item.publishedAt ? ' · ' + escapeHtml(newsFormatDate(item.publishedAt)) : ''}</p>
@@ -3832,6 +4325,32 @@ function closeNewsDetail() {
 els.newsDetailModalClose.addEventListener('click', closeNewsDetail);
 els.newsDetailModalBackdrop.addEventListener('click', (e) => {
   if (e.target === els.newsDetailModalBackdrop) closeNewsDetail();
+});
+
+// ---- видео из чата: только плеер, без карточки — название/канал уже видны
+// в самом пузыре сообщения, дублировать их незачем. Открывается сразу в
+// полноэкранном режиме, а выход из fullscreen (Esc или собственная кнопка
+// YouTube-плеера) сам закрывает оверлей — отдельно ничего нажимать не нужно ----
+function openVideoOnlyPlayer(videoId) {
+  els.videoOnlyFrame.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${escapeHtml(videoId)}?autoplay=1" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`;
+  els.videoOnlyOverlay.hidden = false;
+  els.videoOnlyOverlay.requestFullscreen().catch(() => { /* не критично — просто останется в окне */ });
+}
+function closeVideoOnlyPlayer() {
+  // сбрасываем innerHTML, а не просто прячем — иначе видео продолжит играть
+  // (и звучать) в закрытом оверлее
+  els.videoOnlyFrame.innerHTML = '';
+  els.videoOnlyOverlay.hidden = true;
+  if (document.fullscreenElement === els.videoOnlyOverlay) document.exitFullscreen().catch(() => {});
+}
+els.videoOnlyCloseBtn.addEventListener('click', closeVideoOnlyPlayer);
+document.addEventListener('fullscreenchange', () => {
+  // вышли из fullscreen (Esc, кнопка самого YouTube-плеера и т.д.), пока этот
+  // оверлей был открыт — значит пора закрыть и его целиком, а не оставлять
+  // окошко с видео висеть в оконном режиме
+  if (!els.videoOnlyOverlay.hidden && document.fullscreenElement !== els.videoOnlyOverlay) {
+    closeVideoOnlyPlayer();
+  }
 });
 
 // ---------------- старт ----------------

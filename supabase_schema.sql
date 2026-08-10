@@ -98,6 +98,40 @@ alter table public.messages add column if not exists read_at timestamptz;
 
 create index if not exists messages_pair_idx on public.messages (from_id, to_id, created_at);
 
+-- ---------- групповые чаты ----------
+-- Общий чат на несколько друзей сразу (а не только один-на-один). Отдельные
+-- таблицы, а не переиспользование messages/friends — так проще RLS и не
+-- ломается существующая логика личных переписок.
+create table if not exists public.groups (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  avatar_url text,
+  created_by uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.group_members (
+  group_id uuid not null references public.groups(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  joined_at timestamptz not null default now(),
+  -- по этой отметке считаем непрочитанные — своя для каждого участника,
+  -- в отличие от messages.read_at (там у сообщения ровно один получатель)
+  last_read_at timestamptz not null default now(),
+  primary key (group_id, user_id)
+);
+
+create index if not exists group_members_user_idx on public.group_members (user_id);
+
+create table if not exists public.group_messages (
+  id uuid primary key default gen_random_uuid(),
+  group_id uuid not null references public.groups(id) on delete cascade,
+  from_id uuid not null references public.profiles(id) on delete cascade,
+  body text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists group_messages_group_idx on public.group_messages (group_id, created_at);
+
 -- закладки (синхронизированная копия локальной библиотеки — чтобы друзья
 -- могли посмотреть, что человек читает, открыв его профиль)
 create table if not exists public.bookmarks (
@@ -220,6 +254,9 @@ alter table public.profiles enable row level security;
 alter table public.friend_requests enable row level security;
 alter table public.friends enable row level security;
 alter table public.messages enable row level security;
+alter table public.groups enable row level security;
+alter table public.group_members enable row level security;
+alter table public.group_messages enable row level security;
 alter table public.bookmarks enable row level security;
 alter table public.profile_comments enable row level security;
 alter table public.profile_likes enable row level security;
@@ -241,6 +278,26 @@ create policy "see own friendships" on public.friends
 drop policy if exists "see own messages" on public.messages;
 create policy "see own messages" on public.messages
   for select using (from_id = auth.uid() or to_id = auth.uid());
+
+-- группы/участников/сообщения видит только тот, кто сам состоит в группе —
+-- одна и та же проверка членства переиспользуется во всех трёх политиках
+drop policy if exists "see own groups" on public.groups;
+create policy "see own groups" on public.groups
+  for select using (
+    exists (select 1 from public.group_members gm where gm.group_id = groups.id and gm.user_id = auth.uid())
+  );
+
+drop policy if exists "see members of own groups" on public.group_members;
+create policy "see members of own groups" on public.group_members
+  for select using (
+    exists (select 1 from public.group_members gm2 where gm2.group_id = group_members.group_id and gm2.user_id = auth.uid())
+  );
+
+drop policy if exists "see messages of own groups" on public.group_messages;
+create policy "see messages of own groups" on public.group_messages
+  for select using (
+    exists (select 1 from public.group_members gm where gm.group_id = group_messages.group_id and gm.user_id = auth.uid())
+  );
 
 drop policy if exists "see own bookmarks" on public.bookmarks;
 create policy "see own bookmarks" on public.bookmarks
@@ -646,6 +703,236 @@ as $$
   update public.messages
   set read_at = now()
   where from_id = p_friend_id and to_id = auth.uid() and read_at is null;
+$$;
+
+-- ---------- RPC: группы ----------
+-- Тот же паттерн, что у личных сообщений: SELECT-политики только читают (см.
+-- RLS выше — членство в группе), а все записи идут через security definer
+-- функции, где уже сама функция проверяет права (состоишь ли в группе,
+-- создатель ли ты и т.д.) — в обход RLS никто напрямую в таблицы не пишет.
+
+-- создаёт группу, автоматически добавляет создателя первым участником и сразу
+-- зовёт переданных друзей (p_member_ids) — их дружбу с создателем не проверяем
+-- специально: раз человек уже видит их в своём списке друзей на клиенте,
+-- этого достаточно, а строгая проверка только усложнила бы (пришлось бы
+-- одинаково разрешать это и создателю, и всем, кого потом кто-то добавит)
+drop function if exists public.rpc_create_group(text, uuid[]);
+create or replace function public.rpc_create_group(p_name text, p_member_ids uuid[] default '{}')
+returns public.groups
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_row public.groups;
+  v_clean text;
+begin
+  v_clean := trim(p_name);
+  if v_clean is null or v_clean = '' then
+    raise exception 'empty_name';
+  end if;
+  if length(v_clean) > 100 then
+    v_clean := left(v_clean, 100);
+  end if;
+
+  insert into public.groups (name, created_by) values (v_clean, auth.uid())
+    returning * into v_row;
+
+  insert into public.group_members (group_id, user_id) values (v_row.id, auth.uid());
+
+  insert into public.group_members (group_id, user_id)
+    select v_row.id, m
+    from unnest(p_member_ids) as m
+    where m <> auth.uid()
+    on conflict do nothing;
+
+  return v_row;
+end;
+$$;
+
+-- добавить участника — может любой существующий участник группы, не только
+-- создатель (обычный групповой чат, а не строго модерируемый)
+drop function if exists public.rpc_add_group_member(uuid, uuid);
+create or replace function public.rpc_add_group_member(p_group_id uuid, p_user_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not exists (select 1 from public.group_members where group_id = p_group_id and user_id = auth.uid()) then
+    raise exception 'not_a_member';
+  end if;
+  insert into public.group_members (group_id, user_id) values (p_group_id, p_user_id)
+    on conflict do nothing;
+end;
+$$;
+
+-- выйти самому — просто убираем себя; удалить кого-то другого может только
+-- создатель группы (нет отдельной роли "админ", создатель и есть единственный,
+-- кто может выгонять)
+drop function if exists public.rpc_leave_group(uuid);
+create or replace function public.rpc_leave_group(p_group_id uuid)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  delete from public.group_members where group_id = p_group_id and user_id = auth.uid();
+$$;
+
+drop function if exists public.rpc_remove_group_member(uuid, uuid);
+create or replace function public.rpc_remove_group_member(p_group_id uuid, p_user_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not exists (select 1 from public.groups where id = p_group_id and created_by = auth.uid()) then
+    raise exception 'not_group_creator';
+  end if;
+  delete from public.group_members where group_id = p_group_id and user_id = p_user_id;
+end;
+$$;
+
+drop function if exists public.rpc_set_group_name(uuid, text);
+create or replace function public.rpc_set_group_name(p_group_id uuid, p_name text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_clean text;
+begin
+  if not exists (select 1 from public.group_members where group_id = p_group_id and user_id = auth.uid()) then
+    raise exception 'not_a_member';
+  end if;
+  v_clean := trim(p_name);
+  if v_clean is null or v_clean = '' then
+    raise exception 'empty_name';
+  end if;
+  update public.groups set name = left(v_clean, 100) where id = p_group_id;
+end;
+$$;
+
+drop function if exists public.rpc_set_group_avatar(uuid, text);
+create or replace function public.rpc_set_group_avatar(p_group_id uuid, p_avatar_url text)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.groups set avatar_url = p_avatar_url
+  where id = p_group_id and exists (
+    select 1 from public.group_members where group_id = p_group_id and user_id = auth.uid()
+  );
+$$;
+
+-- список моих групп + превью последнего сообщения + счётчик непрочитанных
+-- (сравниваем last_read_at участника с created_at сообщений — тот же принцип,
+-- что и unread у личных сообщений, просто своя отметка на каждого, а не одно
+-- read_at на сообщение) + число участников
+drop function if exists public.rpc_list_groups();
+create or replace function public.rpc_list_groups()
+returns table(
+  group_id uuid, name text, avatar_url text, created_by uuid,
+  member_count bigint, unread_count bigint,
+  last_message_body text, last_message_at timestamptz
+)
+language sql
+security definer
+set search_path = public
+as $$
+  select
+    g.id, g.name, g.avatar_url, g.created_by,
+    (select count(*) from public.group_members gm2 where gm2.group_id = g.id),
+    (select count(*) from public.group_messages gmsg
+       where gmsg.group_id = g.id and gmsg.created_at > gm.last_read_at and gmsg.from_id <> auth.uid()),
+    (select gmsg.body from public.group_messages gmsg
+       where gmsg.group_id = g.id order by gmsg.created_at desc limit 1),
+    (select gmsg.created_at from public.group_messages gmsg
+       where gmsg.group_id = g.id order by gmsg.created_at desc limit 1)
+  from public.groups g
+  join public.group_members gm on gm.group_id = g.id and gm.user_id = auth.uid()
+  order by coalesce(
+    (select max(gmsg.created_at) from public.group_messages gmsg where gmsg.group_id = g.id),
+    g.created_at
+  ) desc;
+$$;
+
+drop function if exists public.rpc_list_group_members(uuid);
+create or replace function public.rpc_list_group_members(p_group_id uuid)
+returns table(user_id uuid, display_name text, avatar_url text, joined_at timestamptz)
+language sql
+security definer
+set search_path = public
+as $$
+  select p.id, coalesce(p.display_name, 'Без имени'), p.avatar_url, gm.joined_at
+  from public.group_members gm
+  join public.profiles p on p.id = gm.user_id
+  where gm.group_id = p_group_id
+    and exists (select 1 from public.group_members gm2 where gm2.group_id = p_group_id and gm2.user_id = auth.uid())
+  order by gm.joined_at;
+$$;
+
+drop function if exists public.rpc_send_group_message(uuid, text);
+create or replace function public.rpc_send_group_message(p_group_id uuid, p_body text)
+returns public.group_messages
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_row public.group_messages;
+  v_clean text;
+begin
+  v_clean := trim(p_body);
+  if v_clean is null or v_clean = '' then
+    raise exception 'empty_message';
+  end if;
+  if length(v_clean) > 2000 then
+    v_clean := left(v_clean, 2000);
+  end if;
+  if not exists (select 1 from public.group_members where group_id = p_group_id and user_id = auth.uid()) then
+    raise exception 'not_a_member';
+  end if;
+
+  insert into public.group_messages (group_id, from_id, body) values (p_group_id, auth.uid(), v_clean)
+    returning * into v_row;
+  return v_row;
+end;
+$$;
+
+-- те же грабли, что были в rpc_list_messages до фикса — сразу делаем правильно:
+-- берём последние N по времени, потом разворачиваем для показа
+drop function if exists public.rpc_list_group_messages(uuid, int);
+create or replace function public.rpc_list_group_messages(p_group_id uuid, p_limit int default 200)
+returns setof public.group_messages
+language sql
+security definer
+set search_path = public
+as $$
+  select * from (
+    select * from public.group_messages
+    where group_id = p_group_id
+      and exists (select 1 from public.group_members where group_id = p_group_id and user_id = auth.uid())
+    order by created_at desc
+    limit greatest(1, least(p_limit, 500))
+  ) sub
+  order by created_at asc;
+$$;
+
+drop function if exists public.rpc_mark_group_read(uuid);
+create or replace function public.rpc_mark_group_read(p_group_id uuid)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.group_members set last_read_at = now()
+  where group_id = p_group_id and user_id = auth.uid();
 $$;
 
 -- ---------- RPC: био ----------
@@ -1227,6 +1514,17 @@ grant execute on function public.rpc_unfriend(uuid) to authenticated;
 grant execute on function public.rpc_send_message(uuid, text) to authenticated;
 grant execute on function public.rpc_list_messages(uuid, int) to authenticated;
 grant execute on function public.rpc_mark_messages_read(uuid) to authenticated;
+grant execute on function public.rpc_create_group(text, uuid[]) to authenticated;
+grant execute on function public.rpc_add_group_member(uuid, uuid) to authenticated;
+grant execute on function public.rpc_leave_group(uuid) to authenticated;
+grant execute on function public.rpc_remove_group_member(uuid, uuid) to authenticated;
+grant execute on function public.rpc_set_group_name(uuid, text) to authenticated;
+grant execute on function public.rpc_set_group_avatar(uuid, text) to authenticated;
+grant execute on function public.rpc_list_groups() to authenticated;
+grant execute on function public.rpc_list_group_members(uuid) to authenticated;
+grant execute on function public.rpc_send_group_message(uuid, text) to authenticated;
+grant execute on function public.rpc_list_group_messages(uuid, int) to authenticated;
+grant execute on function public.rpc_mark_group_read(uuid) to authenticated;
 grant execute on function public.rpc_set_bio(text) to authenticated;
 grant execute on function public.rpc_set_avatar_url(text) to authenticated;
 grant execute on function public.rpc_set_banner(text) to authenticated;
@@ -1267,5 +1565,11 @@ end $$;
 do $$
 begin
   alter publication supabase_realtime add table public.messages;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.group_messages;
 exception when duplicate_object then null;
 end $$;
