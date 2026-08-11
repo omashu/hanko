@@ -957,21 +957,28 @@ function stripHtml(s) {
   return decodeXmlEntities(s);
 }
 
-// YouTube-хэндл (@Aniplex_FGO) или ссылка на канал → channel_id (UCxxxx) —
-// сам YouTube RSS принимает только channel_id, не хэндл, поэтому если
-// пользователь ввёл не UC-id, вытаскиваем его со страницы канала
-async function resolveYoutubeChannelId(input) {
+// YouTube-хэндл (@Aniplex_FGO) или ссылка на канал → { channelId, channelName }.
+// channelId нужен RSS-ленте (сам YouTube RSS принимает только channel_id, не
+// хэндл), channelName — чтобы в списке источников показывать нормальное имя
+// канала, а не то, что человек вписал в поле (та же голая ссылка/хэндл — не
+// всегда понятно с одного взгляда, какой это канал, особенно обрезанный
+// многоточием в узком попапе)
+async function resolveYoutubeChannel(input) {
   const raw = input.trim();
   const ucMatch = raw.match(/^UC[\w-]{20,}$/);
-  if (ucMatch) return raw;
-  let url = raw;
-  if (!/^https?:\/\//.test(url)) {
-    url = `https://www.youtube.com/${url.replace(/^@?/, '@')}`;
-  }
+  const url = ucMatch ? `https://www.youtube.com/channel/${raw}`
+    : (/^https?:\/\//.test(raw) ? raw : `https://www.youtube.com/${raw.replace(/^@?/, '@')}`);
   const html = await newsFetchText(url);
-  const m = html.match(/"channelId":"(UC[\w-]{20,})"/) || html.match(/channel_id=(UC[\w-]{20,})/);
-  if (!m) throw new Error('Не удалось найти id канала — проверь ссылку/хэндл');
-  return m[1];
+  let channelId = ucMatch ? raw : null;
+  if (!channelId) {
+    const m = html.match(/"channelId":"(UC[\w-]{20,})"/) || html.match(/channel_id=(UC[\w-]{20,})/);
+    if (!m) throw new Error('Не удалось найти id канала — проверь ссылку/хэндл');
+    channelId = m[1];
+  }
+  const nameMatch = html.match(/<meta name="title" content="([^"]+)"/)
+    || html.match(/<meta property="og:title" content="([^"]+)"/);
+  const channelName = nameMatch ? decodeXmlEntities(nameMatch[1]) : raw;
+  return { channelId, channelName };
 }
 
 async function fetchYoutubeChannelFeed(channelId) {
@@ -1083,8 +1090,8 @@ ipcMain.handle('news:removeCategory', async (_e, id) => {
 ipcMain.handle('news:addSource', async (_e, { categoryId, type, value }) => {
   let payload;
   if (type === 'youtube') {
-    const channelId = await resolveYoutubeChannelId(value);
-    payload = { id: `src-${Date.now()}`, type: 'youtube', value: channelId, label: value };
+    const { channelId, channelName } = await resolveYoutubeChannel(value);
+    payload = { id: `src-${Date.now()}`, type: 'youtube', value: channelId, label: channelName };
   } else {
     // проверяем, что это реально парсящийся фид, а не мусорная ссылка —
     // лучше явная ошибка сразу при добавлении, чем молчаливо пустая категория
@@ -1113,9 +1120,23 @@ ipcMain.handle('news:fetchCategory', async (_e, categoryId) => {
     cat.sources.map((s) => (s.type === 'youtube' ? fetchYoutubeChannelFeed(s.channelId) : fetchRssFeed(s.url, s.label)))
   );
   let items = [];
-  for (const r of results) if (r.status === 'fulfilled') items.push(...r.value);
+  // раньше был общий срез items.slice(0, 60) — именно он и "съедал" редко
+  // постящие каналы, как только категория разрасталась: сортировка была по
+  // дате, и топ-60 разом занимали несколько самых активных каналов, а более
+  // тихие источники вообще не попадали в выдачу, хотя реально были в фиде.
+  // Теперь лимит — per-источник (у YouTube-RSS он и так максимум 15 видео
+  // на канал — это ограничение самого YouTube, не наше, тут ничего не
+  // подкрутить без официального Data API с ключом), а сверху — общий
+  // потолок с большим запасом просто на случай экзотического RSS с тысячами
+  // записей, чтобы не переводить и не грузить их все разом
+  const PER_SOURCE_LIMIT = 40;
+  for (const r of results) {
+    if (r.status !== 'fulfilled') continue;
+    const sorted = r.value.slice().sort((a, b) => b.publishedAt - a.publishedAt);
+    items.push(...sorted.slice(0, PER_SOURCE_LIMIT));
+  }
   items.sort((a, b) => b.publishedAt - a.publishedAt);
-  items = items.slice(0, 60); // без лишнего — переводить будем только то, что реально покажем
+  items = items.slice(0, 150); // выше — дольше грузится: каждая новость это ещё и отдельный запрос на перевод
   // переводим параллельно, но не безлимитно — не хотим 60 одновременных
   // запросов к переводчику разом
   const CONCURRENCY = 6;

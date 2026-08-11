@@ -237,6 +237,14 @@ html, body {
   box-shadow: 0 0 0 2px var(--surface);
   transition: transform .12s;
 }
+/* .avatar-img внутри flex-контейнера с align-items:center (не stretch) —
+   в этой комбинации проценты по высоте у картинки иногда не разрешаются
+   до полного размера родителя, и она остаётся меньше 30x30 — тогда из-под
+   неё видно фоновый градиент по краям (это и есть тот "оранжевый овал").
+   position:absolute убирает картинку из flex-раскладки совсем и жёстко
+   привязывает её к границам родителя (у которого уже есть position:relative
+   для зелёной точки "в сети") — так она гарантированно заполняет круг целиком */
+.rail-online-avatar .avatar-img { position: absolute; inset: 0; width: 100%; height: 100%; }
 .rail-online-avatar:hover { transform: scale(1.08); }
 .rail-online-avatar-dot {
   position: absolute;
@@ -2409,6 +2417,8 @@ body[data-theme="dark"] .premium-status-pill.is-active {
   cursor: pointer;
 }
 .news-chat-video-thumb img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -2422,7 +2432,8 @@ body[data-theme="dark"] .premium-status-pill.is-active {
   justify-content: center;
   font-size: 15px;
   color: #fff;
-  background: rgba(0, 0, 0, 0.28);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85); /* иконка видна и без сплошной тёмной подложки */
+  background: rgba(0, 0, 0, 0.08); /* было 0.28 всегда — на тёмных превью (тёмный верх кадра) это читалось как чёрная полоса */
   transition: background .15s ease;
 }
 .news-chat-video-thumb:hover .news-chat-video-play { background: rgba(0, 0, 0, 0.42); }

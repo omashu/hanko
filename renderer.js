@@ -234,6 +234,12 @@ const els = {
 
   homeContinueSection: document.getElementById('homeContinueSection'),
   homeContinueGrid: document.getElementById('homeContinueGrid'),
+  homeWatchContinueSection: document.getElementById('homeWatchContinueSection'),
+  homeWatchContinueGrid: document.getElementById('homeWatchContinueGrid'),
+  mangaContinueSection: document.getElementById('mangaContinueSection'),
+  mangaContinueGrid: document.getElementById('mangaContinueGrid'),
+  animeContinueSection: document.getElementById('animeContinueSection'),
+  animeContinueGrid: document.getElementById('animeContinueGrid'),
   homeMangaGrid: document.getElementById('homeMangaGrid'),
   homeMangaHint: document.getElementById('homeMangaHint'),
   homeAnimeGrid: document.getElementById('homeAnimeGrid'),
@@ -509,9 +515,9 @@ function showView(name) {
   els.navFriends.classList.toggle('is-active', isFriends);
   els.navNews.classList.toggle('is-active', isNews);
   window.hanko.saveSettings({ lastTab: name });
-  if (isHome) { renderHomeContinue(); loadHomeContent(); }
-  if (isManga) loadMangaPopular();
-  if (isAnime) loadAnimePopular();
+  if (isHome) { renderHomeContinue(); renderHomeWatchContinue(); loadHomeContent(); }
+  if (isManga) { renderMangaContinue(); loadMangaPopular(); }
+  if (isAnime) { renderAnimeContinue(); loadAnimePopular(); }
   if (isProfile) loadProfileView();
   if (isNews) loadNewsView();
   // если чат с кем-то уже был открыт раньше, а пользователь был на другой
@@ -551,16 +557,52 @@ els.themeToggleBtn.addEventListener('click', () => {
 // показывает на главной то, что реально читалось последним — сортировка
 // по library[].progress.updatedAt, локально, без сети, поэтому обновляем
 // это каждый раз при заходе на «Главную», а не один раз как витрину популярного
-function renderHomeContinue() {
-  const items = library
+function continueReadingItems() {
+  return library
     .filter((item) => item.progress && item.progress.updatedAt)
     .sort((a, b) => b.progress.updatedAt - a.progress.updatedAt)
     .slice(0, 8);
-  els.homeContinueSection.hidden = items.length === 0;
-  els.homeContinueGrid.innerHTML = '';
-  for (const item of items) {
-    els.homeContinueGrid.appendChild(mangaCard(item, { inLibrary: true }));
-  }
+}
+function continueWatchingItems() {
+  return animeHistory
+    .slice()
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, 8)
+    .map((h) => ({ id: h.releaseId, title: h.title, coverUrl: h.coverUrl, status: null }));
+}
+
+function renderContinueReadingInto(gridEl) {
+  const items = continueReadingItems();
+  gridEl.innerHTML = '';
+  for (const item of items) gridEl.appendChild(mangaCard(item, { inLibrary: true }));
+  return items.length;
+}
+function renderContinueWatchingInto(gridEl) {
+  const items = continueWatchingItems();
+  gridEl.innerHTML = '';
+  for (const item of items) gridEl.appendChild(animeLibraryCard(item, { showRemove: false }));
+  return items.length;
+}
+
+// на Главной у "Продолжить чтение"/"Продолжить смотреть" видимость зависит
+// не только от того, есть ли вообще что показывать, но и от выбранной
+// вкладки (Все/Манга/Аниме) — второе применяется отдельно, в switchHomeCategory
+function renderHomeContinue() {
+  const count = renderContinueReadingInto(els.homeContinueGrid);
+  els.homeContinueSection.hidden = count === 0;
+  updateHomeContinueVisibility();
+}
+function renderHomeWatchContinue() {
+  const count = renderContinueWatchingInto(els.homeWatchContinueGrid);
+  els.homeWatchContinueSection.hidden = count === 0;
+  updateHomeContinueVisibility();
+}
+// на страницах Манга/Аниме категорий нет — видимость только от наличия прогресса
+function renderMangaContinue() {
+  els.mangaContinueSection.hidden = renderContinueReadingInto(els.mangaContinueGrid) === 0;
+}
+function renderAnimeContinue() {
+  els.animeContinueSection.hidden = renderContinueWatchingInto(els.animeContinueGrid) === 0;
 }
 
 let homeLoaded = false;
@@ -620,12 +662,23 @@ async function loadMangaPopular() {
   }
 }
 
+let homeCategory = 'all';
 function switchHomeCategory(cat) {
+  homeCategory = cat;
   els.homeTabAll.classList.toggle('is-active', cat === 'all');
   els.homeTabManga.classList.toggle('is-active', cat === 'manga');
   els.homeTabAnime.classList.toggle('is-active', cat === 'anime');
   els.homeMangaSection.hidden = cat === 'anime';
   els.homeAnimeSection.hidden = cat === 'manga';
+  updateHomeContinueVisibility();
+}
+// "Продолжить чтение" — видно на "Все"/"Манга", прячется на "Аниме".
+// "Продолжить смотреть" — видно на "Все"/"Аниме", прячется на "Манга".
+// В обоих случаях ещё и по факту наличия прогресса — секция может быть пустой
+// даже на подходящей по категории вкладке, если там просто нечего показать.
+function updateHomeContinueVisibility() {
+  els.homeContinueSection.hidden = homeCategory === 'anime' || continueReadingItems().length === 0;
+  els.homeWatchContinueSection.hidden = homeCategory === 'manga' || continueWatchingItems().length === 0;
 }
 els.homeTabAll.addEventListener('click', () => switchHomeCategory('all'));
 els.homeTabManga.addEventListener('click', () => switchHomeCategory('manga'));
@@ -1824,7 +1877,7 @@ window.hanko.onDownloadProgress(async ({ mangaId, chapterId, done, total, finish
 // искать/открывать в браузере приложения незачем. Убрали полностью, вместо
 // неё — обычные закладки на тайтлы AniLibria, по аналогии с библиотекой манги.
 
-function animeLibraryCard(item) {
+function animeLibraryCard(item, { showRemove = true } = {}) {
   const card = document.createElement('div');
   card.className = 'card';
   // та же логика, что и в mangaCard, но по animeHistory (releaseId вместо mangaId)
@@ -1843,19 +1896,21 @@ function animeLibraryCard(item) {
       <p class="card-title">${escapeHtml(item.title)}</p>
       <p class="card-meta">${escapeHtml(statusRu)}</p>
     </div>
-    <button class="card-add" title="Убрать из закладок">✕</button>
+    ${showRemove ? '<button class="card-add" title="Убрать из закладок">✕</button>' : ''}
   `;
   card.addEventListener('click', (e) => {
     if (e.target.closest('.card-add')) return;
     openAnimeTitleModal(item);
   });
-  card.querySelector('.card-add').addEventListener('click', async (e) => {
-    e.stopPropagation();
-    await window.hanko.removeAnimeLibraryItem(item.id);
-    syncBookmarkRemove(item.id);
-    animeLibrary = await window.hanko.loadAnimeLibrary();
-    renderAnimeLibrary();
-  });
+  if (showRemove) {
+    card.querySelector('.card-add').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await window.hanko.removeAnimeLibraryItem(item.id);
+      syncBookmarkRemove(item.id);
+      animeLibrary = await window.hanko.loadAnimeLibrary();
+      renderAnimeLibrary();
+    });
+  }
   return card;
 }
 
@@ -4085,7 +4140,7 @@ function renderNewsSourcesList(cat) {
     row.className = 'news-source-row';
     row.innerHTML = `
       <span class="news-source-type">${src.type === 'youtube' ? '▶ YouTube' : '📰 RSS'}</span>
-      <span class="news-source-label">${escapeHtml(src.label || src.url || src.channelId || '')}</span>
+      <span class="news-source-label" title="${escapeHtml(src.label || src.url || src.channelId || '')}">${escapeHtml(src.label || src.url || src.channelId || '')}</span>
       <button type="button" class="icon-btn news-source-remove" title="Удалить источник">✕</button>
     `;
     row.querySelector('.news-source-remove').addEventListener('click', async () => {
