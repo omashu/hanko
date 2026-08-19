@@ -241,6 +241,8 @@ const els = {
   animeContinueSection: document.getElementById('animeContinueSection'),
   animeContinueGrid: document.getElementById('animeContinueGrid'),
   homeMangaGrid: document.getElementById('homeMangaGrid'),
+  homeMangaLatestHint: document.getElementById('homeMangaLatestHint'),
+  homeMangaLatestGrid: document.getElementById('homeMangaLatestGrid'),
   homeMangaHint: document.getElementById('homeMangaHint'),
   homeAnimeGrid: document.getElementById('homeAnimeGrid'),
   homeMangaSection: document.getElementById('homeMangaSection'),
@@ -261,6 +263,8 @@ const els = {
   mangaSearchGrid: document.getElementById('mangaSearchGrid'),
   mangaPopularHint: document.getElementById('mangaPopularHint'),
   mangaPopularGrid: document.getElementById('mangaPopularGrid'),
+  mangaLatestHint: document.getElementById('mangaLatestHint'),
+  mangaLatestGrid: document.getElementById('mangaLatestGrid'),
   mangaFiltersBtn: document.getElementById('mangaFiltersBtn'),
   mangaFiltersModalBackdrop: document.getElementById('mangaFiltersModalBackdrop'),
   mangaFiltersModalClose: document.getElementById('mangaFiltersModalClose'),
@@ -611,21 +615,34 @@ async function loadHomeContent() {
   homeLoaded = true;
 
   els.homeMangaHint.hidden = true;
+  els.homeMangaLatestHint.hidden = true;
   els.homeAnimeHint.hidden = true;
   renderSkeletons(els.homeMangaGrid);
+  renderSkeletons(els.homeMangaLatestGrid);
   renderSkeletons(els.homeAnimeGrid);
 
   try {
-    const items = await window.hanko.mangadexPopular();
+    const { items } = await window.hanko.jikanTopManga();
     els.homeMangaHint.hidden = items.length > 0;
     els.homeMangaHint.textContent = 'Пусто.';
     els.homeMangaGrid.innerHTML = '';
-    for (const item of items) {
-      els.homeMangaGrid.appendChild(mangaCard(item, { inLibrary: library.some((l) => l.id === item.id) }));
-    }
+    for (const item of items) els.homeMangaGrid.appendChild(jikanMangaCard(item));
   } catch (err) {
     els.homeMangaHint.hidden = false;
     els.homeMangaHint.textContent = `Не удалось загрузить: ${err.message}`;
+  }
+
+  try {
+    const items = await window.hanko.mangadexLatest();
+    els.homeMangaLatestHint.hidden = items.length > 0;
+    els.homeMangaLatestHint.textContent = 'Пусто.';
+    els.homeMangaLatestGrid.innerHTML = '';
+    for (const item of items) {
+      els.homeMangaLatestGrid.appendChild(mangaCard(item, { inLibrary: library.some((l) => l.id === item.id) }));
+    }
+  } catch (err) {
+    els.homeMangaLatestHint.hidden = false;
+    els.homeMangaLatestHint.textContent = `Не удалось загрузить: ${err.message}`;
   }
 
   try {
@@ -647,18 +664,33 @@ async function loadMangaPopular() {
   if (mangaPopularLoaded) return;
   mangaPopularLoaded = true;
   els.mangaPopularHint.hidden = true;
+  els.mangaLatestHint.hidden = true;
   renderSkeletons(els.mangaPopularGrid);
+  renderSkeletons(els.mangaLatestGrid);
   try {
-    const items = await window.hanko.mangadexPopular();
+    // MangaDex followedCount — это "что сейчас чаще фолловят", а фолловят там
+    // в основном свежезалитое, включая много низкосортного. Реальный топ берём
+    // с Jikan (MyAnimeList) — это редакционный рейтинг, а не сырой поток заливок.
+    const { items } = await window.hanko.jikanTopManga();
     els.mangaPopularHint.hidden = items.length > 0;
     els.mangaPopularHint.textContent = 'Пусто.';
     els.mangaPopularGrid.innerHTML = '';
-    for (const item of items) {
-      els.mangaPopularGrid.appendChild(mangaCard(item, { inLibrary: library.some((l) => l.id === item.id) }));
-    }
+    for (const item of items) els.mangaPopularGrid.appendChild(jikanMangaCard(item));
   } catch (err) {
     els.mangaPopularHint.hidden = false;
     els.mangaPopularHint.textContent = `Не удалось загрузить: ${err.message}`;
+  }
+  try {
+    const items = await window.hanko.mangadexLatest();
+    els.mangaLatestHint.hidden = items.length > 0;
+    els.mangaLatestHint.textContent = 'Пусто.';
+    els.mangaLatestGrid.innerHTML = '';
+    for (const item of items) {
+      els.mangaLatestGrid.appendChild(mangaCard(item, { inLibrary: library.some((l) => l.id === item.id) }));
+    }
+  } catch (err) {
+    els.mangaLatestHint.hidden = false;
+    els.mangaLatestHint.textContent = `Не удалось загрузить: ${err.message}`;
   }
 }
 
@@ -738,6 +770,42 @@ const MANGA_STATUS_RU = {
   hiatus: 'Приостановлено',
   cancelled: 'Отменено',
 };
+
+// карточка тайтла из топа Jikan (MyAnimeList) — id тут "jikan:12345", это НЕ
+// id MangaDex, открыть модалку тайтла напрямую нельзя. По клику ищем тот же
+// тайтл по названию среди уже подключённых источников и открываем найденное.
+function jikanMangaCard(item) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  const ratingBadge = item.score ? `<span class="card-rating">★ ${item.score.toFixed(1)}</span>` : '';
+  card.innerHTML = `
+    <img class="card-cover" src="${item.coverUrl || ''}" alt="" loading="lazy" onerror="this.style.opacity=0" />
+    <div class="card-body">
+      <div class="card-title-row"><p class="card-title">${escapeHtml(item.title)}</p>${ratingBadge}</div>
+      <p class="card-meta">Топ MAL</p>
+    </div>
+  `;
+  card.addEventListener('click', () => resolveJikanMangaCard(item));
+  return card;
+}
+
+async function resolveJikanMangaCard(item) {
+  try {
+    let { items } = await window.hanko.mangadexSearch({ query: item.title });
+    // русское название с MAL иногда не совпадает с тем, как тайтл называется
+    // у нас — пробуем оригинальное/английское название вторым заходом
+    if (!items.length && item.searchTitle && item.searchTitle !== item.title) {
+      ({ items } = await window.hanko.mangadexSearch({ query: item.searchTitle }));
+    }
+    if (!items.length) {
+      showAppAlert('Не нашлось ни на одном из подключённых источников — возможно, тайтл ещё не переведён.', { title: 'Не найдено' });
+      return;
+    }
+    openTitleModal(items[0]);
+  } catch (err) {
+    showAppAlert(cleanIpcError(err));
+  }
+}
 
 function mangaCard(item, { inLibrary }) {
   const card = document.createElement('div');
@@ -1758,7 +1826,7 @@ async function recordHistoryProgress(payload) {
   if (!els.viewProfile.hidden) renderReadingHistory();
   // подсветка «последний открытый тайтл» на карточках библиотеки/«Продолжить» —
   // чтобы переехала на новый тайтл сразу, а не после переключения вкладки
-  if (!els.viewManga.hidden) renderLibrary();
+  if (!els.viewManga.hidden) { renderLibrary(); renderMangaContinue(); }
   if (!els.viewHome.hidden) renderHomeContinue();
 }
 
@@ -1928,7 +1996,8 @@ async function recordAnimeHistoryProgress(payload) {
     animeHistory = await window.hanko.setAnimeHistoryProgress(payload);
   } catch { /* история — best-effort, не мешаем просмотру, если не записалось */ }
   if (!els.viewProfile.hidden) renderWatchHistory();
-  if (!els.viewAnime.hidden) renderAnimeLibrary();
+  if (!els.viewAnime.hidden) { renderAnimeLibrary(); renderAnimeContinue(); }
+  if (!els.viewHome.hidden) renderHomeWatchContinue();
 }
 
 // ---------------- профиль ----------------
@@ -2311,6 +2380,7 @@ async function syncLibraryAndHistoryOnce() {
     renderReadingHistory();
     renderWatchHistory();
     renderHomeContinue();
+    renderHomeWatchContinue();
   } catch { /* не страшно, попробуем при следующем запуске */ }
 }
 
@@ -4692,7 +4762,7 @@ async function loadAnimePopular() {
   els.animePopularHint.hidden = true;
   renderSkeletons(els.animePopularGrid);
   try {
-    const { items } = await window.hanko.anilibriaPopular();
+    const { items } = await window.hanko.anilibriaPopularReal();
     els.animePopularHint.hidden = items.length > 0;
     els.animePopularHint.textContent = 'Пусто.';
     els.animePopularGrid.innerHTML = '';

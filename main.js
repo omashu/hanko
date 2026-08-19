@@ -2201,10 +2201,43 @@ async function aniSearch({ query = '', limit = 24, page = 1, genreIds = [], type
   return { items: list.map(mapAniListItem), total: data.meta?.pagination?.total ?? list.length };
 }
 
-// "Популярное" — просто каталог без фильтра поиска (он у AniLibria и так
+// "Новинки" — просто каталог без фильтра поиска (он у AniLibria и так
 // приходит отсортированным по свежести/активности релизов)
 async function aniPopular({ limit = 24 } = {}) {
   return aniSearch({ limit });
+}
+
+// "Популярное за всё время" — честная версия. У каталога нет параметра
+// сортировки по популярности (проверяли), зато нашли в сырых данных релиза
+// реальное поле added_in_users_favorites — сколько раз тайтл добавили в
+// избранное. Раз сервер сам не сортирует по нему, тянем несколько страниц
+// каталога (в параллель) и сортируем на своей стороне. Это не идеально
+// покрывает вообще весь каталог AniLibria (тянуть тысячи релизов ради
+// одного списка на 24 карточки — слишком дорого), но для реально известных
+// популярных тайтлов этого с большим запасом достаточно: у них огромные
+// цифры в favorites, и они почти гарантированно попадут хотя бы на одну из
+// первых нескольких сотен позиций каталога.
+async function aniPopularReal({ limit = 24, pages = 10, pageSize = 24 } = {}) {
+  const requests = Array.from({ length: pages }, (_, i) =>
+    aniFetch(`${ANILIBRIA_API}/anime/catalog/releases?${new URLSearchParams({ limit: String(pageSize), page: String(i + 1) }).toString()}`)
+      .catch((err) => {
+        // раньше ошибка тут тихо проглатывалась (просто {data:[]}) — если
+        // отваливались ВСЕ страницы разом, результат пустой без единой строки
+        // в логе, и понять причину было невозможно
+        console.error(`[aniPopularReal] страница ${i + 1} не загрузилась:`, err?.message || err);
+        return { data: [] };
+      })
+  );
+  const results = await Promise.all(requests);
+  const seen = new Map();
+  for (const r of results) {
+    for (const raw of (r.data || [])) seen.set(raw.id, raw);
+  }
+  console.log(`[aniPopularReal] всего собрано релизов: ${seen.size}`);
+  const sorted = Array.from(seen.values())
+    .sort((a, b) => (b.added_in_users_favorites || 0) - (a.added_in_users_favorites || 0))
+    .slice(0, limit);
+  return { items: sorted.map(mapAniListItem), total: sorted.length };
 }
 
 // список серий приходит прямо внутри объекта релиза (episodes[]) — отдельный
@@ -2247,6 +2280,18 @@ ipcMain.handle('anilibria:popular', async () => {
     return await aniPopular();
   } catch (err) {
     console.error('AniLibria не удалось получить каталог:', err?.message || err);
+    return { items: [], total: 0 };
+  }
+});
+
+// отдельный канал именно для честной популярности (added_in_users_favorites) —
+// anilibria:popular выше используется и для "Новинки аниме" на Главной, там
+// сортировка по свежести должна остаться как есть, менять его смысл нельзя
+ipcMain.handle('anilibria:popularReal', async () => {
+  try {
+    return await aniPopularReal();
+  } catch (err) {
+    console.error('AniLibria не удалось получить реальную популярность:', err?.message || err);
     return { items: [], total: 0 };
   }
 });
@@ -2539,10 +2584,103 @@ ipcMain.handle('mangadex:tags', async () => {
 });
 
 // «Популярное» для главной страницы — сортировка MangaDex по числу подписок
-ipcMain.handle('mangadex:popular', async () => {
+async function mangadexPopularByFollows() {
   const params = new URLSearchParams({
     limit: '18',
     'order[followedCount]': 'desc',
+  });
+  params.append('includes[]', 'cover_art');
+  params.append('contentRating[]', 'safe');
+  params.append('contentRating[]', 'suggestive');
+  params.append('hasAvailableChapters', 'true');
+
+  const data = await mdFetch(`${MANGADEX_API}/manga?${params.toString()}`);
+  return await mapMangaList(data);
+}
+
+ipcMain.handle('mangadex:popular', () => mangadexPopularByFollows());
+
+// "Популярное" по MangaDex — это по сути "у кого сейчас больше фолловеров",
+// а фолловят там в основном то, что недавно залили, включая много низкосортного
+// контента. Для честного топа берём Jikan — открытый бесплатный API поверх
+// MyAnimeList (без ключа), там реальный редакционный рейтинг, а не сырой
+// поток заливок. Формат ответа отличается от MangaDex, и id тут — это id
+// с MyAnimeList, НЕ id MangaDex — по клику на карточку резолвим через обычный
+// поиск по названию среди уже подключённых источников (см. renderer.js).
+const JIKAN_API = 'https://api.jikan.moe/v4';
+
+async function jikanFetch(path, attempt = 1) {
+  const url = `${JIKAN_API}${path}`;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000), headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' } });
+    // у Jikan жёсткий рейт-лимит (около 3 запросов в секунду) — при 429
+    // просто ждём и пробуем ещё раз, а не сразу сдаёмся
+    if (res.status === 429 && attempt < 3) {
+      await new Promise((r) => setTimeout(r, 1000 * attempt));
+      return jikanFetch(path, attempt + 1);
+    }
+    const raw = await res.text();
+    if (!res.ok) {
+      console.error(`[Jikan] ${url} → HTTP ${res.status}. Тело ответа: ${raw.slice(0, 500)}`);
+      throw new Error(`HTTP ${res.status}`);
+    }
+    return JSON.parse(raw);
+  } catch (err) {
+    if (attempt < 2) return jikanFetch(path, attempt + 1);
+    throw new Error(`Jikan не отвечает (${err.message})`);
+  }
+}
+
+function mapJikanMangaItem(raw) {
+  return {
+    id: `jikan:${raw.mal_id}`,
+    title: raw.title_russian || raw.title || raw.title_english || 'Без названия',
+    // на всякий случай запоминаем оригинальное/английское название отдельно —
+    // если русское название с MAL не совпадёт с тем, как тайтл называется на
+    // наших источниках, для поиска пригодится английский вариант/ромадзи
+    searchTitle: raw.title_english || raw.title || raw.title_russian,
+    coverUrl: raw.images?.webp?.image_url || raw.images?.jpg?.image_url || null,
+    score: raw.score || null,
+    malUrl: raw.url || null,
+  };
+}
+
+async function jikanTopManga({ limit = 24 } = {}) {
+  const data = await jikanFetch(`/top/manga?limit=${limit}&filter=bypopularity`);
+  const items = (data.data || []).map(mapJikanMangaItem);
+  console.log(`[Jikan] топ манги: получено ${items.length} тайтлов`);
+  return { items, total: items.length };
+}
+
+ipcMain.handle('jikan:topManga', async () => {
+  try {
+    const result = await jikanTopManga();
+    if (result.items.length) return result;
+    throw new Error('пустой ответ');
+  } catch (err) {
+    // Jikan — бесплатный community-сервис поверх MyAnimeList, у него бывают
+    // реальные перебои именно на их стороне (см. лог "MyAnimeList may be
+    // down"), не наш баг. Чтобы раздел не оставался пустым в такие моменты,
+    // тихо откатываемся на старый способ (сортировка MangaDex по фолловерам) —
+    // хуже по качеству подборки, но хоть что-то, а не пустота.
+    console.error('Jikan: не удалось получить топ манги, откат на MangaDex:', err?.message || err);
+    try {
+      const items = await mangadexPopularByFollows();
+      return { items, total: items.length, fallback: true };
+    } catch {
+      return { items: [], total: 0 };
+    }
+  }
+});
+
+
+// MangaDex, а не по общему числу подписчиков за всё время. У "Популярного"
+// (followedCount) естественным образом перекос в сторону давних, массовых
+// тайтлов — здесь наоборот, свежедобавленное, без учёта раскрученности
+ipcMain.handle('mangadex:latest', async () => {
+  const params = new URLSearchParams({
+    limit: '18',
+    'order[createdAt]': 'desc',
   });
   params.append('includes[]', 'cover_art');
   params.append('contentRating[]', 'safe');

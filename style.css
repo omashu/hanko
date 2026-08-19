@@ -345,13 +345,63 @@ body[data-theme="dark"] .theme-toggle-btn .icon-sun { display: block; }
 
 .section { margin-bottom: 40px; }
 
+/* блоки "Продолжить..." — это личный прогресс, а не обзорная лента, как
+   остальные секции на этих же страницах; лёгкая акцентная подложка отличает
+   их с первого взгляда, не превращая в отдельный компонент */
+#homeContinueSection, #homeWatchContinueSection, #mangaContinueSection, #animeContinueSection {
+  position: relative;
+  padding: 18px 20px 4px;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, rgba(6, 8, 20, 0.32), rgba(6, 8, 20, 0.06) 55%);
+}
+body[data-theme="light"] #homeContinueSection, body[data-theme="light"] #homeWatchContinueSection,
+body[data-theme="light"] #mangaContinueSection, body[data-theme="light"] #animeContinueSection {
+  background: linear-gradient(135deg, rgba(30, 34, 58, 0.1), rgba(30, 34, 58, 0.02) 55%);
+}
+
 .section-title {
   font-family: var(--font-display);
   font-size: 14px;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: .08em;
-  color: var(--text-muted);
+  letter-spacing: .07em;
+  color: var(--text);
   margin: 0 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+/* маленькое эхо главной печати-логотипа (.seal в шапке рейла) — тот же
+   радиальный градиент, тот же смысл (хроника оставила "штамп" на разделе),
+   просто в масштабе метки, а не полноценного логотипа. Цвет точки меняется
+   по смыслу раздела (манга/аниме/социальное/аккаунт) — не ради пестроты, а
+   чтобы категория читалась с одного взгляда, ещё до того как прочитан текст. */
+.section-title::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: radial-gradient(circle at 32% 28%, var(--dot-bright, var(--accent-bright)), var(--dot, var(--accent)) 65%, var(--dot-dark, #8f2c26) 100%);
+  box-shadow: 0 0 7px var(--dot-glow, rgba(255, 106, 85, .55));
+}
+
+/* аниме/просмотр — голубой */
+#homeWatchContinueSection .section-title, #animeSearchSection .section-title,
+#animeContinueSection .section-title, #animePopularSection .section-title,
+.section:has(#profileAnimeGrid) .section-title, .section:has(#watchHistoryList) .section-title {
+  --dot: #4fc3f7; --dot-bright: #8fe0ff; --dot-dark: #0f5f85; --dot-glow: rgba(79, 195, 247, .55);
+}
+
+/* социальное (друзья/комментарии) — фиолетовый */
+#friendsSetupSection .section-title, .section:has(#myCommentsList) .section-title,
+#commentsSection .section-title {
+  --dot: #b98aff; --dot-bright: #dcc4ff; --dot-dark: #5a2f99; --dot-glow: rgba(185, 138, 255, .55);
+}
+
+/* аккаунт/премиум — золотой (переиспользует уже существующий --gold) */
+#premiumBlock .section-title, .section:has(#accountStatusText) .section-title {
+  --dot: var(--gold); --dot-bright: #f0c987; --dot-dark: #7a5420; --dot-glow: rgba(201, 138, 58, .55);
 }
 
 .empty-hint { color: var(--text-muted); font-size: 14px; }
