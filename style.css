@@ -12,6 +12,30 @@
   --radius: 18px;
   --font-display: 'Unbounded', 'Segoe UI', system-ui, sans-serif;
   --font-body: 'Inter', 'Segoe UI', system-ui, sans-serif;
+
+  /* Шкала мелкого/среднего текста — 6 шагов вместо 13, которые тут раньше
+     накопились (12.5px, 13.5px и т.п.). Новые правила бери отсюда, а не
+     подбирай значение на глаз — так шкала не расползётся снова.
+     --fs-2xs 10px — самые мелкие подписи (мета-текст, счётчики)
+     --fs-xs  11px — подписи, второстепенный текст
+     --fs-sm  12px — стандартный мелкий текст (самый частый размер)
+     --fs-base 13px — базовый размер интерфейса
+     --fs-md  14px — чуть крупнее (кнопки, поля ввода)
+     --fs-lg  15px — акцентный текст внутри карточек/модалок */
+  --fs-2xs: 10px;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-base: 13px;
+  --fs-md: 14px;
+  --fs-lg: 15px;
+
+  /* Шкала мелких скруглений — 4px/6px/8px/10px/12px, дальше --radius (18px)
+     и 999px (таблетка/кружок). Раньше сюда затесался 5px — теперь его нет. */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
 }
 
 /* ---------- ночная тема — то же стекло, но тёмное, под вечерний фон ---------- */
@@ -101,6 +125,31 @@ html, body {
     radial-gradient(ellipse at 50% 15%, rgba(255, 255, 255, 0.3), transparent 55%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.6) 0%, rgba(255, 255, 255, 0.42) 30%, rgba(255, 255, 255, 0.46) 65%, rgba(255, 255, 255, 0.62) 100%);
   pointer-events: none;
+}
+
+/* тонкий цветовой тон поверх вуали, по смыслу активного раздела — та же idea,
+   что и у точек-печатей в заголовках секций (--dot*), просто в масштабе всей
+   сцены за интерфейсом, чтобы "Аниме"/"Друзья"/"Профиль" не выглядели
+   визуально неотличимо от "Манга". Раздел определяется через :has() по
+   видимости #viewX — чисто CSS, JS/HTML не трогали. По умолчанию (Манга/
+   Главная/Новости) — коралл, тот же --accent, что и everywhere ещё; для
+   Аниме/Друзей/Профиля — переопределяется ниже. Слой слабый (opacity ~.14),
+   чтобы не спорить с контрастом текста/карточек поверх вуали */
+.app-background-veil::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 0%, var(--bg-tint, rgba(255, 106, 85, 0.16)), transparent 62%);
+  pointer-events: none;
+}
+body:has(#viewAnime:not([hidden])) .app-background-veil {
+  --bg-tint: rgba(79, 195, 247, 0.16);
+}
+body:has(#viewFriends:not([hidden])) .app-background-veil {
+  --bg-tint: rgba(185, 138, 255, 0.14);
+}
+body:has(#viewProfile:not([hidden])) .app-background-veil {
+  --bg-tint: rgba(201, 138, 58, 0.14);
 }
 
 .bg-spark {
@@ -386,21 +435,23 @@ body[data-theme="light"] #mangaContinueSection, body[data-theme="light"] #animeC
   box-shadow: 0 0 7px var(--dot-glow, rgba(255, 106, 85, .55));
 }
 
-/* аниме/просмотр — голубой */
-#homeWatchContinueSection .section-title, #animeSearchSection .section-title,
-#animeContinueSection .section-title, #animePopularSection .section-title,
-.section:has(#profileAnimeGrid) .section-title, .section:has(#watchHistoryList) .section-title {
+/* аниме/просмотр — голубой. Переменные теперь на самом .section/#id (а не
+   только на .section-title) — так их через наследование увидят и другие
+   элементы внутри той же секции: иконки пустых состояний, карточки при hover */
+#homeWatchContinueSection, #animeSearchSection,
+#animeContinueSection, #animePopularSection,
+.section:has(#profileAnimeGrid), .section:has(#watchHistoryList) {
   --dot: #4fc3f7; --dot-bright: #8fe0ff; --dot-dark: #0f5f85; --dot-glow: rgba(79, 195, 247, .55);
 }
 
 /* социальное (друзья/комментарии) — фиолетовый */
-#friendsSetupSection .section-title, .section:has(#myCommentsList) .section-title,
-#commentsSection .section-title {
+#friendsSetupSection, .section:has(#myCommentsList),
+#commentsSection {
   --dot: #b98aff; --dot-bright: #dcc4ff; --dot-dark: #5a2f99; --dot-glow: rgba(185, 138, 255, .55);
 }
 
 /* аккаунт/премиум — золотой (переиспользует уже существующий --gold) */
-#premiumBlock .section-title, .section:has(#accountStatusText) .section-title {
+#premiumBlock, .section:has(#accountStatusText) {
   --dot: var(--gold); --dot-bright: #f0c987; --dot-dark: #7a5420; --dot-glow: rgba(201, 138, 58, .55);
 }
 
@@ -434,11 +485,19 @@ body[data-theme="light"] #mangaContinueSection, body[data-theme="light"] #animeC
   font-weight: 600;
   font-size: 14px;
   cursor: pointer;
-  transition: background .15s, transform .1s;
+  box-shadow: 0 4px 14px rgba(255, 106, 85, .28);
+  transition: background .15s, transform .15s, box-shadow .15s;
 }
 
-.search-form button:hover, .btn-primary:hover { background: var(--accent-bright); }
-.search-form button:active, .btn-primary:active { transform: scale(.97); }
+.search-form button:hover, .btn-primary:hover {
+  background: var(--accent-bright);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(255, 106, 85, .4);
+}
+.search-form button:active, .btn-primary:active {
+  transform: scale(.97) translateY(0);
+  box-shadow: 0 2px 8px rgba(255, 106, 85, .3);
+}
 
 .btn-secondary {
   background: var(--surface-3);
@@ -450,11 +509,18 @@ body[data-theme="light"] #mangaContinueSection, body[data-theme="light"] #animeC
   font-weight: 500;
   font-size: 14px;
   cursor: pointer;
+  transition: border-color .15s, background .15s, transform .15s, box-shadow .15s;
 }
 
-.btn-secondary:hover { border-color: var(--text-muted); }
+.btn-secondary:hover {
+  border-color: var(--accent);
+  background: var(--surface-2);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .18);
+}
+.btn-secondary:active { transform: scale(.97) translateY(0); }
 .btn-secondary:disabled { opacity: .4; cursor: default; }
-.btn-secondary:disabled:hover { border-color: var(--border); }
+.btn-secondary:disabled:hover { border-color: var(--border); background: var(--surface-3); transform: none; box-shadow: none; }
 
 .pagination {
   display: flex;
@@ -485,8 +551,8 @@ body[data-theme="light"] #mangaContinueSection, body[data-theme="light"] #animeC
 
 .card:hover {
   transform: translateY(-3px);
-  border-color: var(--accent);
-  box-shadow: 0 12px 28px rgba(70, 50, 100, 0.16);
+  border-color: var(--dot, var(--accent));
+  box-shadow: 0 12px 28px rgba(70, 50, 100, 0.16), 0 0 0 1px color-mix(in srgb, var(--dot, var(--accent)) 25%, transparent);
 }
 
 /* «последний открытый тайтл» — переливающаяся неоновая обводка. .card уже
@@ -598,7 +664,7 @@ body[data-theme="light"] #mangaContinueSection, body[data-theme="light"] #animeC
   top: 3px;
   right: -21px;
   transform: rotate(45deg);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   color: #241a05;
 }
@@ -652,32 +718,43 @@ body[data-theme="light"] #mangaContinueSection, body[data-theme="light"] #animeC
 
 /* ---------- иконки в пустых состояниях ---------- */
 
-.empty-hint[data-icon] { display: flex; align-items: center; gap: 10px; }
+.empty-hint[data-icon] { display: flex; align-items: center; gap: 14px; }
 .empty-hint[data-icon]::before {
   content: '';
-  width: 30px;
-  height: 30px;
+  width: 44px;
+  height: 44px;
   flex-shrink: 0;
   border-radius: 50%;
-  background-color: var(--surface-3);
-  background-repeat: no-repeat;
+  /* мягкое кольцо в цвет категории раздела (var(--dot) наследуется от
+     секции — см. выше) вместо плоского серого кружка; для нейтральных
+     разделов (манга/дефолт) --dot не переопределён — используем --accent
+     таким же образом, как и точки-печати у заголовков, для единообразия */
+  background:
+    radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--dot, var(--accent)) 22%, var(--surface-3)), var(--surface-3) 70%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dot, var(--accent)) 35%, transparent);
+  background-repeat: no-repeat, no-repeat;
   background-position: center;
-  background-size: 15px 15px;
+  background-size: 20px 20px;
 }
 .empty-hint[data-icon="book"]::before {
-  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M4 4h11l5 5v11a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z" fill="none" stroke="%235c6488" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 4v5h5" fill="none" stroke="%235c6488" stroke-width="1.8" stroke-linejoin="round"/></svg>');
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M4 4h11l5 5v11a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z" fill="none" stroke="%235c6488" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 4v5h5" fill="none" stroke="%235c6488" stroke-width="1.8" stroke-linejoin="round"/></svg>'),
+    radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--dot, var(--accent)) 22%, var(--surface-3)), var(--surface-3) 70%);
 }
 .empty-hint[data-icon="download"]::before {
-  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 19h14" fill="none" stroke="%235c6488" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 19h14" fill="none" stroke="%235c6488" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>'),
+    radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--dot, var(--accent)) 22%, var(--surface-3)), var(--surface-3) 70%);
 }
 .empty-hint[data-icon="people"]::before {
-  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><circle cx="8.5" cy="8.5" r="3.2" fill="none" stroke="%235c6488" stroke-width="1.8"/><path d="M2.5 19c1.1-3.6 3.9-4.9 6-4.9s4.9 1.3 6 4.9" fill="none" stroke="%235c6488" stroke-width="1.8" stroke-linecap="round"/><circle cx="17" cy="8" r="2.6" fill="none" stroke="%235c6488" stroke-width="1.8"/><path d="M15.6 14.3c1.9.4 3.6 1.8 4.4 4.7" fill="none" stroke="%235c6488" stroke-width="1.8" stroke-linecap="round"/></svg>');
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><circle cx="8.5" cy="8.5" r="3.2" fill="none" stroke="%235c6488" stroke-width="1.8"/><path d="M2.5 19c1.1-3.6 3.9-4.9 6-4.9s4.9 1.3 6 4.9" fill="none" stroke="%235c6488" stroke-width="1.8" stroke-linecap="round"/><circle cx="17" cy="8" r="2.6" fill="none" stroke="%235c6488" stroke-width="1.8"/><path d="M15.6 14.3c1.9.4 3.6 1.8 4.4 4.7" fill="none" stroke="%235c6488" stroke-width="1.8" stroke-linecap="round"/></svg>'),
+    radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--dot, var(--accent)) 22%, var(--surface-3)), var(--surface-3) 70%);
 }
 .empty-hint[data-icon="chat"]::before {
-  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" fill="none" stroke="%235c6488" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" fill="none" stroke="%235c6488" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'),
+    radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--dot, var(--accent)) 22%, var(--surface-3)), var(--surface-3) 70%);
 }
 .empty-hint[data-icon="globe"]::before {
-  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><circle cx="12" cy="12" r="9" fill="none" stroke="%235c6488" stroke-width="1.6"/><path d="M3 12h18M12 3c2.8 2.6 4.2 6 4.2 9s-1.4 6.4-4.2 9c-2.8-2.6-4.2-6-4.2-9s1.4-6.4 4.2-9z" fill="none" stroke="%235c6488" stroke-width="1.4"/></svg>');
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><circle cx="12" cy="12" r="9" fill="none" stroke="%235c6488" stroke-width="1.6"/><path d="M3 12h18M12 3c2.8 2.6 4.2 6 4.2 9s-1.4 6.4-4.2 9c-2.8-2.6-4.2-6-4.2-9s1.4-6.4 4.2-9z" fill="none" stroke="%235c6488" stroke-width="1.4"/></svg>'),
+    radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--dot, var(--accent)) 22%, var(--surface-3)), var(--surface-3) 70%);
 }
 
 /* ---------- раздел "Аниме": плитки сайтов ---------- */
@@ -838,7 +915,41 @@ webview#siteWebview { flex: 1; width: 100%; }
   display: flex;
   flex-direction: column;
   gap: 10px;
+  position: relative;
+  isolation: isolate; /* свой стекинг-контекст — чтобы z-index:-1 у ::before ниже держался под обычным контентом модалки, а не путался с чем-то снаружи */
 }
+
+/* градиентная подсветка верхней кромки модалки в цвет категории контента —
+   тот же визуальный язык, что и у точек-печатей заголовков и hover-рамки
+   карточек (var(--dot)). Мягкая, гаснет в прозрачность, поэтому не обрезаем
+   через overflow:hidden — modal--wide сам скроллится (overflow-y: auto),
+   не хотим с этим конфликтовать. z-index:-1 держит её под обычным
+   контентом модалки (заголовком, кнопкой закрытия и т.д.), не трогая их
+   собственные стили */
+.modal::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 12px;
+  right: 12px;
+  height: 90px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: radial-gradient(ellipse at 50% -30%, color-mix(in srgb, var(--dot, var(--accent)) 30%, transparent), transparent 70%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* модалки аниме — голубые */
+#animeTitleModal, #animeFiltersModal, #watchPartyInviteModal {
+  --dot: #4fc3f7;
+}
+/* социальные модалки (друзья/группы/шеринг) — фиолетовые */
+#addFriendModal, #requestsModal, #friendsQuickModal, #friendActionModal,
+#friendProfileModal, #shareModal, #createGroupModal, #groupInfoModal, #groupAddMemberModal {
+  --dot: #b98aff;
+}
+/* премиум — золотой */
+#premiumModal { --dot: var(--gold); }
 
 .modal h3 {
   font-family: var(--font-display);
@@ -1541,7 +1652,7 @@ webview#siteWebview { flex: 1; width: 100%; }
   gap: 8px;
 }
 .anime-party-chat-msg {
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 1.35;
   color: #eef0ff;
   background: rgba(255, 255, 255, 0.08);
@@ -1574,7 +1685,7 @@ webview#siteWebview { flex: 1; width: 100%; }
   border-radius: 999px;
   padding: 7px 12px;
   color: #eef0ff;
-  font-size: 12.5px;
+  font-size: 12px;
 }
 .anime-party-chat-form input:focus { outline: none; border-color: var(--accent); }
 .anime-party-chat-form input::placeholder { color: rgba(238, 240, 255, 0.5); }
@@ -2078,7 +2189,7 @@ body[data-theme="dark"] .premium-status-pill.is-active {
 }
 .premium-perk-icon { font-size: 26px; display: block; margin-bottom: 8px; }
 .premium-perk-card h3 { margin: 0 0 6px; font-size: 14px; }
-.premium-perk-card p { margin: 0; font-size: 12.5px; color: var(--text-muted); line-height: 1.4; }
+.premium-perk-card p { margin: 0; font-size: 12px; color: var(--text-muted); line-height: 1.4; }
 
 .friend-profile-banner {
   height: 84px;
@@ -2630,8 +2741,8 @@ body[data-theme="dark"] .premium-status-pill.is-active {
 .chat-sticker-attach span { flex: 1; }
 
 .share-title-row { display: flex; align-items: center; gap: 12px; padding: 10px 4px; }
-.share-title-row .card-cover { width: 40px; height: 56px; border-radius: 5px; object-fit: cover; flex-shrink: 0; }
-.share-title-row .card-cover--video { width: 64px; height: 36px; border-radius: 5px; }
+.share-title-row .card-cover { width: 40px; height: 56px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
+.share-title-row .card-cover--video { width: 64px; height: 36px; border-radius: 4px; }
 .share-title-row-info { flex: 1; min-width: 0; }
 .share-title-row-info .chapter-row-label { display: block; }
 .share-title-row-actions { display: flex; gap: 6px; flex-shrink: 0; }
@@ -2742,7 +2853,7 @@ body[data-theme="dark"] .premium-status-pill.is-active {
 .modal-field input {
   width: 100%;
   box-sizing: border-box;
-  font-size: 14.5px;
+  font-size: 14px;
   padding: 11px 14px;
 }
 .modal-field input:focus { outline: none; border-color: var(--accent); }
@@ -3118,7 +3229,7 @@ body[data-theme="dark"] .premium-status-pill.is-active {
 }
 .news-card-body { padding: 10px 12px 12px; }
 .news-card-title {
-  font-size: 13.5px;
+  font-size: 13px;
   line-height: 1.35;
   margin: 0 0 6px;
   display: -webkit-box;
@@ -3127,7 +3238,7 @@ body[data-theme="dark"] .premium-status-pill.is-active {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.news-card-meta { font-size: 11.5px; color: var(--text-muted); margin: 0; }
+.news-card-meta { font-size: 11px; color: var(--text-muted); margin: 0; }
 
 /* ---- модалка "источники категории" ---- */
 .news-sources-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; max-height: 240px; overflow-y: auto; }
@@ -3139,7 +3250,7 @@ body[data-theme="dark"] .premium-status-pill.is-active {
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: 12px;
 }
 .news-source-type { flex-shrink: 0; color: var(--text-muted); font-size: 11px; }
 .news-source-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3156,7 +3267,7 @@ body[data-theme="dark"] .premium-status-pill.is-active {
   border-radius: 8px;
   color: var(--text);
   padding: 0 8px;
-  font-size: 12.5px;
+  font-size: 12px;
 }
 .news-source-form input {
   flex: 1;
@@ -3165,7 +3276,7 @@ body[data-theme="dark"] .premium-status-pill.is-active {
   border-radius: 8px;
   padding: 8px 10px;
   color: var(--text);
-  font-size: 12.5px;
+  font-size: 12px;
 }
 .news-source-form input:focus { outline: none; border-color: var(--accent); }
 
@@ -3211,7 +3322,7 @@ body[data-theme="dark"] .premium-status-pill.is-active {
   margin-bottom: 14px;
 }
 .news-detail-title { font-size: 19px; margin: 0 0 6px; line-height: 1.3; }
-.news-detail-meta { font-size: 12.5px; color: var(--text-muted); margin: 0 0 4px; }
+.news-detail-meta { font-size: 12px; color: var(--text-muted); margin: 0 0 4px; }
 .news-detail-toggle-btn { margin: 8px 0; }
 .news-detail-desc {
   font-size: 14px;
