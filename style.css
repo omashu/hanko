@@ -38,6 +38,15 @@
   --radius-xl: 12px;
 }
 
+/* Видимость фокуса при навигации клавиатурой (Tab) — раньше нигде в
+   приложении не было ни одного :focus-visible, только у текстовых полей
+   ввода был намёк на фокус через смену цвета рамки. У кнопок, вкладок,
+   карточек и ссылок фокус вообще никак не подсвечивался. */
+:focus-visible {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 2px;
+}
+
 /* ---------- ночная тема — то же стекло, но тёмное, под вечерний фон ---------- */
 body[data-theme="dark"] {
   --surface: rgba(24, 22, 40, 0.58);
@@ -368,6 +377,17 @@ body[data-theme="dark"] .theme-toggle-btn .icon-sun { display: block; }
   box-shadow: 0 12px 32px rgba(70, 50, 100, 0.12);
 }
 
+/* переключение разделов (Манга/Аниме/Друзья и т.д.) раньше было мгновенным
+   рывком — hidden просто снимался/ставился без всякого перехода */
+.view:not([hidden]) { animation: view-fade-in .22s ease; }
+@keyframes view-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .view:not([hidden]) { animation: none; }
+}
+
 .view-header {
   display: flex;
   justify-content: space-between;
@@ -613,11 +633,16 @@ body[data-theme="light"] #mangaContinueSection, body[data-theme="light"] #animeC
 
 .card-rating {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   font-size: 11px;
   font-weight: 700;
   color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 14%, transparent);
+  border-radius: 999px;
+  padding: 2px 7px;
   white-space: nowrap;
-  margin-top: 1px;
 }
 
 .card-progress-track {
@@ -3002,13 +3027,35 @@ body[data-theme="dark"] .premium-status-pill.is-active {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 6px;
   color: var(--text-muted);
   font-size: 13px;
   text-align: center;
   padding: 20px;
 }
-.chat-pane-placeholder svg { opacity: .5; }
+.chat-pane-placeholder-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 10px;
+  background: linear-gradient(160deg, rgba(255, 138, 122, .2), rgba(201, 138, 58, .12));
+  color: var(--accent-bright);
+}
+.chat-pane-placeholder-title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  color: var(--text);
+  margin: 0;
+}
+.chat-pane-placeholder-sub {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+  max-width: 260px;
+}
 
 .chat-pane-active { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 
@@ -3210,7 +3257,11 @@ body[data-theme="dark"] .premium-status-pill.is-active {
   display: flex;
   flex-direction: column;
 }
-.news-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.news-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-3px);
+  box-shadow: 0 12px 28px rgba(70, 50, 100, 0.16), 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
+}
 .news-card-thumb {
   position: relative;
   aspect-ratio: 16 / 9;

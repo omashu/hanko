@@ -3197,6 +3197,7 @@ function friendlyOnlineError(err) {
     username_not_found: 'Такой ник не найден.',
     invalid_username: 'Ник: 3–20 символов, только латиница/цифры/"_".',
     username_taken: 'Этот ник уже занят — придумай другой.',
+    profile_not_found: 'Профиль ещё не готов — подожди пару секунд и попробуй снова.',
     cannot_add_self: 'Нельзя отправить заявку самому себе.',
     already_friends: 'Вы уже друзья.',
     already_pending: 'Заявка уже отправлена и ждёт ответа.',

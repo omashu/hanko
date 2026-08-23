@@ -402,6 +402,15 @@ begin
   end if;
   begin
     update public.profiles set username = v_clean where id = auth.uid();
+    -- раньше тут ничего не проверялось: если UPDATE не находил строку с
+    -- id = auth.uid() (профиль почему-то ещё не создан/не синхронизирован
+    -- к этому моменту), запрос просто ничего не менял, но функция всё
+    -- равно завершалась успешно — на клиенте это выглядело как "ник
+    -- сохранился", хотя в базе он оставался пустым, и никто не мог найти
+    -- такого пользователя. Теперь при 0 задетых строк — явная ошибка
+    if not found then
+      raise exception 'profile_not_found';
+    end if;
   exception when unique_violation then
     raise exception 'username_taken';
   end;
