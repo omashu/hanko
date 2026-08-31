@@ -10,6 +10,23 @@ const { app, BrowserWindow, ipcMain, shell, dialog, Menu, Tray, session } = requ
 // Флаг нужно ставить ДО app.whenReady() — после команда не подействует.
 app.commandLine.appendSwitch('enable-unsafe-webgpu');
 const path = require('node:path');
+// На некоторых видеокартах/драйверах (обычно старых или специфичных встроенных)
+// аппаратное ускорение Chromium даёт визуальные артефакты — мелькающие чёрные
+// полосы/пятна при композитинге слоёв (открытие полупрозрачных модалок,
+// обновление видео). Это не наш баг, а несовместимость на уровне драйвера,
+// но у нас должна быть возможность выключить ускорение конкретно у того, у
+// кого это происходит — не трогая остальных. Как и enable-unsafe-webgpu выше,
+// это тоже обязано быть решено ДО app.whenReady(), поэтому читаем settings.json
+// синхронно (обычный async loadSettings() тут использовать нельзя — до
+// app.whenReady() ещё никакого асинхронного цикла обработки событий по сути
+// не запущено, а settings.json к этому моменту уже вполне может существовать)
+try {
+  const fsSync = require('node:fs');
+  const raw = fsSync.readFileSync(path.join(app.getPath('userData'), 'settings.json'), 'utf-8');
+  if (JSON.parse(raw).hardwareAcceleration === false) app.disableHardwareAcceleration();
+} catch {
+  // файла ещё нет (первый запуск) или не читается — ускорение остаётся включённым, это дефолт
+}
 const fs = require('node:fs/promises');
 const http = require('node:http');
 const { autoUpdater } = require('electron-updater');
@@ -662,6 +679,10 @@ app.on('web-contents-created', (_event, contents) => {
 
 ipcMain.handle('settings:load', () => loadSettings());
 ipcMain.handle('settings:save', (_e, partial) => saveSettings(partial || {}));
+ipcMain.handle('app:relaunch', () => {
+  app.relaunch();
+  app.exit(0);
+});
 
 ipcMain.handle('library:load', () => loadLibrary());
 
@@ -1939,10 +1960,15 @@ function parseMbChapters(html, slug) {
   const items = Array.from(seen.values()).map(({ vol, chapter }) => ({
     id: `${MANGABUFF_PREFIX}${slug}:${vol}:${chapter}`,
     chapter,
-    title: null,
+    // как и у Usagi — на некоторых тайтлах номер главы завязан на конкретный
+    // том и с новым томом начинается заново с 1; без пометки тома это
+    // выглядело бы как повторяющиеся друг за другом "Глава 1"
+    title: Number(vol) > 1 ? `Том ${vol}` : null,
     lang: 'ru',
+    vol: Number(vol),
   }));
-  return remangaSortChaptersAsc(items); // сортировка чисто числовая, функция общая
+  items.sort((a, b) => (a.vol - b.vol) || (parseFloat(a.chapter) - parseFloat(b.chapter)));
+  return items;
 }
 
 async function mbChapters(slug) {
@@ -2078,17 +2104,26 @@ function parseUgChapters(html) {
   const items = [];
   let m;
   while ((m = rowRe.exec(html))) {
-    const [, , , num, block] = m;
+    const [, , vol, num, block] = m;
     const linkMatch = block.match(/<a href="([^"]+)"[^>]*class="chapter-link/);
     if (!linkMatch) continue;
     items.push({
       id: `${USAGI_PREFIX}${linkMatch[1]}`, // linkMatch[1] уже вида "/slug/volN/глава"
       chapter: String(Number(num) / 10),
-      title: null,
+      // на некоторых тайтлах номер главы начинается заново с 1 в каждом новом
+      // томе — без этой пометки несколько РАЗНЫХ глав подряд показывались бы
+      // одинаково подписанными "Глава 1" (баг: "везде написано глава 1,
+      // дублируются"). Помечаем том, только если их вообще больше одного.
+      title: Number(vol) > 1 ? `Том ${vol}` : null,
       lang: 'ru',
+      vol: Number(vol),
     });
   }
-  return remangaSortChaptersAsc(items); // сортировка чисто числовая, функция общая
+  // сортировка сначала по тому, потом по номеру главы внутри него — при чисто
+  // числовой сортировке (как раньше) главы из разных томов с одинаковыми
+  // номерами перемешивались бы между собой в случайном порядке
+  items.sort((a, b) => (a.vol - b.vol) || (parseFloat(a.chapter) - parseFloat(b.chapter)));
+  return items;
 }
 
 async function ugChapters(slug) {
@@ -2524,6 +2559,24 @@ ipcMain.handle('mangadex:search', async (_e, payload) => {
     } catch (err) {
       console.error('Usagi поиск не удался:', err?.message || err);
     }
+
+    // один и тот же тайтл нередко находится сразу на нескольких источниках —
+    // без дедупликации он показывался бы отдельной карточкой на каждый
+    // источник (с разными обложками), выглядя как несколько разных тайтлов.
+    // Оставляем одну карточку на тайтл: MangaDex идёт в items первым, так что
+    // при совпадении именно его карточка и остаётся (у него самое полное
+    // описание/жанры) — остальные совпадения по названию просто пропускаем.
+    const seenTitles = new Map();
+    const deduped = [];
+    for (const it of items) {
+      const norm = normalizeTitleForMatch(it.title);
+      if (norm && seenTitles.has(norm)) continue;
+      if (norm) seenTitles.set(norm, true);
+      deduped.push(it);
+    }
+    items.length = 0;
+    items.push(...deduped);
+    total = items.length;
   }
 
   // data.total — сколько всего тайтлов подходит под фильтр (не только на этой странице),
@@ -2700,14 +2753,34 @@ function normalizeTitleForMatch(s) {
 function pickBestTitleMatch(target, candidates, getTitle) {
   const targetNorm = normalizeTitleForMatch(target);
   if (!targetNorm) return null;
+  const targetWords = targetNorm.split(' ').filter(Boolean);
+  if (!targetWords.length) return null;
   let best = null;
   let bestScore = 0;
   for (const c of candidates) {
     const t = normalizeTitleForMatch(getTitle(c));
     if (!t) continue;
     let score = 0;
-    if (t === targetNorm) score = 2;
-    else if (t.includes(targetNorm) || targetNorm.includes(t)) score = 1;
+    if (t === targetNorm) {
+      score = 3;
+    } else {
+      // раньше тут было t.includes(targetNorm) || targetNorm.includes(t) —
+      // совпадение по ЛЮБОЙ подстроке, даже посреди слова. Это ловило
+      // совершенно не связанные тайтлы, у которых просто случайно совпадал
+      // кусок текста (отсюда баги: "находит какую-то книгу" и "внутри
+      // главы вообще другой манхвы"). Теперь считаем совпадение по целым
+      // словам — все слова искомого названия должны найтись целиком в
+      // кандидате, и это должно быть существенной долей обоих названий
+      // (иначе одно случайно общее слово в длинном чужом названии тоже
+      // засчиталось бы как "совпадение").
+      const words = t.split(' ').filter(Boolean);
+      const wordSet = new Set(words);
+      const matchedCount = targetWords.filter((w) => wordSet.has(w)).length;
+      const overlapRatio = matchedCount / Math.max(targetWords.length, words.length);
+      if (matchedCount === targetWords.length && overlapRatio >= 0.6) {
+        score = 1 + overlapRatio;
+      }
+    }
     if (score > bestScore) { bestScore = score; best = c; }
   }
   return best;

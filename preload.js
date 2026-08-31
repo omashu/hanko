@@ -6,6 +6,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('hanko', {
   loadSettings: () => ipcRenderer.invoke('settings:load'),
   saveSettings: (partial) => ipcRenderer.invoke('settings:save', partial),
+  relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
 
   loadLibrary: () => ipcRenderer.invoke('library:load'),
   upsertLibraryItem: (item) => ipcRenderer.invoke('library:upsert', item),

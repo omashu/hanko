@@ -98,6 +98,7 @@ const els = {
   loginPassword: document.getElementById('loginPassword'),
   authFeedback: document.getElementById('authFeedback'),
   logoutBtn: document.getElementById('logoutBtn'),
+  hwAccelCheckbox: document.getElementById('hwAccelCheckbox'),
 
   onlineStatusHint: document.getElementById('onlineStatusHint'),
   onlineRetryBtn: document.getElementById('onlineRetryBtn'),
@@ -4480,6 +4481,19 @@ document.addEventListener('fullscreenchange', () => {
 
 // ---------------- старт ----------------
 
+els.hwAccelCheckbox.addEventListener('change', async () => {
+  const disabled = els.hwAccelCheckbox.checked;
+  await window.hanko.saveSettings({ hardwareAcceleration: disabled ? false : true });
+  // флаг реально применяется только на старте процесса (см. main.js) —
+  // поэтому без перезапуска сохранённая настройка просто ляжет в файл и
+  // подхватится в следующий раз, но глюки прямо сейчас никуда не денутся
+  const ok = await showAppConfirm(
+    'Изменение применится только после перезапуска приложения. Перезапустить сейчас?',
+    { title: 'Нужен перезапуск', okText: 'Перезапустить', cancelText: 'Позже', danger: false }
+  );
+  if (ok) window.hanko.relaunchApp();
+});
+
 async function init() {
   const [settings, lib, downloadsList, historyList, animeLibList, animeHistList, stickersResult] = await Promise.all([
     window.hanko.loadSettings(),
@@ -4498,6 +4512,7 @@ async function init() {
   animeHistory = animeHistList;
   stickerCategories = stickersResult.categories || [];
   applyTheme(settings.theme);
+  els.hwAccelCheckbox.checked = settings.hardwareAcceleration === false;
   renderLibrary();
   renderAnimeLibrary();
   renderDownloads();
