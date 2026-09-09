@@ -6,7 +6,6 @@ const els = {
   navManga: document.getElementById('navManga'),
   navAnime: document.getElementById('navAnime'),
   navProfile: document.getElementById('navProfile'),
-  navSettings: document.getElementById('navSettings'),
   navFriends: document.getElementById('navFriends'),
   navNews: document.getElementById('navNews'),
   friendsNavBadge: document.getElementById('friendsNavBadge'),
@@ -15,7 +14,6 @@ const els = {
   viewManga: document.getElementById('viewManga'),
   viewAnime: document.getElementById('viewAnime'),
   viewProfile: document.getElementById('viewProfile'),
-  viewSettings: document.getElementById('viewSettings'),
   viewFriends: document.getElementById('viewFriends'),
   viewNews: document.getElementById('viewNews'),
 
@@ -529,21 +527,18 @@ function showView(name) {
   const isProfile = name === 'profile';
   const isFriends = name === 'friends';
   const isNews = name === 'news';
-  const isSettings = name === 'settings';
   els.viewHome.hidden = !isHome;
   els.viewManga.hidden = !isManga;
   els.viewAnime.hidden = !isAnime;
   els.viewProfile.hidden = !isProfile;
   els.viewFriends.hidden = !isFriends;
   els.viewNews.hidden = !isNews;
-  els.viewSettings.hidden = !isSettings;
   els.navHome.classList.toggle('is-active', isHome);
   els.navManga.classList.toggle('is-active', isManga);
   els.navAnime.classList.toggle('is-active', isAnime);
   els.navProfile.classList.toggle('is-active', isProfile);
   els.navFriends.classList.toggle('is-active', isFriends);
   els.navNews.classList.toggle('is-active', isNews);
-  els.navSettings.classList.toggle('is-active', isSettings);
   window.hanko.saveSettings({ lastTab: name });
   if (isHome) { renderHomeContinue(); renderHomeWatchContinue(); loadHomeContent(); }
   if (isManga) { renderMangaContinue(); loadMangaPopular(); }
@@ -571,7 +566,6 @@ els.navAnime.addEventListener('click', () => showView('anime'));
 els.navProfile.addEventListener('click', () => showView('profile'));
 els.navFriends.addEventListener('click', () => showView('friends'));
 els.navNews.addEventListener('click', () => showView('news'));
-els.navSettings.addEventListener('click', () => showView('settings'));
 
 let lastNonPremiumTheme = 'dark';
 
@@ -677,20 +671,18 @@ async function loadHomeContent() {
   renderSkeletons(els.homeAnimeGrid);
 
   try {
-    const items = await window.hanko.remangaYearPopular();
+    const { items } = await window.hanko.jikanTopManga();
     els.homeMangaHint.hidden = items.length > 0;
     els.homeMangaHint.textContent = 'Пусто.';
     els.homeMangaGrid.innerHTML = '';
-    for (const item of items) {
-      els.homeMangaGrid.appendChild(mangaCard(item, { inLibrary: library.some((l) => l.id === item.id) }));
-    }
+    for (const item of items) els.homeMangaGrid.appendChild(jikanMangaCard(item));
   } catch (err) {
     els.homeMangaHint.hidden = false;
     els.homeMangaHint.textContent = `Не удалось загрузить: ${err.message}`;
   }
 
   try {
-    const items = await window.hanko.remangaLatest();
+    const items = await window.hanko.mangadexLatest();
     els.homeMangaLatestHint.hidden = items.length > 0;
     els.homeMangaLatestHint.textContent = 'Пусто.';
     els.homeMangaLatestGrid.innerHTML = '';
@@ -725,22 +717,20 @@ async function loadMangaPopular() {
   renderSkeletons(els.mangaPopularGrid);
   renderSkeletons(els.mangaLatestGrid);
   try {
-    // Раньше тут был Jikan (MyAnimeList) — редакционный топ вместо сырого
-    // MangaDex followedCount. Теперь и «Популярное», и «Новинки» — с ReManga,
-    // тот же принцип единого источника, что и у остального раздела Манга.
-    const items = await window.hanko.remangaYearPopular();
+    // MangaDex followedCount — это "что сейчас чаще фолловят", а фолловят там
+    // в основном свежезалитое, включая много низкосортного. Реальный топ берём
+    // с Jikan (MyAnimeList) — это редакционный рейтинг, а не сырой поток заливок.
+    const { items } = await window.hanko.jikanTopManga();
     els.mangaPopularHint.hidden = items.length > 0;
     els.mangaPopularHint.textContent = 'Пусто.';
     els.mangaPopularGrid.innerHTML = '';
-    for (const item of items) {
-      els.mangaPopularGrid.appendChild(mangaCard(item, { inLibrary: library.some((l) => l.id === item.id) }));
-    }
+    for (const item of items) els.mangaPopularGrid.appendChild(jikanMangaCard(item));
   } catch (err) {
     els.mangaPopularHint.hidden = false;
     els.mangaPopularHint.textContent = `Не удалось загрузить: ${err.message}`;
   }
   try {
-    const items = await window.hanko.remangaLatest();
+    const items = await window.hanko.mangadexLatest();
     els.mangaLatestHint.hidden = items.length > 0;
     els.mangaLatestHint.textContent = 'Пусто.';
     els.mangaLatestGrid.innerHTML = '';
@@ -835,25 +825,10 @@ const MANGA_STATUS_RU = {
 // показываем описание/рейтинг, если человек задержался мышью, не заходя внутрь
 let cardPreviewTimer = null;
 function attachCardPreview(card, item, metaText) {
-  if (!item) return;
-  // у ReManga описание в списке всегда пустое (сам каталог его не отдаёт,
-  // см. mapRemangaNewTitle) — в отличие от клика по карточке (openTitleModal),
-  // тут его никто заранее не подтягивал, поэтому тултип молча не вешался.
-  // Теперь при наведении лениво добираем его тем же remanga:details.
-  const canLazyLoad = !item.description && typeof item.id === 'string' && item.id.startsWith('rm:');
-  if (!item.description && !canLazyLoad) return; // нечего показать и взять неоткуда
+  if (!item || !item.description) return; // нечего показать — не вешаем пустой тултип
   card.addEventListener('mouseenter', () => {
     clearTimeout(cardPreviewTimer);
-    cardPreviewTimer = setTimeout(async () => {
-      if (!item.description && canLazyLoad) {
-        try {
-          const details = await window.hanko.remangaDetails(item.id);
-          if (details?.description) item.description = details.description;
-        } catch { /* тихо остаёмся без описания, если ReManga недоступна */ }
-      }
-      if (!item.description) return; // так и не получилось — тултип не показываем
-      showCardPreview(card, item, metaText);
-    }, 550);
+    cardPreviewTimer = setTimeout(() => showCardPreview(card, item, metaText), 550);
   });
   card.addEventListener('mouseleave', () => {
     clearTimeout(cardPreviewTimer);
@@ -2076,7 +2051,7 @@ window.hanko.onDownloadProgress(async ({ mangaId, chapterId, done, total, finish
 
 function animeLibraryCard(item, { showRemove = true } = {}) {
   const card = document.createElement('div');
-  card.className = 'card card--anime';
+  card.className = 'card';
   // та же логика, что и в mangaCard, но по animeHistory (releaseId вместо mangaId)
   if (animeHistory[0] && animeHistory[0].releaseId === item.id) {
     card.classList.add('card--glow');
@@ -4704,8 +4679,6 @@ async function updateStreak(settings) {
 }
 function renderStreak() {
   els.profileStreak.hidden = currentStreak <= 1;
-  const tier = currentStreak >= 100 ? 'legend' : currentStreak >= 30 ? 'aurora' : currentStreak >= 7 ? 'gold' : 'ember';
-  els.profileStreak.dataset.tier = tier;
   els.profileStreak.textContent = `🔥 ${currentStreak} ${streakWord(currentStreak)} подряд`;
 }
 
@@ -5184,13 +5157,15 @@ els.animeFiltersResetBtn.addEventListener('click', () => {
 // озвучек был пустым, а дальнейшие его собственные приглашения улетали с
 // "Серия undefined" (ep.number было undefined у сырых данных)
 async function fetchUnifiedAnimeEpisodes(item) {
-  const [aniResult, aoResult] = await Promise.allSettled([
+  const [aniResult, aoResult, alResult] = await Promise.allSettled([
     window.hanko.anilibriaEpisodes(item.id),
     window.hanko.animeonFindForTitle(item.title),
+    window.hanko.animelibFindForTitle(item.title),
   ]);
   const aniEpisodes = aniResult.status === 'fulfilled' ? aniResult.value : [];
   const aoTranslations = (aoResult.status === 'fulfilled' && aoResult.value) ? aoResult.value.translations : [];
-  return buildUnifiedAnimeEpisodes(aniEpisodes, aoTranslations);
+  const alTranslations = (alResult.status === 'fulfilled' && alResult.value) ? alResult.value.translations : [];
+  return buildUnifiedAnimeEpisodes(aniEpisodes, aoTranslations, alTranslations);
 }
 
 async function openAnimeTitleModal(item) {
@@ -5362,7 +5337,7 @@ async function openAnimeTitleModal(item) {
 // источников озвучки, и не у каждой серии их поровну (например у 9-й серии
 // озвучек может быть меньше, чем у более ранних, если не все студии её ещё
 // перевели) — это нормально, просто показываем сколько есть по факту
-function buildUnifiedAnimeEpisodes(aniEpisodes, aoTranslations) {
+function buildUnifiedAnimeEpisodes(aniEpisodes, aoTranslations, alTranslations = []) {
   const byNumber = new Map();
   const get = (num) => {
     if (!byNumber.has(num)) byNumber.set(num, { number: num, sources: [] });
@@ -5381,6 +5356,14 @@ function buildUnifiedAnimeEpisodes(aniEpisodes, aoTranslations) {
           return result ? result.qualities : [];
         },
       });
+    }
+  }
+  // AnimeLib отдаёт сразу готовые mp4-ссылки на все качества при поиске
+  // тайтла (см. main.js: alFindForTitle) — resolveFn тут не нужен, качества
+  // уже под рукой, в отличие от AnimeOn (там Kodik-ссылки протухают быстро)
+  for (const t of alTranslations) {
+    for (const ep of t.episodes) {
+      get(String(ep.number)).sources.push({ name: `${t.studio} (AnimeLib)`, qualities: ep.qualities });
     }
   }
   return [...byNumber.values()].sort((a, b) => parseFloat(a.number) - parseFloat(b.number));

@@ -137,6 +137,17 @@ const USAGI_SITE = 'https://web.usagi.one';
 // id тайтла вида ug:<slug>, id главы — ug:<href нацело, начиная с "/">
 const USAGI_PREFIX = 'ug:';
 
+// AnimeLib — третий источник аниме (после AniLibria и AnimeOn). Открытый
+// JSON API (не сам animelib.org — бэкенд на отдельном домене), картинки/
+// видео на своих CDN. Видео честно 1080p (у части тайтлов и 2160p!), в
+// отличие от AnimeOn, где почти везде потолок 720p. См. hanko-animelib-handoff.md.
+const ANIMELIB_SITE = 'https://animelib.org';
+const ANIMELIB_API = 'https://hapi.hentaicdn.org/api';
+// подтверждено вручную через devtools реальным 200/206-запросом — из трёх
+// заявленных видео-серверов (video1.cdnlibs.org "Основной", video2.cdnlibs.org
+// "Резервный 1", video1.imglib.info "Резервный 2") именно video2 отдал видео
+const ANIMELIB_VIDEO_BASE = 'https://video2.cdnlibs.org';
+
 let mainWindow = null;
 
 // ---------- диск: настройки / библиотека / сайты ----------
@@ -297,6 +308,12 @@ function setupRequestHeaders() {
       // (p7/p11/p15/a12 уже встретились) — сразу без wildcard-номеров, раз тут
       // шардируется не по цифре в самом домене, а по случайному префиксу поддомена
       '*://*.rmr.rocks/*',
+      // AnimeLib: hentaicdn.org — их API/постеры, cdnlibs.org — видео (несколько
+      // серверов video1/video2), imglib.info — ещё одно резервное видео-зеркало.
+      // CORS у видео открытый (Access-Control-Allow-Origin: *, подтверждено
+      // вручную через devtools), так что Referer тут, скорее всего, и не
+      // обязателен — но добавляем на всякий случай, тот же урок, что и с reimg.org.
+      '*://*.hentaicdn.org/*', '*://*.cdnlibs.org/*', '*://*.imglib.info/*',
     ],
   };
   session.defaultSession.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
@@ -313,6 +330,9 @@ function setupRequestHeaders() {
     } else if (url.includes('rmr.rocks')) {
       details.requestHeaders['Referer'] = `${USAGI_SITE}/`;
       details.requestHeaders['Origin'] = USAGI_SITE;
+    } else if (url.includes('hentaicdn.org') || url.includes('cdnlibs.org') || url.includes('imglib.info')) {
+      details.requestHeaders['Referer'] = `${ANIMELIB_SITE}/`;
+      details.requestHeaders['Origin'] = ANIMELIB_SITE;
     } else {
       details.requestHeaders['Referer'] = 'https://mangadex.org/';
     }
@@ -2488,6 +2508,86 @@ ipcMain.handle('animeon:resolve', async (_e, link) => {
   }
 });
 
+// ---------- AnimeLib (hapi.hentaicdn.org) — третий источник аниме ----------
+
+async function alFetch(path, attempt = 1) {
+  try {
+    const res = await fetch(`${ANIMELIB_API}${path}`, {
+      signal: AbortSignal.timeout(15000),
+      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT, Referer: `${ANIMELIB_SITE}/` },
+    });
+    if (!res.ok) throw new Error(`AnimeLib вернул HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    if (attempt < 2) return alFetch(path, attempt + 1);
+    throw new Error(`AnimeLib не отвечает (${err.message})`);
+  }
+}
+
+function alVideoUrl(href) {
+  if (!href) return null;
+  if (href.startsWith('http')) return href;
+  return `${ANIMELIB_VIDEO_BASE}${href.startsWith('/') ? href : `/${href}`}`;
+}
+
+// в отличие от AnimeOn (там качества резолвятся лениво по клику, отдельным
+// запросом на конкретную ссылку), тут прямых mp4-ссылок на все качества сразу
+// добываем один раз при поиске тайтла — резолвить отдельно нечего, ссылки уже
+// абсолютные и не протухают быстро (в отличие от Kodik-ссылок у AnimeOn)
+async function alFindForTitle(title) {
+  const search = await alFetch(`/anime?q=${encodeURIComponent(title)}&fields[]=rate_avg`);
+  const candidates = search.data || [];
+  const match = pickBestTitleMatch(title, candidates, (m) => m.rus_name || m.name);
+  if (!match) return null;
+
+  const episodesList = await alFetch(`/episodes?anime_id=${encodeURIComponent(match.slug_url)}`);
+  const episodes = episodesList.data || [];
+  if (!episodes.length) return null;
+
+  // за деталями (плеер/озвучка/качества) каждой серии — отдельный запрос,
+  // список серий их не содержит; гоняем параллельно, а не по очереди
+  const details = await Promise.all(
+    episodes.map((ep) => alFetch(`/episodes/${ep.id}`).then((d) => d.data).catch(() => null)),
+  );
+
+  const byStudio = new Map();
+  episodes.forEach((ep, i) => {
+    const detail = details[i];
+    if (!detail) return;
+    // "Animelib" — их собственный плеер с готовыми mp4 (то, что нам и нужно);
+    // остальные значения player (обычно "Kodik") пропускаем — та же история,
+    // что была с AnimeOn: сторонний плеер без честного прямого файла не наш случай
+    const players = (detail.players || []).filter((p) => p.player === 'Animelib' && p.video?.quality?.length);
+    for (const p of players) {
+      const studio = p.team?.name || 'Без указания озвучки';
+      if (!byStudio.has(studio)) byStudio.set(studio, []);
+      byStudio.get(studio).push({
+        number: String(ep.number),
+        qualities: p.video.quality
+          .slice()
+          .sort((a, b) => (b.quality || 0) - (a.quality || 0))
+          .map((q) => ({ label: `${q.quality}p`, url: alVideoUrl(q.href) })),
+      });
+    }
+  });
+
+  const translations = [...byStudio.entries()].map(([studio, eps]) => ({
+    studio,
+    episodes: eps.sort((a, b) => parseFloat(a.number) - parseFloat(b.number)),
+  }));
+  if (!translations.length) return null;
+  return { title: match.rus_name || match.name, translations };
+}
+
+ipcMain.handle('animelib:findForTitle', async (_e, title) => {
+  try {
+    return await alFindForTitle(title);
+  } catch (err) {
+    console.error('AnimeLib: не удалось найти тайтл', title, err?.message || err);
+    return null;
+  }
+});
+
 ipcMain.handle('mangadex:search', async (_e, payload) => {
   // обратная совместимость: раньше сюда передавали просто строку с названием
   const opts = typeof payload === 'string' ? { query: payload } : (payload || {});
@@ -2744,104 +2844,6 @@ ipcMain.handle('mangadex:latest', async () => {
   const data = await mdFetch(`${MANGADEX_API}/manga?${params.toString()}`);
   return await mapMangaList(data);
 });
-// ReManga новинки — парсим HTML-страницу top?period=new
-async function remangaLatest({ limit = 20 } = {}) {
-  const res = await fetch('https://remanga.org/manga/top?period=new', {
-    signal: AbortSignal.timeout(HEALTH_FETCH_TIMEOUT_MS),
-    headers: {
-      'User-Agent': USER_AGENT,
-      Referer: REMANGA_SITE,
-      Origin: REMANGA_SITE,
-      'Accept-Language': 'ru,en;q=0.8',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    },
-  });
-  if (!res.ok) throw new Error(`ReManga вернул HTTP ${res.status}`);
-  const html = await res.text();
-  const titles = parseRemangaNewTitles(html);
-  return titles.slice(0, limit);
-}
-
-function parseRemangaNewTitles(html) {
-  const results = [];
-  const blockRegex = /window\["__RQ_R_[a-z0-9]+_\"\] = window\["__RQ_R_[a-z0-9]+_\"\] \|\| \[\];window\["__RQ_R_[a-z0-9]+_\"\]\.push\((.*?)\);/gs;
-  let match;
-  
-  while ((match = blockRegex.exec(html)) !== null) {
-    const jsonStr = match[1];
-    try {
-      const data = JSON.parse(jsonStr);
-      const queries = data.queries || [];
-      for (const q of queries) {
-        const state = q.state || {};
-        const pageData = state.data || {};
-        const json = pageData.json || {};
-        const pages = json.pages || [];
-        for (const page of pages) {
-          if (page.titles && Array.isArray(page.titles)) {
-            for (const title of page.titles) {
-              results.push(mapRemangaNewTitle(title));
-            }
-          }
-        }
-      }
-    } catch (e) {
-      console.error('parseRemangaNewTitles: ошибка парсинга:', e.message);
-    }
-  }
-  
-  return results;
-}
-
-function mapRemangaNewTitle(raw) {
-  return {
-    id: `rm:${raw.dir}`,
-    title: raw.main_name || raw.secondary_name || '',
-    coverUrl: raw.cover?.high ? `https://remanga.org${raw.cover.high}` :
-              raw.cover?.mid ? `https://remanga.org${raw.cover.mid}` :
-              raw.cover?.low ? `https://remanga.org${raw.cover.low}` : null,
-    status: raw.status?.name || null,
-    rating: raw.avg_rating ? parseFloat(raw.avg_rating) : null,
-    description: '',
-  };
-}
-
-ipcMain.handle('remanga:latest', async () => {
-  try {
-    return await remangaLatest({ limit: 20 });
-  } catch (err) {
-    console.error('[remanga:latest] ошибка:', err.message);
-    throw err;
-  }
-});
-// ReManga — популярное за год (API v2 top)
-async function remangaYearPopular({ limit = 20 } = {}) {
-  const res = await fetch(`https://api.remanga.org/api/v2/titles/top/?count=${limit}&period=year&section=year`, {
-    signal: AbortSignal.timeout(HEALTH_FETCH_TIMEOUT_MS),
-    headers: {
-      'User-Agent': USER_AGENT,
-      Referer: REMANGA_SITE,
-      Origin: REMANGA_SITE,
-      'Accept-Language': 'ru,en;q=0.8',
-      'Accept': 'application/json',
-    },
-  });
-  if (!res.ok) throw new Error(`ReManga API вернул HTTP ${res.status}`);
-  const json = await res.json();
-  const titles = (json.titles || []).map(mapRemangaNewTitle);
-  return titles.slice(0, limit);
-}
-
-ipcMain.handle('remanga:yearPopular', async () => {
-  try {
-    return await remangaYearPopular({ limit: 20 });
-  } catch (err) {
-    console.error('[remanga:yearPopular] ошибка:', err.message);
-    throw err;
-  }
-});
-
-
 
 // сравнение названий без учёта регистра/пунктуации — чтобы сматчить один и тот
 // же тайтл между MangaDex и ReManga, у которых написание может чуть отличаться

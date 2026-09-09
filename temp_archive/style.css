@@ -201,9 +201,6 @@ body:has(#viewFriends:not([hidden])) .app-background-veil {
 body:has(#viewProfile:not([hidden])) .app-background-veil {
   --bg-tint: rgba(201, 138, 58, 0.14);
 }
-body:has(#viewSettings:not([hidden])) .app-background-veil {
-  --bg-tint: rgba(108, 92, 231, 0.14);
-}
 
 .bg-spark {
   position: absolute;
@@ -898,34 +895,12 @@ body[data-theme="light"] #mangaContinueSection, body[data-theme="light"] #animeC
   gap: 6px;
   font-size: 13px;
   font-weight: 700;
-  color: #ff9b5c;
-  background: rgba(255, 127, 80, .12);
-  border: 1px solid rgba(255, 127, 80, .32);
+  color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--gold) 30%, transparent);
   border-radius: 999px;
   padding: 6px 14px;
-  margin: 0;
-  position: absolute;
-  right: 26px;
-  bottom: 16px;
-  box-shadow: 0 4px 14px rgba(255, 127, 80, .12);
-}
-.profile-streak[data-tier="gold"] {
-  color: #edc75f;
-  background: rgba(237, 199, 95, .13);
-  border-color: rgba(237, 199, 95, .38);
-  box-shadow: 0 4px 14px rgba(237, 199, 95, .13);
-}
-.profile-streak[data-tier="aurora"] {
-  color: #65dbff;
-  background: rgba(87, 224, 255, .12);
-  border-color: rgba(87, 224, 255, .38);
-  box-shadow: 0 4px 16px rgba(87, 224, 255, .14);
-}
-.profile-streak[data-tier="legend"] {
-  color: #d5a6ff;
-  background: rgba(190, 126, 255, .14);
-  border-color: rgba(190, 126, 255, .42);
-  box-shadow: 0 4px 18px rgba(190, 126, 255, .18);
+  margin: 4px 0 16px;
 }
 
 .card-rating {
@@ -956,8 +931,6 @@ body[data-theme="light"] #mangaContinueSection, body[data-theme="light"] #animeC
   border-radius: 999px;
   transition: width .3s ease;
 }
-/* Прогресс аниме отделён от кораллового прогресса манги холодным акцентом. */
-.card--anime .card-progress-fill { background: #57e0ff; }
 
 .card-note {
   font-size: 11px;
@@ -1861,7 +1834,7 @@ webview#siteWebview { flex: 1; width: 100%; }
   pointer-events: none;
 }
 .anime-seek-buffered { background: rgba(255, 255, 255, 0.32); width: 0%; }
-.anime-seek-fill { background: #57e0ff; width: 0%; }
+.anime-seek-fill { background: var(--accent); width: 0%; }
 
 .anime-seek-thumb {
   position: absolute;
@@ -1870,8 +1843,8 @@ webview#siteWebview { flex: 1; width: 100%; }
   width: 13px;
   height: 13px;
   border-radius: 50%;
-  background: #57e0ff;
-  box-shadow: 0 0 0 3px rgba(87, 224, 255, 0.25);
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.25);
   transform: translate(-50%, -50%) scale(0);
   transition: transform .12s ease;
   pointer-events: none;
@@ -2271,9 +2244,8 @@ webview#siteWebview { flex: 1; width: 100%; }
   display: flex;
   align-items: flex-start;
   gap: 22px;
-  padding: 16px 26px 54px;
+  padding: 16px 26px 22px;
   flex-wrap: wrap;
-  position: relative;
 }
 
 /* аватар не наезжает на баннер сам по себе — обёртка задаёт нахлёст, а
@@ -2427,103 +2399,6 @@ webview#siteWebview { flex: 1; width: 100%; }
 }
 
 .profile-fields input:focus { outline: none; border-color: var(--accent); }
-
-/* настройка ускорения выглядит как самостоятельная аккуратная опция, а не
-   как технический чекбокс, случайно оставшийся в профиле */
-.hardware-accel-setting {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: min(100%, 540px);
-  margin-top: 18px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 13px;
-  background: var(--surface-2);
-  cursor: pointer;
-  transition: border-color .16s, background .16s, transform .16s;
-}
-.hardware-accel-setting:hover {
-  border-color: color-mix(in srgb, var(--accent) 52%, var(--border));
-  background: var(--surface-3);
-  transform: translateY(-1px);
-}
-.hardware-accel-setting > input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
-}
-.hardware-accel-switch {
-  width: 38px;
-  height: 22px;
-  padding: 3px;
-  border-radius: 999px;
-  flex: 0 0 auto;
-  background: rgba(125, 137, 177, .34);
-  border: 1px solid rgba(177, 188, 225, .18);
-  transition: background .18s, border-color .18s, box-shadow .18s;
-}
-.hardware-accel-switch span {
-  display: block;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #eef0ff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, .32);
-  transition: transform .18s ease, background .18s ease;
-}
-.hardware-accel-setting > input:checked + .hardware-accel-switch {
-  background: rgba(var(--accent-rgb), .58);
-  border-color: var(--accent);
-  box-shadow: 0 0 13px rgba(var(--accent-rgb), .24);
-}
-.hardware-accel-setting > input:checked + .hardware-accel-switch span {
-  transform: translateX(16px);
-  background: #fff;
-}
-.hardware-accel-setting > input:focus-visible + .hardware-accel-switch {
-  outline: 2px solid var(--accent-bright);
-  outline-offset: 3px;
-}
-.hardware-accel-copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.hardware-accel-title { color: var(--text); font-size: 12px; font-weight: 700; }
-.hardware-accel-hint { color: var(--text-muted); font-size: 11px; line-height: 1.35; }
-
-/* ---------- настройки ---------- */
-.settings-layout {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  align-items: start;
-}
-.settings-section { min-height: 220px; }
-.settings-section-heading {
-  display: flex;
-  align-items: flex-start;
-  gap: 11px;
-  margin-bottom: 16px;
-}
-.settings-section-heading .section-title { margin: 0 0 4px; }
-.settings-section-heading p { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.35; }
-.settings-section-icon {
-  width: 31px;
-  height: 31px;
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  border-radius: 10px;
-  color: var(--accent-bright);
-  background: rgba(var(--accent-rgb), .13);
-  border: 1px solid rgba(var(--accent-rgb), .22);
-  font-size: 15px;
-}
-.settings-section .hardware-accel-setting { margin-top: 4px; }
-.settings-logout-btn { margin-top: 12px; }
-@media (max-width: 840px) {
-  .settings-layout { grid-template-columns: 1fr; }
-}
 
 /* ---------- профиль: блоки-карточки ---------- */
 
