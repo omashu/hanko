@@ -782,6 +782,17 @@ body[data-theme="light"] #mangaContinueSection, body[data-theme="light"] #animeC
 }
 .activity-row--clickable { cursor: pointer; }
 .activity-row--clickable:hover { background: var(--surface-2); }
+.activity-row.is-read { opacity: .55; }
+.activity-updates-clear {
+  align-self: flex-end;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.activity-updates-clear:hover { color: var(--accent); text-decoration: underline; }
 .activity-row-avatar {
   width: 32px;
   height: 32px;
@@ -877,6 +888,7 @@ body[data-theme="light"] #mangaContinueSection, body[data-theme="light"] #animeC
   margin: 0 0 2px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -888,6 +900,7 @@ body[data-theme="light"] #mangaContinueSection, body[data-theme="light"] #animeC
   margin: 0;
   display: -webkit-box;
   -webkit-line-clamp: 5;
+  line-clamp: 5;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -1370,6 +1383,7 @@ webview#siteWebview { flex: 1; width: 100%; }
 .title-modal-header img { width: 130px; height: 250px; object-fit: cover; border-radius: 8px; flex-shrink: 0; }
 .title-modal-header h2 { font-family: var(--font-display); margin: 0 0 8px; font-size: 20px; }
 .title-modal-header p { color: var(--text-muted); font-size: 13px; line-height: 1.5; }
+.title-modal-header-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 
 .title-note {
   margin-top: 12px;
@@ -1407,6 +1421,140 @@ webview#siteWebview { flex: 1; width: 100%; }
   margin-bottom: 16px;
 }
 .chapter-list-header .section-title { margin: 0; }
+
+.anime-related-toggle-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  padding: 1px 7px;
+  border-radius: 999px;
+  margin-left: 2px;
+}
+
+/* ------ хронология — полноэкранная "цифровая паутина" ------ */
+/* никакого белого/поверхностного бокса-контейнера — только затемнение
+   фона (темнее обычного модального — тут это весь экран, и подсветка
+   сферы на глубоком чёрном читается лучше, чем на стандартном .68) */
+.anime-related-fullscreen {
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
+  background: rgba(3, 4, 7, .92);
+}
+.anime-related-close {
+  position: absolute;
+  top: 18px;
+  right: 22px;
+  z-index: 3;
+  background: rgba(8, 10, 14, .5);
+}
+.anime-related-fullscreen-title {
+  position: absolute;
+  top: 22px;
+  left: 28px;
+  right: 76px;
+  margin: 0;
+  z-index: 2;
+  font-family: var(--font-display);
+  font-size: 18px;
+  color: var(--text);
+  text-shadow: 0 0 14px rgba(var(--accent-rgb), .5);
+}
+.anime-related-web-scroll {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* единый "холст" — 3D-сфера: svg-линии и html-узлы позиционируются
+   АБСОЛЮТНО относительно НЕГО (а не всего полноэкранного фона, как было в
+   первой версии — из-за этого линия и карточки жили в разных системах
+   координат и разъезжались). Координаты узлов на каждый кадр пересчитывает
+   JS (вращение/проекция сферы), сам canvas просто заполняет доступное место */
+.anime-related-web-canvas {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+.anime-related-web-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+/* линии — отдельный "цифровой" голубой неон, специально не завязан на
+   --accent темы (у обводки карточек ниже он остался прежним, акцентным) —
+   так паутина читается как самостоятельный элемент, а не сливается с рамками */
+.anime-web-line {
+  stroke: rgba(90, 210, 255, .95);
+  stroke-width: 1.8;
+  filter:
+    drop-shadow(0 0 2px rgba(90, 210, 255, .95))
+    drop-shadow(0 0 7px rgba(90, 210, 255, .75))
+    drop-shadow(0 0 16px rgba(90, 210, 255, .5));
+}
+/* доп. перекрёстные связи между не соседними тайтлами — тоньше и тусклее,
+   создают ощущение именно СЕТИ, а не просто цепочки "точка-точка" */
+.anime-web-line-mesh {
+  stroke: rgba(90, 210, 255, .3);
+  stroke-width: 1;
+  filter: drop-shadow(0 0 3px rgba(90, 210, 255, .3));
+}
+/* мелкие декоративные узелки-огоньки на линиях — чисто для плотности
+   картинки, не кликабельны, без обложек */
+.anime-web-dot {
+  fill: rgba(90, 210, 255, .85);
+  filter: drop-shadow(0 0 4px rgba(90, 210, 255, .9));
+}
+
+.anime-web-node {
+  position: absolute;
+  width: var(--node-size, 86px);
+  transform: translate(-50%, -50%);
+  text-align: center;
+  cursor: pointer;
+}
+.anime-web-node img {
+  width: var(--node-size, 86px);
+  height: calc(var(--node-size, 86px) * 1.4);
+  object-fit: cover;
+  border-radius: 10px;
+  display: block;
+  margin: 0 auto;
+  border: 2px solid rgba(var(--accent-rgb), .5);
+  box-shadow: 0 0 12px rgba(var(--accent-rgb), .45);
+  transition: box-shadow .2s ease, border-color .2s ease, transform .15s ease;
+  background: var(--surface-2);
+}
+.anime-web-node:hover img {
+  transform: scale(1.08);
+  border-color: var(--accent);
+  box-shadow: 0 0 12px rgba(var(--accent-rgb), .9), 0 0 26px rgba(var(--accent-rgb), .55);
+}
+.anime-web-node.is-current { cursor: default; }
+.anime-web-node.is-current img {
+  border-color: var(--accent);
+  box-shadow: 0 0 16px rgba(var(--accent-rgb), 1), 0 0 34px rgba(var(--accent-rgb), .6);
+}
+.anime-web-node-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.25;
+  color: var(--text-muted);
+  text-shadow: 0 0 6px rgba(0, 0, 0, .8);
+}
+.anime-web-node.is-current .anime-web-node-title { color: var(--accent); font-weight: 600; }
 
 .chapter-list-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
@@ -1763,6 +1911,23 @@ webview#siteWebview { flex: 1; width: 100%; }
 }
 .anime-player-body.is-upscaled #animeUpscaleCanvas { display: block; }
 #animeUpscaleBtn.is-active { color: var(--accent); }
+
+.anime-playback-error {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 360px;
+  text-align: center;
+  background: rgba(10, 12, 17, 0.85);
+  color: #fff;
+  padding: 14px 18px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  z-index: 3;
+  pointer-events: none;
+}
 
 /* ---------- кастомный плеер аниме ---------- */
 

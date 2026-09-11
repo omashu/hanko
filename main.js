@@ -2,7 +2,7 @@
 // Тут и только тут есть доступ к файловой системе и сети.
 // Окно (renderer) ничего не может напрямую — только через preload.js + ipc.
 
-const { app, BrowserWindow, ipcMain, shell, dialog, Menu, Tray, session } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, Menu, Tray, session, net } = require('electron');
 // WebGPU нужен апскейлу видео (anime4k-webgpu) — в отличие от обычного
 // Chrome, Electron не всегда включает его по умолчанию (зависит от версии/
 // сборки), из-за чего navigator.gpu в renderer'е может быть undefined, и
@@ -1425,6 +1425,7 @@ const sourceHealth = {
   wamanga: { up: true, downUntil: 0 },
   mangabuff: { up: true, downUntil: 0 },
   usagi: { up: true, downUntil: 0 },
+  animru: { up: true, downUntil: 0 },
 };
 
 function isSourceUp(key) {
@@ -1468,6 +1469,13 @@ const HEALTH_PING = {
   usagi: () => fetch(`${USAGI_SITE}/search/suggestion?query=a&types%5B%5D=CREATION&types%5B%5D=FEDERATION_MANGA`, {
     signal: AbortSignal.timeout(HEALTH_FETCH_TIMEOUT_MS),
     headers: { 'User-Agent': USER_AGENT, Referer: `${USAGI_SITE}/` },
+  }),
+  // net.fetch обязателен именно тут (не обычный fetch) — см. комментарий в
+  // animruFetch: сайт режет соединение по TLS-отпечатку (JA3), обычный
+  // fetch дал бы ложное "не отвечает" даже когда сайт реально жив
+  animru: () => net.fetch(ANIMRU_SITE, {
+    signal: AbortSignal.timeout(HEALTH_FETCH_TIMEOUT_MS),
+    headers: { 'User-Agent': ANIMRU_BROWSER_UA, Referer: `${ANIMRU_SITE}/` },
   }),
 };
 
@@ -2462,6 +2470,71 @@ ipcMain.handle('animeon:findForTitle', async (_e, title) => {
   }
 });
 
+// ---------- поиск каталога тайтлов через AnimeOn — используется как основной
+// источник поиска на странице «Аниме» (каталог AniLibria заметно меньше).
+// Поля постера у AnimeOn нигде не задокументированы — пробуем несколько
+// правдоподобных имён по тому же принципу, что и у MangaBuff (см. выше),
+// без падения, если не совпало — просто карточка останется без обложки.
+// Пагинации в этом поиске нет: отдаём один увеличенный набор результатов, без
+// повторных запросов за след. страницей (не совпадает по смыслу с курсорной
+// пагинацией AniLibria, поэтому для AnimeOn пагинация в интерфейсе скрыта).
+function aoPosterUrl(raw) {
+  const poster = raw.poster || raw.image || raw.cover || raw.thumbnail || raw.img;
+  return poster ? aoAbsoluteUrl(poster) : null;
+}
+
+const ANIMEON_PREFIX = 'ao:';
+
+async function aoSearchCatalog(query) {
+  const data = await aoFetch(`/search?q=${encodeURIComponent(query)}&limit=40`);
+  const results = data.results || data.items || [];
+  return results
+    .map((raw) => ({
+      id: `${ANIMEON_PREFIX}${raw.anime_url || raw.url || raw.slug || raw.id}`,
+      title: raw.title || raw.name || '',
+      coverUrl: aoPosterUrl(raw),
+      status: raw.status || null,
+    }))
+    .filter((it) => it.title);
+}
+
+// описание тайтла — подгружается лениво (по клику на карточку/при наведении),
+// не в самом поиске, по той же схеме, что уже используется для ReManga/AniLibria
+// AnimeOn часто вклеивает в описание одно-два рекламных предложения про сам
+// сайт (бесплатный просмотр, качество 4K и т.п.), причём не обязательно
+// последним и не обязательно с упоминанием слова "AnimeOn" — может быть
+// просто "на нашем ресурсе...". Вырезаем такие предложения целиком, где бы
+// они ни встретились в тексте, а не всё описание разом.
+// (важно: \b в JS-регулярках не работает с кириллицей — "4к\b" никогда не
+// матчился, поэтому раньше часть промо-фраз проскакивала)
+function cleanAoDescription(text) {
+  if (!text) return '';
+  const promoRe = /animeon|4\s*[kк]|на\s+(нашем|этом)\s+(сайте|ресурсе|портале)|доступ(ен|на)\s+(всем\s+)?(желающим|посетителям)|без\s+регистрации/i;
+  const lines = String(text).split(/\r?\n/)
+    .map((line) => line.split(/(?<=[.!?])\s+/).filter((s) => !promoRe.test(s)).join(' ').trim())
+    .filter(Boolean);
+  const cleaned = lines.join('\n').trim();
+  return cleaned;
+}
+
+ipcMain.handle('animeon:details', async (_e, animeId) => {
+  try {
+    const url = animeId.startsWith(ANIMEON_PREFIX) ? animeId.slice(ANIMEON_PREFIX.length) : animeId;
+    const full = await aoFetch(`/anime/${encodeURIComponent(url)}`);
+    return { description: cleanAoDescription(full.description) };
+  } catch {
+    return null;
+  }
+});
+
+// намеренно НЕ глотаем ошибку тут (в отличие от animeon:findForTitle выше) —
+// рендерер должен увидеть отказ, чтобы понять, что AnimeOn лёг, и молча
+// переключиться на AniLibria (см. runAnimeSearch в renderer.js)
+ipcMain.handle('animeon:search', async (_e, query) => {
+  const items = await aoSearchCatalog(query);
+  return { items, total: items.length };
+});
+
 ipcMain.handle('animeon:resolve', async (_e, link) => {
   try {
     const data = await aoFetch('/stream/resolve', {
@@ -2484,6 +2557,180 @@ ipcMain.handle('animeon:resolve', async (_e, link) => {
     return { qualities };
   } catch (err) {
     console.error('AnimeOn: ошибка resolve', link, err?.message || err);
+    return null;
+  }
+});
+
+// ---------- anim-ru.net — источник с наивысшим приоритетом качества (обычно
+// 1080p у большинства озвучек, в отличие от AnimeOn, где потолок 720p). Сайт
+// на DataLife Engine сам видео не хранит — он просто вставляет виджет
+// стороннего агрегатора (player.cdnvideohub.com, data-aggregator="mali") с
+// title-id/publisher-id, а тот отдаёт готовый playlist сразу со ВСЕМИ
+// сериями и озвучками одним запросом — в отличие от AnimeOn, тут не нужно
+// резолвить список серий по одной. Резолвить лениво нужно только сами
+// качества по конкретному vkId (см. animru:resolve), потому что прямые
+// ссылки там с expires и протухают.
+const ANIMRU_SITE = 'https://anim-ru.net';
+const ANIMRU_PLAYER_API = 'https://plapi.cdnvideohub.com/api/v1/player/sv';
+
+// у сайта есть защита от ботов, которая режет нестандартный User-Agent (сам
+// проверено: с "Hanko-PersonalReader/1.0" сервер отдаёт 403) — здесь нужен
+// правдоподобный браузерный UA, в отличие от остальных источников
+const ANIMRU_BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
+
+async function animruFetch(url, attempt = 1) {
+  if (!isSourceUp('animru')) throw new Error('anim-ru.net временно недоступна (сайт не отвечает, повторим попытку позже)');
+  try {
+    // обычный (Node) fetch тут не годится — сайт режет его на уровне TLS-
+    // отпечатка (JA3), не только по заголовкам, судя по 403 даже с честным
+    // браузерным User-Agent. net.fetch — это сетевой стек самого Chromium
+    // внутри Electron, TLS-отпечаток настоящий, как у браузера
+    const res = await net.fetch(url, {
+      signal: AbortSignal.timeout(15000),
+      headers: {
+        'User-Agent': ANIMRU_BROWSER_UA,
+        'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+        Referer: `${ANIMRU_SITE}/`,
+      },
+    });
+    if (!res.ok) throw new Error(`anim-ru.net вернул HTTP ${res.status}`);
+    markSourceUp('animru');
+    return res;
+  } catch (err) {
+    if (attempt < 2) return animruFetch(url, attempt + 1);
+    markSourceDown('animru');
+    throw new Error(`anim-ru.net не отвечает (${err.message})`);
+  }
+}
+
+// родного поиска на сайте нет — поисковая строка в шапке уводит на гугловский
+// виджет (Google CSE), но сам движок (DataLife Engine) прекрасно отдаёт
+// настоящие результаты по прямому GET на do=search, минуя этот JS-перехват
+async function animruSearchTitle(title) {
+  // движок сайта режет запрос на слова по пробелам — если внутри "слова"
+  // затесался слэш, дефис или другая пунктуация (как в "Судьба/Странная
+  // подделка"), такой токен целиком не найдётся ни в одном названии;
+  // подстраховываемся, заменяя пунктуацию на пробелы перед отправкой
+  const query = title.replace(/[/\\,:;–—«»"'!?]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const url = `${ANIMRU_SITE}/index.php?do=search&subaction=search&story=${encodeURIComponent(query)}`;
+  const res = await animruFetch(url);
+  const html = await res.text();
+  const results = [];
+  const re = /<a href="(\/\d+-[^"]+\.html)" class="dddewtwettwe">[\s\S]*?<h3>\s*([^<]+?)\s*<\/h3>/g;
+  let m;
+  while ((m = re.exec(html))) {
+    // в заголовке результата поиска название идёт вместе с "[1 - N серии из
+    // M]  (год)" — отрезаем это для сравнения по чистому названию
+    const clean = m[2].replace(/\s*\[[^\]]*\]\s*(\(\d{4}(?:-\d{4})?\))?\s*$/, '').trim();
+    results.push({ href: m[1], title: clean || m[2].trim() });
+  }
+  return results;
+}
+
+// data-title-id/data-publisher-id/data-aggregator зашиты в разметку виджета
+// плеера прямо на странице первой серии (та самая ссылка из поиска)
+async function animruTitlePageIds(href) {
+  const res = await animruFetch(`${ANIMRU_SITE}${href}`);
+  const html = await res.text();
+  const tag = html.match(/<video-player\b[^>]*>/)?.[0];
+  if (!tag) return null;
+  const titleId = tag.match(/data-title-id="(\d+)"/)?.[1];
+  const publisherId = tag.match(/data-publisher-id="(\d+)"/)?.[1];
+  const aggregator = tag.match(/data-aggregator="([^"]+)"/)?.[1];
+  if (!titleId || !publisherId || !aggregator) return null;
+  return { titleId, publisherId, aggregator };
+}
+
+async function animruPlaylist({ titleId, publisherId, aggregator }) {
+  const url = `${ANIMRU_PLAYER_API}/playlist?pub=${encodeURIComponent(publisherId)}&aggr=${encodeURIComponent(aggregator)}&id=${encodeURIComponent(titleId)}`;
+  const res = await animruFetch(url);
+  const json = await res.json();
+  return Array.isArray(json.items) ? json.items : [];
+}
+
+// кэш titleId/publisherId/aggregator на сессию — эти данные для одного и
+// того же тайтла не меняются, а поиск + страница тайтла — два самых
+// медленных шага; playlist (актуальные серии) всё равно тянем заново
+const animruIdsCache = new Map(); // title -> { ids, ts }
+const ANIMRU_IDS_CACHE_TTL_MS = 30 * 60 * 1000;
+
+async function animruFindForTitle(title) {
+  let ids = null;
+  let matchedTitle = title;
+  const cached = animruIdsCache.get(title);
+  if (cached && Date.now() - cached.ts < ANIMRU_IDS_CACHE_TTL_MS) {
+    ids = cached.ids;
+    matchedTitle = cached.matchedTitle;
+  } else {
+    const results = await animruSearchTitle(title);
+    const match = pickBestTitleMatch(title, results, (r) => r.title);
+    if (!match) return null;
+
+    ids = await animruTitlePageIds(match.href);
+    if (!ids) return null;
+    matchedTitle = match.title;
+    animruIdsCache.set(title, { ids, matchedTitle, ts: Date.now() });
+  }
+
+  const items = await animruPlaylist(ids);
+  if (!items.length) return null;
+
+  const byStudio = new Map();
+  for (const it of items) {
+    // "Субтитры" — не озвучка, а исходная японская дорожка с субтитрами,
+    // сюда не годится; пропускаем записи без указанной студии
+    if (it.voiceType === 'Субтитры' || !it.voiceStudio) continue;
+    const key = `${it.voiceStudio} (${it.voiceType})`;
+    if (!byStudio.has(key)) byStudio.set(key, []);
+    byStudio.get(key).push({ number: String(it.episode), vkId: it.vkId });
+  }
+
+  const translations = [...byStudio.entries()].map(([studio, episodes]) => ({
+    studio,
+    episodes: episodes.sort((a, b) => parseFloat(a.number) - parseFloat(b.number)),
+  }));
+  if (!translations.length) return null;
+  return { title: matchedTitle, translations };
+}
+
+function animruVideoQualities(sources) {
+  if (!sources) return [];
+  // от лучшего к худшему; пустую строку (сервер отдаёт "" для недоступных
+  // вариантов) пропускаем
+  const order = [
+    ['mpeg4kUrl', '2160p'],
+    ['mpeg2kUrl', '1440p'],
+    ['mpegQhdUrl', '1440p'],
+    ['mpegFullHdUrl', '1080p'],
+    ['mpegHighUrl', '720p'],
+    ['mpegMediumUrl', '480p'],
+    ['mpegLowUrl', '360p'],
+    ['mpegLowestUrl', '240p'],
+    ['mpegTinyUrl', '144p'],
+  ];
+  return order.filter(([key]) => sources[key]).map(([key, label]) => ({ label, url: sources[key] }));
+}
+
+async function animruResolveVideo(vkId) {
+  const res = await animruFetch(`${ANIMRU_PLAYER_API}/video/${encodeURIComponent(vkId)}`);
+  const json = await res.json();
+  return { qualities: animruVideoQualities(json.sources) };
+}
+
+ipcMain.handle('animru:findForTitle', async (_e, title) => {
+  try {
+    return await animruFindForTitle(title);
+  } catch (err) {
+    console.error('anim-ru.net: не удалось найти тайтл', title, err?.message || err);
+    return null;
+  }
+});
+
+ipcMain.handle('animru:resolve', async (_e, vkId) => {
+  try {
+    return await animruResolveVideo(vkId);
+  } catch (err) {
+    console.error('anim-ru.net: ошибка resolve', vkId, err?.message || err);
     return null;
   }
 });
@@ -3214,14 +3461,29 @@ const ANILIST_TRENDING_QUERY = `
   }
 `;
 
-ipcMain.handle('anilist:trending', async () => {
-  const res = await fetch(ANILIST_API, {
+// у AniList (Cloudflare) фетч без "браузерного" User-Agent нередко ловит
+// 403 — Node-запрос без заголовков выглядит как бот. Общий helper с
+// нормальным UA и одной попыткой повтора, чтобы не дублировать это в
+// каждом обработчике AniList по отдельности
+async function anilistFetch(query, variables) {
+  const attempt = async () => fetch(ANILIST_API, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-    body: JSON.stringify({ query: ANILIST_TRENDING_QUERY, variables: { perPage: 18 } }),
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+    },
+    signal: AbortSignal.timeout(15000),
+    body: JSON.stringify({ query, variables }),
   });
+  let res = await attempt();
+  if (!res.ok && res.status !== 404) res = await attempt(); // одна повторная попытка на 403/5xx и т.п.
   if (!res.ok) throw new Error(`AniList вернул HTTP ${res.status}`);
-  const json = await res.json();
+  return res.json();
+}
+
+ipcMain.handle('anilist:trending', async () => {
+  const json = await anilistFetch(ANILIST_TRENDING_QUERY, { perPage: 18 });
   const media = json?.data?.Page?.media || [];
   return media.map((m) => ({
     id: m.id,
@@ -3233,6 +3495,175 @@ ipcMain.handle('anilist:trending', async () => {
     format: m.format || null,
     siteUrl: m.siteUrl || null,
   }));
+});
+
+// ---------- IPC: "хронология" тайтла (связанные аниме) ----------
+// Перепробовали AniList (403 от их Cloudflare) и Jikan/MyAnimeList (504 —
+// сам MAL не тянет поиск по кириллическим запросам, а у нас все названия
+// русские) — оба рассчитаны на англ./ромадзи названия и с русским каталогом
+// AnimeOn системно не дружат. Shikimori — русскоязычная база (в отличие от
+// MAL/AniList отдаёт русские названия связанных тайтлов напрямую в поле
+// `russian`, отдельно искать перевод не нужно), это и используем как
+// основной источник. Свой набор данных при этом не проверен вживую (нет
+// доступа к shikimori.one из песочницы) — структуру полей знаю по
+// документации/памяти, не гарантия 1-в-1. Поэтому есть двухуровневый
+// запасной план: /related у Shikimori (прямые соседи), а если и это не
+// сработало — старый эвристический поиск по собственному каталогу AnimeOn.
+const SHIKIMORI_API = 'https://shikimori.one/api';
+
+// Shikimori в правилах API просит представляться в User-Agent — без этого
+// может забанить по IP; наш общий USER_AGENT для этого и создан
+async function shikiFetch(path) {
+  const res = await fetch(`${SHIKIMORI_API}${path}`, {
+    signal: AbortSignal.timeout(15000),
+    headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+  });
+  if (!res.ok) throw new Error(`Shikimori вернул HTTP ${res.status}`);
+  return res.json();
+}
+
+async function shikiFindId(title) {
+  const list = await shikiFetch(`/animes?search=${encodeURIComponent(title)}&limit=5`);
+  const candidates = (list || []).map((a) => ({ id: a.id, title: a.russian || a.name || '' }));
+  const match = pickBestTitleMatch(title, candidates, (c) => c.title) || candidates[0];
+  return match?.id ?? null;
+}
+
+// полное дерево франшизы (а не только прямых соседей текущего тайтла) —
+// у Shikimori это отдельный эндпоинт /franchise, он и показан у них на
+// сайте как вкладка "Хронология"/"Франшиза" (см. скрин от пользователя:
+// весь Fate целиком, не только Fate/Zero и его прямые соседи).
+// nodes[].name у Shikimori, по памяти, оригинальное/ромадзи название, не
+// русское — поэтому одним ДОПОЛНИТЕЛЬНЫМ запросом добираем полные карточки
+// (с полем russian) сразу по всем id узлов разом (эндпоинт поддерживает
+// ?ids=1,2,3), а не по одному запросу на каждый тайтл франшизы (их может
+// быть под тридцать штук, это было бы и медленно, и кучей запросов подряд)
+async function shikiFetchFranchise(title) {
+  const id = await shikiFindId(title);
+  if (!id) return [];
+  const franchise = await shikiFetch(`/animes/${id}/franchise`);
+  const nodes = (franchise?.nodes || []).filter((n) => n?.id);
+  if (nodes.length < 2) return [];
+  const ids = [...new Set(nodes.map((n) => n.id))];
+  const full = await shikiFetch(`/animes?ids=${ids.join(',')}&limit=${ids.length}`);
+  const byId = new Map((full || []).map((a) => [a.id, a]));
+  const items = [];
+  for (const n of nodes) {
+    const a = byId.get(n.id);
+    const relTitle = a?.russian || a?.name || n.name;
+    if (!relTitle) continue;
+    const year = (a?.aired_on ? Number(String(a.aired_on).slice(0, 4)) : null) || n.year || null;
+    items.push({ title: relTitle, sortKey: year || 0 });
+  }
+  return items;
+}
+
+// запасной план №1: только прямые связи текущего тайтла (сиквел/приквел и
+// т.п.), если франшиза целиком по какой-то причине не отдалась
+const SHIKI_RELATION_RANK = {
+  Prequel: -1, 'Приквел': -1,
+  'Parent story': -1, 'Родительская история': -1,
+  Sequel: 1, 'Сиквел': 1,
+  'Side story': 0.5, 'Побочная история': 0.5,
+  'Alternative version': 0.5, 'Альтернативная версия': 0.5,
+  'Alternative setting': 0.5, 'Альтернативный сеттинг': 0.5,
+  'Spin-off': 0.5, 'Спин-офф': 0.5,
+  Summary: 0.5, 'Саммари': 0.5,
+  'Full story': 0.5, 'Полная история': 0.5,
+};
+
+async function shikiFetchRelated(title) {
+  const id = await shikiFindId(title);
+  if (!id) return [];
+  const related = await shikiFetch(`/animes/${id}/related`);
+  const items = [];
+  for (const r of (related || [])) {
+    if (!r.anime) continue; // манга/ранобэ-связи пропускаем — нам нужны только аниме
+    const rank = SHIKI_RELATION_RANK[r.relation] ?? SHIKI_RELATION_RANK[r.relation_russian];
+    if (rank == null) continue;
+    const relTitle = r.anime.russian || r.anime.name;
+    if (relTitle) items.push({ title: relTitle, sortKey: rank });
+  }
+  if (items.length) items.push({ title, sortKey: 0 }); // сам тайтл — встаёт в середину
+  return items;
+}
+
+// запасной план №2: без внешних сервисов вообще — ищем другие сезоны/фильмы
+// той же франшизы прямо в нашем собственном каталоге AnimeOn — по "базовой"
+// части названия (без подзаголовка после ":"/"-" и без слова "сезон")
+function baseFranchiseTitle(title) {
+  const base = String(title)
+    .split(/[:\-–—]/)[0]
+    .replace(/\b(\d+|[IVXLCDM]+)\s*(сезон[а-я]*|season)/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  // если обрезка съела почти всё (например "Re:Zero" → "Re") — толку от
+  // такого огрызка нет, лучше искать по названию целиком
+  return base.length >= 3 ? base : String(title).trim();
+}
+
+async function aoFranchiseSearch(title) {
+  const base = baseFranchiseTitle(title);
+  const candidates = await aoSearchCatalog(base);
+  const baseWords = normalizeTitleForMatch(base).split(' ').filter(Boolean);
+  if (!baseWords.length) return [];
+  // раньше требовали совпадения ВСЕХ слов базового названия — из-за этого,
+  // например, франшиза Fate ("Судьба/Zero", "Судьба/Ночь схватки" и т.п., у
+  // которых различается сама подпись после "/") почти никогда не находилась.
+  // Теперь достаточно совпадения хотя бы половины слов
+  return candidates
+    .map((c) => {
+      const words = new Set(normalizeTitleForMatch(c.title).split(' ').filter(Boolean));
+      const matched = baseWords.filter((w) => words.has(w)).length;
+      return { item: c, ratio: matched / baseWords.length };
+    })
+    .filter((x) => x.ratio >= 0.5)
+    .sort((a, b) => b.ratio - a.ratio)
+    .map((x) => x.item);
+}
+
+async function resolveRelatedAgainstOwnCatalog(related) {
+  const resolved = [];
+  const seen = new Set();
+  for (const r of related) {
+    try {
+      const candidates = await aoSearchCatalog(r.title);
+      const match = pickBestTitleMatch(r.title, candidates, (c) => c.title);
+      if (!match || seen.has(match.id)) continue;
+      seen.add(match.id);
+      resolved.push({ ...match, sortKey: r.sortKey });
+    } catch { /* один неудачный подзапрос не должен рушить всю хронологию */ }
+  }
+  resolved.sort((a, b) => a.sortKey - b.sortKey);
+  return resolved;
+}
+
+ipcMain.handle('anime:relatedTimeline', async (_e, title) => {
+  let resolved = [];
+  try {
+    const franchise = await shikiFetchFranchise(title);
+    if (franchise.length >= 2) resolved = await resolveRelatedAgainstOwnCatalog(franchise);
+  } catch (err) {
+    console.error('Shikimori: не удалось получить франшизу', err?.message || err);
+  }
+  if (resolved.length < 2) {
+    try {
+      const related = await shikiFetchRelated(title);
+      if (related.length >= 2) resolved = await resolveRelatedAgainstOwnCatalog(related);
+    } catch (err) {
+      console.error('Shikimori: не удалось получить хронологию', err?.message || err);
+    }
+  }
+  if (resolved.length < 2) {
+    // Shikimori недоступна целиком/не нашла тайтл — пробуем запасной вариант
+    try {
+      const fallback = await aoFranchiseSearch(title);
+      if (fallback.length >= 2) resolved = fallback.map((f) => ({ ...f, sortKey: 0 }));
+    } catch (err) {
+      console.error('Хронология тайтла: не удалось получить', err?.message || err);
+    }
+  }
+  return { items: resolved.length >= 2 ? resolved : [] };
 });
 
 // ---------- IPC: открытие ссылок в системном браузере ----------

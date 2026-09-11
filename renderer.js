@@ -324,6 +324,10 @@ const els = {
   animeTitleModalBackdrop: document.getElementById('animeTitleModalBackdrop'),
   animeTitleModalClose: document.getElementById('animeTitleModalClose'),
   animeTitleModalBody: document.getElementById('animeTitleModalBody'),
+  animeRelatedModalBackdrop: document.getElementById('animeRelatedModalBackdrop'),
+  animeRelatedModalClose: document.getElementById('animeRelatedModalClose'),
+  animeRelatedModalTitle: document.getElementById('animeRelatedModalTitle'),
+  animeRelatedGrid: document.getElementById('animeRelatedGrid'),
   animePlayerOverlay: document.getElementById('animePlayerOverlay'),
   animePlayerBack: document.getElementById('animePlayerBack'),
   animePlayerTitle: document.getElementById('animePlayerTitle'),
@@ -331,6 +335,7 @@ const els = {
   animeTranslationSelect: document.getElementById('animeTranslationSelect'),
   animeVideo: document.getElementById('animeVideo'),
   animeUpscaleCanvas: document.getElementById('animeUpscaleCanvas'),
+  animePlaybackError: document.getElementById('animePlaybackError'),
   animeUpscaleBtn: document.getElementById('animeUpscaleBtn'),
   animeEpPrevBtn: document.getElementById('animeEpPrevBtn'),
   animeEpNextBtn: document.getElementById('animeEpNextBtn'),
@@ -828,32 +833,40 @@ const MANGA_STATUS_RU = {
   completed: 'Завершено',
   hiatus: 'Приостановлено',
   cancelled: 'Отменено',
+  // значения статуса из AnimeOn (у манга-источников таких ключей нет, так что
+  // конфликта с ними не будет)
+  released: 'Завершено',
+  anons: 'Анонс',
 };
 
 // ---------- превью тайтла при долгом наведении на карточку ----------
 // один общий элемент на всё приложение вместо тултипа под каждую карточку —
 // показываем описание/рейтинг, если человек задержался мышью, не заходя внутрь
 let cardPreviewTimer = null;
-function attachCardPreview(card, item, metaText) {
+function attachCardPreview(card, item, metaText, delayMs = 550) {
   if (!item) return;
   // у ReManga описание в списке всегда пустое (сам каталог его не отдаёт,
   // см. mapRemangaNewTitle) — в отличие от клика по карточке (openTitleModal),
   // тут его никто заранее не подтягивал, поэтому тултип молча не вешался.
-  // Теперь при наведении лениво добираем его тем же remanga:details.
-  const canLazyLoad = !item.description && typeof item.id === 'string' && item.id.startsWith('rm:');
+  // Теперь при наведении лениво добираем его тем же remanga:details. То же
+  // самое для AnimeOn (ao:) — в самом поиске описания нет, только по клику/наведению.
+  const canLazyLoad = !item.description && typeof item.id === 'string'
+    && (item.id.startsWith('rm:') || item.id.startsWith('ao:'));
   if (!item.description && !canLazyLoad) return; // нечего показать и взять неоткуда
   card.addEventListener('mouseenter', () => {
     clearTimeout(cardPreviewTimer);
     cardPreviewTimer = setTimeout(async () => {
       if (!item.description && canLazyLoad) {
         try {
-          const details = await window.hanko.remangaDetails(item.id);
+          const details = item.id.startsWith('ao:')
+            ? await window.hanko.animeonDetails(item.id)
+            : await window.hanko.remangaDetails(item.id);
           if (details?.description) item.description = details.description;
-        } catch { /* тихо остаёмся без описания, если ReManga недоступна */ }
+        } catch { /* тихо остаёмся без описания, если источник недоступен */ }
       }
       if (!item.description) return; // так и не получилось — тултип не показываем
       showCardPreview(card, item, metaText);
-    }, 550);
+    }, delayMs);
   });
   card.addEventListener('mouseleave', () => {
     clearTimeout(cardPreviewTimer);
@@ -2128,7 +2141,7 @@ function animeLibraryCard(item, { showRemove = true } = {}) {
 function renderAnimeLibrary() {
   els.animeLibraryGrid.innerHTML = '';
   els.animeLibraryEmpty.hidden = animeLibrary.length > 0;
-  for (const item of animeLibrary) els.animeLibraryGrid.appendChild(animeLibraryCard(item));
+  for (const item of animeLibrary) els.animeLibraryGrid.appendChild(animeLibraryCard(item, { showRemove: false }));
 }
 
 // Записывает прогресс в отдельную историю просмотров (anime-history.json,
@@ -3909,10 +3922,10 @@ function friendBookmarkCard(item) {
     </div>
   `;
   // раньше карточка всегда открывала мангу — у аниме другой id-префикс
-  // (al:/kd:) и своя модалка с сериями/озвучками, а не главами
+  // (al:/kd:/ao:) и своя модалка с сериями/озвучками, а не главами
   card.addEventListener('click', () => {
     const id = item.manga_id;
-    const isAnime = id.startsWith('al:') || id.startsWith('kd:');
+    const isAnime = id.startsWith('al:') || id.startsWith('kd:') || id.startsWith('ao:');
     if (isAnime) openAnimeTitleModal({ id, title: item.title, coverUrl: item.cover_url });
     else openTitleModal({ id, title: item.title, coverUrl: item.cover_url });
   });
@@ -4743,8 +4756,37 @@ function renderActivityWidgetFriends() {
   }
 }
 
+// сохраняем список на диск (через settings), чтобы уведомления не пропадали
+// после перезапуска приложения — очищаются только явной кнопкой «Очистить»
+function persistLibraryUpdates() {
+  window.hanko.saveSettings({
+    libraryUpdates,
+    libraryUpdatesSeenIds: Array.from(libraryUpdatesSeenIds),
+  }).catch(() => {});
+}
+
+function clearLibraryUpdates() {
+  libraryUpdates = [];
+  libraryUpdatesSeenIds = new Set();
+  renderActivityWidgetUpdates();
+  persistLibraryUpdates();
+}
+
+// помечает все уведомления прочитанными (не убирает из списка — только
+// снимает счётчик), вызывается при открытии вкладки «Новое»
+function markLibraryUpdatesRead() {
+  let changed = false;
+  for (const u of libraryUpdates) {
+    if (!u.read) { u.read = true; changed = true; }
+  }
+  if (changed) {
+    updateActivityWidgetBadge();
+    persistLibraryUpdates();
+  }
+}
+
 function updateActivityWidgetBadge() {
-  const count = libraryUpdates.length;
+  const count = libraryUpdates.filter((u) => !u.read).length;
   els.activityUpdatesTabBadge.hidden = count === 0;
   els.activityUpdatesTabBadge.textContent = count > 9 ? '9+' : String(count);
   els.activityWidgetBadge.hidden = count === 0;
@@ -4757,9 +4799,18 @@ function renderActivityWidgetUpdates() {
   if (!libraryUpdates.length) {
     body.innerHTML = '<p class="empty-hint" style="padding:8px 4px;">Пока новых глав/серий не появилось.</p>';
   } else {
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'activity-updates-clear';
+    clearBtn.textContent = 'Очистить';
+    clearBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      clearLibraryUpdates();
+    });
+    body.appendChild(clearBtn);
     for (const u of libraryUpdates) {
       const row = document.createElement('div');
-      row.className = 'activity-row activity-row--clickable';
+      row.className = 'activity-row activity-row--clickable' + (u.read ? ' is-read' : '');
       const kindWord = u.kind === 'manga' ? `Новые главы — теперь ${u.newCount}` : `Новые серии — теперь ${u.newCount}`;
       row.innerHTML = `
         <img class="activity-row-cover" src="${u.coverUrl || ''}" alt="" onerror="this.style.opacity=0" />
@@ -4787,7 +4838,12 @@ function renderActivityWidgetUpdates() {
 function toggleActivityWidgetPanel(force) {
   const show = force !== undefined ? force : els.activityWidgetPanel.hidden;
   els.activityWidgetPanel.hidden = !show;
-  if (show) { renderActivityWidgetFriends(); renderActivityWidgetUpdates(); }
+  if (show) {
+    renderActivityWidgetFriends();
+    renderActivityWidgetUpdates();
+    const updatesTab = els.activityWidgetPanel.querySelector('.activity-widget-tab[data-tab="updates"]');
+    if (updatesTab && updatesTab.classList.contains('is-active')) markLibraryUpdatesRead();
+  }
 }
 
 els.activityWidgetBubble.addEventListener('click', () => toggleActivityWidgetPanel());
@@ -4802,6 +4858,7 @@ els.activityWidgetPanel.querySelectorAll('.activity-widget-tab').forEach((tab) =
     const isFriends = tab.dataset.tab === 'friends';
     els.activityFriendsBody.hidden = !isFriends;
     els.activityUpdatesBody.hidden = isFriends;
+    if (!isFriends) markLibraryUpdatesRead();
   });
 });
 
@@ -4809,13 +4866,18 @@ els.activityWidgetPanel.querySelectorAll('.activity-widget-tab').forEach((tab) =
 // (checkLibraryUpdates); дедуплицируем по количеству, чтобы одна и та же
 // пачка не пересчитывалась заново на каждый цикл проверки
 window.hanko.onLibraryUpdatesFound((found) => {
+  let changed = false;
   for (const u of found) {
     const key = `${u.kind}:${u.id}:${u.newCount}`;
     if (libraryUpdatesSeenIds.has(key)) continue;
     libraryUpdatesSeenIds.add(key);
-    libraryUpdates.unshift({ ...u, key });
+    libraryUpdates.unshift({ ...u, key, read: false });
+    changed = true;
   }
-  if (libraryUpdates.length) renderActivityWidgetUpdates();
+  if (changed) {
+    renderActivityWidgetUpdates();
+    persistLibraryUpdates();
+  }
 });
 
 async function init() {
@@ -4838,6 +4900,11 @@ async function init() {
   applyTheme(settings.theme);
   els.hwAccelCheckbox.checked = settings.hardwareAcceleration === false;
   updateStreak(settings);
+  // уведомления о новых главах/сериях — переживают перезапуск, пока их не
+  // очистят кнопкой «Очистить» (см. persistLibraryUpdates/clearLibraryUpdates)
+  if (Array.isArray(settings.libraryUpdates)) libraryUpdates = settings.libraryUpdates;
+  if (Array.isArray(settings.libraryUpdatesSeenIds)) libraryUpdatesSeenIds = new Set(settings.libraryUpdatesSeenIds);
+  updateActivityWidgetBadge();
   renderLibrary();
   renderAnimeLibrary();
   renderDownloads();
@@ -5029,6 +5096,7 @@ const animeFilters = { type: '', status: '', genreIds: new Set() };
 const ANIME_PAGE_SIZE = 24;
 let animeSearchPage = 1;
 let animeSearchTotal = 0;
+let animeSearchIsAnimeon = false;
 
 function buildAnimeSearchOpts(query) {
   return {
@@ -5055,7 +5123,24 @@ async function runAnimeSearch({ resetPage = true } = {}) {
   els.animePopularSection.hidden = true;
   els.animeSearchPagination.hidden = true;
   try {
-    const { items, total } = await window.hanko.anilibriaSearch(buildAnimeSearchOpts(q));
+    // основной каталог поиска — AnimeOn (у AniLibria тайтлов заметно меньше).
+    // Фильтры по типу/статусу/жанру умеет только AniLibria, поэтому пока они
+    // включены — ищем сразу через неё как раньше. Обычный текстовый поиск
+    // без фильтров сразу идёт в AnimeOn: без отдельной "проверки жив ли сайт",
+    // просто пробуем запрос и, если он не удался, тихо уходим на AniLibria
+    let items;
+    let total;
+    let usedAnimeon = false;
+    if (q && !hasFilters) {
+      try {
+        ({ items, total } = await window.hanko.animeonSearch(q));
+        usedAnimeon = true;
+      } catch { /* AnimeOn недоступен — ниже подхватит AniLibria */ }
+    }
+    if (!items) {
+      ({ items, total } = await window.hanko.anilibriaSearch(buildAnimeSearchOpts(q)));
+    }
+    animeSearchIsAnimeon = usedAnimeon;
     animeSearchTotal = total;
     els.animeSearchGrid.innerHTML = '';
     if (!items.length) {
@@ -5070,6 +5155,12 @@ async function runAnimeSearch({ resetPage = true } = {}) {
 }
 
 function renderAnimeSearchPagination() {
+  // у поиска через AnimeOn страниц нет (см. runAnimeSearch) — там просто
+  // один увеличенный набор результатов, постраничный переход тут не нужен
+  if (animeSearchIsAnimeon) {
+    els.animeSearchPagination.hidden = true;
+    return;
+  }
   const totalPages = Math.max(1, Math.ceil(animeSearchTotal / ANIME_PAGE_SIZE));
   els.animeSearchPagination.hidden = totalPages <= 1;
   els.animeSearchPageLabel.textContent = `Страница ${animeSearchPage} из ${totalPages}`;
@@ -5184,13 +5275,219 @@ els.animeFiltersResetBtn.addEventListener('click', () => {
 // озвучек был пустым, а дальнейшие его собственные приглашения улетали с
 // "Серия undefined" (ep.number было undefined у сырых данных)
 async function fetchUnifiedAnimeEpisodes(item) {
-  const [aniResult, aoResult] = await Promise.allSettled([
+  const [aniResult, aoResult, alruResult] = await Promise.allSettled([
     window.hanko.anilibriaEpisodes(item.id),
     window.hanko.animeonFindForTitle(item.title),
+    window.hanko.animruFindForTitle(item.title),
   ]);
   const aniEpisodes = aniResult.status === 'fulfilled' ? aniResult.value : [];
   const aoTranslations = (aoResult.status === 'fulfilled' && aoResult.value) ? aoResult.value.translations : [];
-  return buildUnifiedAnimeEpisodes(aniEpisodes, aoTranslations);
+  const alruTranslations = (alruResult.status === 'fulfilled' && alruResult.value) ? alruResult.value.translations : [];
+  return buildUnifiedAnimeEpisodes(aniEpisodes, aoTranslations, alruTranslations);
+}
+
+// хронология/франшиза — кнопка над списком серий, по клику открывает
+// полноэкранную "цифровую паутину": без бокса-контейнера, только затемнённый
+// фон (как обычно у модалок) и сами карточки-узлы поверх, соединённые
+// неоновыми линиями по хронологическому порядку (items уже отсортированы
+// по sortKey в main.js). При 20-30 тайтлах во франшизе, как у Fate/"Судьба",
+// это разворачивается в горизонтальную прокручиваемую цепочку.
+// "Текущий" определяем и по id, и по названию — после сверки через
+// Shikimori/свой каталог найденный id текущего тайтла может отличаться от
+// того, что реально сейчас открыто (другой источник с тем же названием).
+// цикл анимации/обработчики drag текущего окна хронологии (сфера) — чтобы
+// можно было остановить его при закрытии окна или повторном открытии
+let animeRelatedWebStop = null;
+
+function renderAnimeRelated(items, currentId, currentTitle) {
+  const btn = document.getElementById('animeRelatedToggle');
+  const countEl = document.getElementById('animeRelatedCount');
+  if (!btn) return;
+  if (items.length < 2) { btn.hidden = true; return; } // франшиза из одного тайтла — показывать нечего
+  btn.hidden = false;
+  countEl.textContent = String(items.length);
+
+  const currentTitleNorm = (currentTitle || '').trim().toLowerCase();
+  btn.onclick = () => {
+    els.animeRelatedModalTitle.textContent = `Хронология — ${currentTitle || ''}`;
+    // модалку тайтла прячем, а не оставляем под низом — иначе обе видны
+    // одновременно и просвечивают друг через друга (тёмный фон хронологии
+    // полупрозрачный, а не сплошной)
+    els.animeTitleModalBackdrop.hidden = true;
+    els.animeRelatedModalBackdrop.hidden = false;
+    // сборка — уже ПОСЛЕ показа окна, иначе размеры контейнера ещё нулевые
+    buildAnimeRelatedWeb(items, currentId, currentTitleNorm);
+  };
+}
+
+function buildAnimeRelatedWeb(items, currentId, currentTitleNorm) {
+  // останавливаем предыдущий цикл анимации, если окно хронологии открывали
+  // не в первый раз за сессию — иначе старые rAF-циклы продолжат крутиться
+  // в фоне вхолостую
+  if (animeRelatedWebStop) animeRelatedWebStop();
+
+  const canvas = els.animeRelatedGrid;
+  canvas.innerHTML = '';
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
+  canvas.style.cursor = 'grab';
+
+  const n = items.length;
+  const currentIndex = Math.max(0, items.findIndex((it) => it.id === currentId
+    || (currentTitleNorm && it.title.trim().toLowerCase() === currentTitleNorm)));
+
+  // равномерно раскладываем тайтлы по сфере (спираль Фибоначчи — самый
+  // простой способ разложить N точек по сфере без скучивания у полюсов).
+  // Радиус побольше, чем раньше — чтобы обложки не налезали друг на друга
+  const radius = Math.min(460, 260 + n * 5.4);
+  const sphere = [];
+  const offset = 2 / n;
+  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 0; i < n; i++) {
+    const y = (i * offset - 1) + offset / 2;
+    const r = Math.sqrt(Math.max(0, 1 - y * y));
+    const phi = i * goldenAngle;
+    sphere.push({ x: Math.cos(phi) * r * radius, y: y * radius, z: Math.sin(phi) * r * radius });
+  }
+
+  // рёбра: хронологическая цепочка (по порядку) + перекрёстные связи через
+  // одного — без них была бы просто нить вокруг сферы, а не сеть, как на
+  // референсе
+  const edges = [];
+  for (let i = 0; i < n - 1; i++) edges.push([i, i + 1, 'main']);
+  for (let i = 0; i < n - 2; i++) edges.push([i, i + 2, 'mesh']);
+
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('class', 'anime-related-web-svg');
+  canvas.appendChild(svg);
+  const lineEls = edges.map(([, , kind]) => {
+    const line = document.createElementNS(svgNS, 'line');
+    line.setAttribute('class', kind === 'main' ? 'anime-web-line' : 'anime-web-line-mesh');
+    svg.appendChild(line);
+    return line;
+  });
+
+  const nodeEls = items.map((rel, i) => {
+    const isCurrent = i === currentIndex;
+    const node = document.createElement('div');
+    node.className = 'anime-web-node' + (isCurrent ? ' is-current' : '');
+    node.style.setProperty('--node-size', isCurrent ? '138px' : '100px');
+    const statusRu = rel.status ? (MANGA_STATUS_RU[rel.status] || rel.status) : '';
+    node.innerHTML = `
+      <img src="${rel.coverUrl || ''}" alt="" onerror="this.style.opacity=0" />
+      <span class="anime-web-node-title">${escapeHtml(rel.title)}</span>
+    `;
+    node.addEventListener('click', () => {
+      if (dragMoved || isCurrent) return; // клик после перетаскивания сферы — не переход
+      if (animeRelatedWebStop) animeRelatedWebStop();
+      els.animeRelatedModalBackdrop.hidden = true;
+      openAnimeTitleModal({ id: rel.id, title: rel.title, coverUrl: rel.coverUrl });
+    });
+    // задержку делаем минимальной (а не стандартные 550мс, как у обычных
+    // карточек) — на сфере наводишься точечно на маленький узел, ждать
+    // полсекунды, чтобы понять, на тот ли навёлся, неудобно
+    attachCardPreview(node, rel, statusRu, 80);
+    canvas.appendChild(node);
+    return node;
+  });
+
+  // сразу разворачиваем сферу так, чтобы текущий тайтл смотрел на камеру —
+  // не заставлять же крутить вручную, чтобы просто найти себя
+  let rotY = -Math.atan2(sphere[currentIndex].x, sphere[currentIndex].z);
+  let rotX = -0.25;
+  let dragging = false;
+  let dragMoved = false;
+  let dragStartX = 0;
+  let dragStartY = 0;
+  let dragStartRotY = 0;
+  let dragStartRotX = 0;
+  const focal = 820;
+
+  function project(p) {
+    const cosY = Math.cos(rotY);
+    const sinY = Math.sin(rotY);
+    const x1 = p.x * cosY - p.z * sinY;
+    const z1 = p.x * sinY + p.z * cosY;
+    const cosX = Math.cos(rotX);
+    const sinX = Math.sin(rotX);
+    const y2 = p.y * cosX - z1 * sinX;
+    const z2 = p.y * sinX + z1 * cosX;
+    const scale = focal / (focal + z2 + radius);
+    return { sx: x1 * scale, sy: y2 * scale, scale };
+  }
+
+  function render() {
+    const cx = canvas.clientWidth / 2;
+    const cy = canvas.clientHeight / 2;
+    svg.setAttribute('viewBox', `0 0 ${canvas.clientWidth} ${canvas.clientHeight}`);
+    const projected = sphere.map(project);
+
+    edges.forEach(([a, b], idx) => {
+      const pa = projected[a];
+      const pb = projected[b];
+      const line = lineEls[idx];
+      line.setAttribute('x1', cx + pa.sx);
+      line.setAttribute('y1', cy + pa.sy);
+      line.setAttribute('x2', cx + pb.sx);
+      line.setAttribute('y2', cy + pb.sy);
+      line.style.opacity = Math.max(.15, Math.min(1, (pa.scale + pb.scale) / 2));
+    });
+
+    nodeEls.forEach((node, i) => {
+      const p = projected[i];
+      const baseScale = node.classList.contains('is-current') ? 1.2 : 1;
+      node.style.left = `${cx + p.sx}px`;
+      node.style.top = `${cy + p.sy}px`;
+      node.style.transform = `translate(-50%, -50%) scale(${(p.scale * baseScale).toFixed(3)})`;
+      node.style.opacity = String(Math.max(.3, Math.min(1, p.scale * 1.15)));
+      node.style.zIndex = String(Math.max(1, Math.round(p.scale * 1000)));
+    });
+  }
+
+  let rafId = null;
+  function tick() {
+    if (!dragging) rotY += 0.0035; // тихое авто-вращение, пока не тронули мышкой
+    render();
+    rafId = requestAnimationFrame(tick);
+  }
+  tick();
+
+  function onPointerDown(e) {
+    dragging = true;
+    dragMoved = false;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    dragStartRotY = rotY;
+    dragStartRotX = rotX;
+    canvas.style.cursor = 'grabbing';
+    canvas.setPointerCapture(e.pointerId);
+  }
+  function onPointerMove(e) {
+    if (!dragging) return;
+    const dx = e.clientX - dragStartX;
+    const dy = e.clientY - dragStartY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragMoved = true;
+    rotY = dragStartRotY + dx * 0.009;
+    rotX = Math.max(-1.2, Math.min(1.2, dragStartRotX + dy * 0.009));
+  }
+  function onPointerUp() {
+    dragging = false;
+    canvas.style.cursor = 'grab';
+  }
+  canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('pointermove', onPointerMove);
+  canvas.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('pointerleave', onPointerUp);
+
+  animeRelatedWebStop = () => {
+    cancelAnimationFrame(rafId);
+    canvas.removeEventListener('pointerdown', onPointerDown);
+    canvas.removeEventListener('pointermove', onPointerMove);
+    canvas.removeEventListener('pointerup', onPointerUp);
+    canvas.removeEventListener('pointerleave', onPointerUp);
+    animeRelatedWebStop = null;
+  };
 }
 
 async function openAnimeTitleModal(item) {
@@ -5199,6 +5496,11 @@ async function openAnimeTitleModal(item) {
       const details = await window.hanko.anilibriaDetails(item.id);
       if (details?.description) item = { ...item, description: details.description };
     } catch { /* тихо остаёмся без описания, если AniLibria недоступна */ }
+  } else if (!item.description && item.id.startsWith('ao:')) {
+    try {
+      const details = await window.hanko.animeonDetails(item.id);
+      if (details?.description) item = { ...item, description: details.description };
+    } catch { /* тихо остаёмся без описания, если AnimeOn недоступен */ }
   }
   const inLibrary = animeLibrary.some((l) => l.id === item.id);
   const libItem = animeLibrary.find((l) => l.id === item.id);
@@ -5229,9 +5531,14 @@ async function openAnimeTitleModal(item) {
       <div>
         <h2>${escapeHtml(item.title)}</h2>
         <p>${escapeHtml(item.description || '')}</p>
-        <button class="btn-secondary" id="animeLibToggleBtn" style="margin-top:10px;">
-          ${inLibrary ? 'Убрать из закладок' : 'Добавить в закладки'}
-        </button>
+        <div class="title-modal-header-actions">
+          <button class="btn-secondary" id="animeLibToggleBtn">
+            ${inLibrary ? 'Убрать из закладок' : 'Добавить в закладки'}
+          </button>
+          <button class="btn-secondary" id="animeRelatedToggle" type="button" hidden>
+            Хронология <span class="anime-related-toggle-count" id="animeRelatedCount"></span>
+          </button>
+        </div>
       </div>
     </div>
     ${noteBlock}
@@ -5242,6 +5549,14 @@ async function openAnimeTitleModal(item) {
     </div>
     <div class="chapter-list" id="animeEpisodeList"><p class="empty-hint">Загружаю…</p></div>
   `;
+  // хронология/франшиза берётся через Shikimori (для запасного варианта —
+  // по совпадению названия в нашем собственном каталоге AnimeOn), см.
+  // main.js. Не привязано к конкретному источнику тайтла (al:/ao:), ищем по
+  // названию. Не блокируем открытие модалки ожиданием этого запроса —
+  // подгружаем в фоне и просто показываем кнопку, когда/если данные придут
+  window.hanko.animeRelatedTimeline(item.title).then(({ items }) => {
+    if (document.getElementById('animeRelatedToggle')?.isConnected) renderAnimeRelated(items, item.id, item.title);
+  }).catch(() => {});
   document.getElementById('animeLibToggleBtn').addEventListener('click', async () => {
     if (animeLibrary.some((l) => l.id === item.id)) {
       await window.hanko.removeAnimeLibraryItem(item.id);
@@ -5331,6 +5646,19 @@ async function openAnimeTitleModal(item) {
     ? unified.findIndex((ep) => `Серия ${ep.number}` === historyEntry.episodeLabel)
     : -1;
 
+  // «прогреваем» качество для той серии, на которую скорее всего сейчас
+  // нажмут (продолжение просмотра либо первая серия) — у AnimeOn/anim-ru.net
+  // сама ссылка на видео резолвится не сразу (в отличие от AniLibria, где
+  // всё готово заранее), поэтому запускаем резолв в фоне прямо сейчас, пока
+  // человек ещё смотрит на список серий, а не ждём клика. Если он в итоге
+  // нажмёт на другую серию — сработает как обычно, просто зря ничего не
+  // резолвим (только для одной серии, не для всего списка сразу)
+  const prewarmEp = unified[continueIndex >= 0 ? continueIndex : 0];
+  const prewarmSource = prewarmEp?.sources?.[0];
+  if (prewarmSource && !prewarmSource.qualities && prewarmSource.resolveFn) {
+    prewarmSource.resolveFn().then((q) => { prewarmSource.qualities = q; }).catch(() => {});
+  }
+
   list.innerHTML = '';
   let continueRow = null;
   for (let i = 0; i < unified.length; i++) {
@@ -5356,13 +5684,21 @@ async function openAnimeTitleModal(item) {
   if (continueRow) continueRow.scrollIntoView({ block: 'center' });
 }
 
-// объединяем серии AniLibria (качества уже готовы) и всех студий AnimeOn
-// (качества добываются лениво через resolve, только когда реально откроют) в
-// единый список по номеру серии — у одной серии может быть сразу несколько
-// источников озвучки, и не у каждой серии их поровну (например у 9-й серии
-// озвучек может быть меньше, чем у более ранних, если не все студии её ещё
-// перевели) — это нормально, просто показываем сколько есть по факту
-function buildUnifiedAnimeEpisodes(aniEpisodes, aoTranslations) {
+// объединяем серии AniLibria (качества уже готовы), anim-ru.net и AnimeOn
+// (оба резолвятся лениво через resolveFn, только когда серию реально
+// открывают) в единый список по номеру серии — у одной серии может быть
+// сразу несколько источников озвучки, и не у каждой серии их поровну.
+//
+// Приоритет качества: anim-ru.net у большинства озвучек отдаёт 1080p,
+// AnimeOn — максимум 720p. Если ОДНА И ТА ЖЕ студия озвучки есть на обоих
+// источниках для одной серии, берём только anim-ru.net (1080p) — версию с
+// AnimeOn (720p) для этой же студии и серии не показываем, чтобы не дублировать
+// одну озвучку два раза в разном качестве. AnimeOn добавляется только для
+// студий, которых на anim-ru.net для этой серии не нашлось (тогда лучше 720p,
+// чем ничего). Само сравнение по имени студии не идеально (могут быть мелкие
+// расхождения в написании между источниками), но для совпадающих студий
+// работает верно.
+function buildUnifiedAnimeEpisodes(aniEpisodes, aoTranslations, alruTranslations = []) {
   const byNumber = new Map();
   const get = (num) => {
     if (!byNumber.has(num)) byNumber.set(num, { number: num, sources: [] });
@@ -5371,9 +5707,34 @@ function buildUnifiedAnimeEpisodes(aniEpisodes, aoTranslations) {
   for (const ep of aniEpisodes) {
     get(ep.chapter).sources.push({ name: 'AniLibria', qualities: ep.qualities });
   }
+  // anim-ru.net идёт первым — запоминаем, какие студии уже покрыты на какой
+  // серии, чтобы AnimeOn не задваивал их ниже качеством
+  const covered = new Map(); // number -> Set(studio name, без "(Дубляж)"/"(Многоголосый)")
+  for (const t of alruTranslations) {
+    // t.studio у anim-ru.net вида "Dream Cast (Многоголосый)" — тип нужен на
+    // экране (одна студия бывает и дубляжом, и многоголоской в разных
+    // сериях), но для сравнения с AnimeOn (там имя студии без типа) берём
+    // только само название
+    const plainStudio = t.studio.replace(/\s*\([^)]*\)\s*$/, '');
+    for (const ep of t.episodes) {
+      const num = String(ep.number);
+      if (!covered.has(num)) covered.set(num, new Set());
+      covered.get(num).add(plainStudio);
+      get(num).sources.push({
+        name: t.studio,
+        qualities: null,
+        resolveFn: async () => {
+          const result = await window.hanko.animruResolve(ep.vkId);
+          return result ? result.qualities : [];
+        },
+      });
+    }
+  }
   for (const t of aoTranslations) {
     for (const ep of t.episodes) {
-      get(String(ep.number)).sources.push({
+      const num = String(ep.number);
+      if (covered.get(num)?.has(t.studio)) continue; // эта озвучка уже есть в 1080p с anim-ru.net
+      get(num).sources.push({
         name: t.studio,
         qualities: null,
         resolveFn: async () => {
@@ -5392,9 +5753,24 @@ els.animeTitleModalBackdrop.addEventListener('click', (e) => {
   if (e.target === els.animeTitleModalBackdrop) els.animeTitleModalBackdrop.hidden = true;
 });
 
+els.animeRelatedModalClose.addEventListener('click', () => {
+  if (animeRelatedWebStop) animeRelatedWebStop();
+  els.animeRelatedModalBackdrop.hidden = true;
+  els.animeTitleModalBackdrop.hidden = false;
+});
+
+els.animeRelatedModalBackdrop.addEventListener('click', (e) => {
+  if (e.target === els.animeRelatedModalBackdrop) {
+    if (animeRelatedWebStop) animeRelatedWebStop();
+    els.animeRelatedModalBackdrop.hidden = true;
+    els.animeTitleModalBackdrop.hidden = false;
+  }
+});
+
 // один общий экземпляр hls.js на всё приложение — пересоздавать его на каждую
 // серию не нужно, docs самого hls.js рекомендуют переиспользовать loadSource
 let hlsPlayer = null;
+let hlsErrorRetries = 0;
 let animePlayerState = null; // { item, episodes, index }
 // совместный просмотр: null — не в комнате; иначе { roomId, releaseId }.
 // Участники синхронизации симметричны — у комнаты нет "хозяина", любой может
@@ -5417,17 +5793,63 @@ let suppressPartyEvents = false;
 // серии в openAnimePlayer()
 let animeLastPositionSave = 0;
 
+function showAnimePlaybackError() {
+  els.animePlaybackError.hidden = false;
+}
+function hideAnimePlaybackError() {
+  els.animePlaybackError.hidden = true;
+}
+
 function attachAnimeSource(url) {
   const video = els.animeVideo;
-  if (window.Hls && window.Hls.isSupported()) {
-    if (!hlsPlayer) hlsPlayer = new window.Hls();
+  hideAnimePlaybackError();
+  // hls.js умеет только настоящий HLS (.m3u8) — а вот источники вроде
+  // anim-ru.net отдают обычный прогрессивный .mp4 напрямую с CDN, без
+  // манифеста; раньше сюда шло всё подряд через hls.js, и на mp4-ссылках
+  // это тихо ломалось (hls.js не смог распарсить mp4 как m3u8-плейлист)
+  const isHls = /\.m3u8(\?|$)/i.test(url);
+  if (isHls && window.Hls && window.Hls.isSupported()) {
+    if (!hlsPlayer) {
+      hlsPlayer = new window.Hls();
+      // при фатальной ошибке (легла CDN источника, соединение рвётся и т.п.)
+      // hls.js сам не восстанавливается — раньше в этом случае плеер тихо
+      // висел на "Загружаю…" бесконечно, было неясно, зависание это или
+      // просто медленный интернет. Пробуем восстановиться (перезапуск
+      // загрузки/декодера — стандартный рецепт из документации hls.js), и
+      // только если пара попыток не помогла — показываем баннер с ошибкой,
+      // чтобы человек попробовал другую озвучку/качество вместо ожидания
+      hlsPlayer.on(window.Hls.Events.ERROR, (_evt, data) => {
+        if (!data.fatal) return;
+        if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR && hlsErrorRetries < 2) {
+          hlsErrorRetries += 1;
+          hlsPlayer.startLoad();
+        } else if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR && hlsErrorRetries < 2) {
+          hlsErrorRetries += 1;
+          hlsPlayer.recoverMediaError();
+        } else {
+          showAnimePlaybackError();
+        }
+      });
+    }
+    hlsErrorRetries = 0;
     hlsPlayer.loadSource(url);
     hlsPlayer.attachMedia(video);
   } else {
-    // Safari и некоторые сборки Chromium умеют HLS нативно через <video src>
+    // прямой mp4 — либо Safari/нативная поддержка HLS, либо обычный
+    // прогрессивный файл; <video src> справляется с обоими
+    if (hlsPlayer) {
+      hlsPlayer.detachMedia();
+    }
     video.src = url;
   }
 }
+// у прямого mp4 (не через hls.js) свой собственный механизм ошибок —
+// например, тот же мёртвый CDN, просто без hls.js между нами и <video>
+els.animeVideo.addEventListener('error', () => {
+  if (!els.animeVideo.src) return; // src ещё не назначен/уже сброшен — не настоящая ошибка
+  showAnimePlaybackError();
+});
+els.animeVideo.addEventListener('playing', hideAnimePlaybackError);
 
 async function openAnimePlayer(item, episodes, index, preferredSourceName = null) {
   const ep = episodes[index];
@@ -5807,6 +6229,7 @@ function closeAnimePlayer() {
   els.animeVideo.pause();
   els.animeVideo.removeAttribute('src');
   if (hlsPlayer) { hlsPlayer.detachMedia(); }
+  hideAnimePlaybackError();
   resetAnimeUpscale();
   animePlayerState = null;
   clearTimeout(animeIdleTimer);

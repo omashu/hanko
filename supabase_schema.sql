@@ -1134,7 +1134,7 @@ $$;
 
 drop function if exists public.rpc_list_profile_comments(uuid);
 create or replace function public.rpc_list_profile_comments(p_profile_id uuid)
-returns table(id uuid, author_id uuid, author_name text, body text, created_at timestamptz)
+returns table(id uuid, author_id uuid, author_name text, avatar_url text, body text, created_at timestamptz)
 language plpgsql
 security definer
 set search_path = public
@@ -1146,7 +1146,7 @@ begin
     raise exception 'not_friends';
   end if;
   return query
-    select c.id, c.author_id, coalesce(a.display_name, '@' || a.username, 'Без имени'), c.body, c.created_at
+    select c.id, c.author_id, coalesce(a.display_name, '@' || a.username, 'Без имени'), a.avatar_url, c.body, c.created_at
     from public.profile_comments c
     join public.profiles a on a.id = c.author_id
     where c.profile_id = p_profile_id
@@ -1156,7 +1156,7 @@ $$;
 
 drop function if exists public.rpc_add_profile_comment(uuid, text);
 create or replace function public.rpc_add_profile_comment(p_profile_id uuid, p_body text)
-returns table(id uuid, author_id uuid, author_name text, body text, created_at timestamptz)
+returns table(id uuid, author_id uuid, author_name text, avatar_url text, body text, created_at timestamptz)
 language plpgsql
 security definer
 set search_path = public
@@ -1184,7 +1184,7 @@ begin
     returning profile_comments.id, profile_comments.created_at into v_id, v_created;
 
   return query
-    select v_id, auth.uid(), coalesce(p.display_name, '@' || p.username, 'Без имени'), v_clean, v_created
+    select v_id, auth.uid(), coalesce(p.display_name, '@' || p.username, 'Без имени'), p.avatar_url, v_clean, v_created
     from public.profiles p where p.id = auth.uid();
 end;
 $$;

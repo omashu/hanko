@@ -676,6 +676,13 @@
            party) — canvas просто визуально перекрывает его сверху -->
       <canvas id="animeUpscaleCanvas"></canvas>
 
+      <!-- показываем, если видео так и не смогло загрузиться (мёртвый CDN
+           источника и т.п.) — раньше в этом случае плеер молча зависал на
+           "Загружаю…" без какого-либо объяснения -->
+      <div class="anime-playback-error" id="animePlaybackError" hidden>
+        Не удалось загрузить видео — источник недоступен. Попробуй другую озвучку/качество.
+      </div>
+
       <button class="anime-center-btn" id="animeCenterBtn" title="Воспроизвести" type="button">
         <svg viewBox="0 0 24 24" width="30" height="30"><path d="M8 5v14l12-7L8 5z" fill="currentColor"/></svg>
       </button>
@@ -925,6 +932,15 @@
     <div class="modal modal--wide" id="animeTitleModal">
       <button class="icon-btn modal-close" id="animeTitleModalClose">✕</button>
       <div class="title-modal-body" id="animeTitleModalBody"></div>
+    </div>
+  </div>
+
+  <!-- ===================== ХРОНОЛОГИЯ ТАЙТЛА (во весь экран, поверх модалки тайтла) ===================== -->
+  <div class="modal-backdrop anime-related-fullscreen" id="animeRelatedModalBackdrop" hidden>
+    <button class="icon-btn modal-close anime-related-close" id="animeRelatedModalClose">✕</button>
+    <h2 class="anime-related-fullscreen-title" id="animeRelatedModalTitle">Хронология</h2>
+    <div class="anime-related-web-scroll" id="animeRelatedWebScroll">
+      <div class="anime-related-web-canvas" id="animeRelatedGrid"></div>
     </div>
   </div>
 
