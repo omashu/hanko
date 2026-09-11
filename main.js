@@ -1384,6 +1384,15 @@ function cleanMangaDescription(text) {
   return cleaned.trim();
 }
 
+// только теги с group === 'genre' (а не theme/format/content) — это и есть
+// собственно жанры в терминологии MangaDex API
+function mangadexGenres(attrs) {
+  return (attrs?.tags || [])
+    .filter((t) => t.attributes?.group === 'genre')
+    .map((t) => t.attributes?.name?.ru || t.attributes?.name?.en)
+    .filter(Boolean);
+}
+
 async function mapMangaList(data) {
   const items = (data.data || []).map((m) => {
     const cover = (m.relationships || []).find((r) => r.type === 'cover_art');
@@ -1397,6 +1406,7 @@ async function mapMangaList(data) {
       description: cleanMangaDescription(m.attributes?.description?.ru).slice(0, 400),
       status: m.attributes?.status,
       coverUrl: fileName ? `${MANGADEX_UPLOADS}/covers/${m.id}/${fileName}.256.jpg` : null,
+      genres: mangadexGenres(m.attributes),
     };
   });
   const ratings = await fetchRatings(items.map((i) => i.id));
@@ -1547,12 +1557,24 @@ function mapRemangaListItem(raw) {
 
 function remangaSortChaptersAsc(items) {
   items.sort((a, b) => {
+    // главное: сначала том. У ReManga номер главы обнуляется на каждом новом
+    // томе — "Глава 0" тома 1 и "Глава 0" тома 3 это два РАЗНЫХ, оба
+    // настоящих объекта (у второго id ведёт на реально куда более позднюю
+    // главу по сквозной нумерации истории) — без сортировки по тому они
+    // просто перемешивались бы по номеру главы, из-за чего в списке ранний
+    // и поздний "0"/"1"/... шли не по смысловому порядку
+    const ta = a.tome ?? 0;
+    const tb = b.tome ?? 0;
+    if (ta !== tb) return ta - tb;
     const na = parseFloat(a.chapter);
     const nb = parseFloat(b.chapter);
-    if (Number.isNaN(na) && Number.isNaN(nb)) return 0;
+    if (Number.isNaN(na) && Number.isNaN(nb)) return (a.index ?? 0) - (b.index ?? 0);
     if (Number.isNaN(na)) return 1;
     if (Number.isNaN(nb)) return -1;
-    return na - nb;
+    if (na !== nb) return na - nb;
+    // тай-брейк по индексу — на случай если внутри одного тома тоже
+    // случится совпадение номеров
+    return (a.index ?? 0) - (b.index ?? 0);
   });
   return items;
 }
@@ -1656,8 +1678,15 @@ async function remangaChapters(dir) {
   const items = all.map((c) => ({
     id: `${REMANGA_PREFIX}${c.id}`,
     chapter: c.chapter,
+    // ReManga делит тайтл на тома, и номер главы обнуляется на каждом новом
+    // томе — без этого поля "Глава 0"/"Глава 1"/... тома 2+ неотличимы от
+    // тома 1 ни в подписи, ни при сортировке (см. remangaSortChaptersAsc)
+    tome: c.tome ?? c.volume ?? c.vol ?? null,
     title: c.name || null,
     lang: 'ru',
+    // порядковый индекс из ReManga — используется только как тай-брейк в
+    // remangaSortChaptersAsc при совпадающих номерах глав (см. там же)
+    index: c.index ?? null,
   }));
   return remangaSortChaptersAsc(items);
 }
@@ -2226,6 +2255,9 @@ function mapAniListItem(raw) {
     status: raw.is_ongoing ? 'ongoing' : 'completed',
     rating: null,
     description: String(raw.description || '').trim(),
+    // raw.genres — массив {id, name}, подтверждено напрямую из каталога
+    // (см. ANIME_GENRE_OPTIONS в renderer.js — тот список собран из этих же ответов)
+    genres: (raw.genres || []).map((g) => g?.name).filter(Boolean),
   };
 }
 
@@ -3191,12 +3223,23 @@ async function mdChaptersFeed(mangaId, langs) {
 
 function sortChaptersAsc(items) {
   items.sort((a, b) => {
+    // та же логика, что в remangaSortChaptersAsc — этот сорт применяется
+    // уже к склеенному RU+EN списку (см. mangadex:chapters ниже), и раньше
+    // здесь тай-брейка по тому/индексу не было вовсе: список RU (уже
+    // правильно отсортированный remangaChapters) просто пересортировывался
+    // заново чисто по номеру главы, отчего аккуратный порядок по томам
+    // терялся. У источников без понятия о томах (MangaDex EN, WaManga и
+    // т.д.) поля tome просто нет — для них ?? 0 не меняет поведения.
+    const ta = a.tome ?? 0;
+    const tb = b.tome ?? 0;
+    if (ta !== tb) return ta - tb;
     const na = parseFloat(a.chapter);
     const nb = parseFloat(b.chapter);
-    if (Number.isNaN(na) && Number.isNaN(nb)) return 0;
+    if (Number.isNaN(na) && Number.isNaN(nb)) return (a.index ?? 0) - (b.index ?? 0);
     if (Number.isNaN(na)) return 1;
     if (Number.isNaN(nb)) return -1;
-    return na - nb;
+    if (na !== nb) return na - nb;
+    return (a.index ?? 0) - (b.index ?? 0);
   });
   return items;
 }

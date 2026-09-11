@@ -68,6 +68,8 @@ const els = {
   profileNameInput: document.getElementById('profileNameInput'),
   profileBioInput: document.getElementById('profileBioInput'),
   profileMangaGrid: document.getElementById('profileMangaGrid'),
+  profileGenresChart: document.getElementById('profileGenresChart'),
+  profileGenresEmpty: document.getElementById('profileGenresEmpty'),
   profileMangaEmpty: document.getElementById('profileMangaEmpty'),
   profileMangaShowAllBtn: document.getElementById('profileMangaShowAllBtn'),
   readingHistoryList: document.getElementById('readingHistoryList'),
@@ -247,6 +249,7 @@ const els = {
 
   themeToggleBtn: document.getElementById('themeToggleBtn'),
   premiumThemeToggleBtn: document.getElementById('premiumThemeToggleBtn'),
+  cyberpunkThemeToggleBtn: document.getElementById('cyberpunkThemeToggleBtn'),
 
   homeContinueSection: document.getElementById('homeContinueSection'),
   homeContinueGrid: document.getElementById('homeContinueGrid'),
@@ -579,19 +582,26 @@ els.navNews.addEventListener('click', () => showView('news'));
 els.navSettings.addEventListener('click', () => showView('settings'));
 
 let lastNonPremiumTheme = 'dark';
+// обе премиум-темы (Kintsugi и Neon Uplink) равноправны — список тут один,
+// чтобы не дублировать проверку "это премиум-тема?" в трёх местах ниже
+const PREMIUM_THEMES = ['premium', 'cyberpunk'];
 
 function applyTheme(theme) {
-  const resolved = theme === 'premium' ? 'premium' : (theme === 'dark' ? 'dark' : 'light');
+  const resolved = PREMIUM_THEMES.includes(theme) ? theme : (theme === 'dark' ? 'dark' : 'light');
   document.body.dataset.theme = resolved;
-  if (resolved !== 'premium') lastNonPremiumTheme = resolved;
+  if (!PREMIUM_THEMES.includes(resolved)) lastNonPremiumTheme = resolved;
   if (els.premiumThemeToggleBtn) {
     els.premiumThemeToggleBtn.classList.toggle('is-active', resolved === 'premium');
+  }
+  if (els.cyberpunkThemeToggleBtn) {
+    els.cyberpunkThemeToggleBtn.classList.toggle('is-active', resolved === 'cyberpunk');
   }
 }
 
 els.themeToggleBtn.addEventListener('click', () => {
-  // если сейчас премиум-тема, обычный переключатель просто выводит из неё —
-  // не пытается понять "тёмная она была или светлая", всегда в light
+  // если сейчас премиум-тема (любая из двух), обычный переключатель просто
+  // выводит из неё — не пытается понять "тёмная она была или светлая",
+  // всегда в light
   const current = document.body.dataset.theme;
   const next = current === 'dark' ? 'light' : (current === 'light' ? 'dark' : 'light');
   applyTheme(next);
@@ -604,13 +614,20 @@ els.premiumThemeToggleBtn.addEventListener('click', () => {
   window.hanko.saveSettings({ theme: next });
 });
 
-// премиум-тема доступна только пока подписка активна — если она вдруг
+els.cyberpunkThemeToggleBtn.addEventListener('click', () => {
+  const next = document.body.dataset.theme === 'cyberpunk' ? lastNonPremiumTheme : 'cyberpunk';
+  applyTheme(next);
+  window.hanko.saveSettings({ theme: next });
+});
+
+// премиум-темы доступны только пока подписка активна — если она вдруг
 // закончилась (или её вообще не было), а в settings всё ещё стоит "premium"
-// с прошлого раза, тихо откатываемся на обычную тёмную тему, а не показываем
-// недоступную премиум-тему тому, у кого её уже нет
+// или "cyberpunk" с прошлого раза, тихо откатываемся на обычную тёмную тему,
+// а не показываем недоступную премиум-тему тому, у кого её уже нет
 function enforcePremiumThemeGate() {
   els.premiumThemeToggleBtn.hidden = !onlineState.isPremium;
-  if (document.body.dataset.theme === 'premium' && !onlineState.isPremium) {
+  els.cyberpunkThemeToggleBtn.hidden = !onlineState.isPremium;
+  if (PREMIUM_THEMES.includes(document.body.dataset.theme) && !onlineState.isPremium) {
     applyTheme('dark');
     window.hanko.saveSettings({ theme: 'dark' });
   }
@@ -991,7 +1008,7 @@ function mangaCard(item, { inLibrary }) {
     addBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       await window.hanko.upsertLibraryItem({
-        id: item.id, title: item.title, coverUrl: item.coverUrl, status: item.status, description: item.description, rating: item.rating,
+        id: item.id, title: item.title, coverUrl: item.coverUrl, status: item.status, description: item.description, rating: item.rating, genres: item.genres || [],
       });
       playSoftTick();
       syncBookmarkUpsert(item);
@@ -1425,7 +1442,7 @@ async function openTitleModal(item) {
         await window.hanko.removeLibraryItem(item.id);
         syncBookmarkRemove(item.id);
       } else {
-        await window.hanko.upsertLibraryItem({ id: item.id, title: item.title, coverUrl: item.coverUrl, status: item.status, description: item.description, rating: item.rating });
+        await window.hanko.upsertLibraryItem({ id: item.id, title: item.title, coverUrl: item.coverUrl, status: item.status, description: item.description, rating: item.rating, genres: item.genres || [] });
         syncBookmarkUpsert(item);
         playSoftTick();
       }
@@ -1526,7 +1543,7 @@ async function openTitleModal(item) {
         row.className = `chapter-row${isCurrent ? ' chapter-row--current' : ''}`;
         row.innerHTML = `
           <div class="chapter-row-main">
-            <span class="chapter-row-label">Глава ${escapeHtml(ch.chapter ?? '?')}${ch.title ? ' — ' + escapeHtml(ch.title) : ''}</span>
+            <span class="chapter-row-label">${escapeHtml(chapterLabelText(ch))}${ch.title ? ' — ' + escapeHtml(ch.title) : ''}</span>
             ${isCurrent ? '<span class="chapter-row-current-badge">Читаешь</span>' : ''}
             <span class="lang-tag">${escapeHtml(ch.lang || '')}</span>
           </div>
@@ -1704,6 +1721,12 @@ els.titleModalBackdrop.addEventListener('click', (e) => { if (e.target === els.t
 
 // ---------------- ридер ----------------
 
+// у ReManga номер главы обнуляется на каждом новом томе — без пометки тома
+// "Глава 0" тома 1 и тома 3 в списке/шапке ридера неотличимы друг от друга
+function chapterLabelText(ch) {
+  return ch.tome != null ? `Том ${ch.tome} · Глава ${ch.chapter ?? '?'}` : `Глава ${ch.chapter ?? '?'}`;
+}
+
 async function openReader(item, chapter, opts = {}) {
   closeTitleModal();
   const chapters = opts.chapters || [];
@@ -1713,13 +1736,13 @@ async function openReader(item, chapter, opts = {}) {
     mangaId: item.id,
     mangaTitle: item.title,
     coverUrl: item.coverUrl || '',
-    title: `${item.title} · Глава ${chapter.chapter ?? '?'}`,
+    title: `${item.title} · ${chapterLabelText(chapter)}`,
     pages: [],
     mode: reader.mode || 'paged',
     zoom: reader.zoom || 1,
     page: 0,
     chapterId: chapter.id,
-    chapterLabel: `Гл. ${chapter.chapter ?? '?'}`,
+    chapterLabel: chapterLabelText(chapter),
     chapters,
     chapterIndex,
     offline: !!opts.offline,
@@ -2204,6 +2227,38 @@ function renderProfileBookmarks() {
   }
   els.profileAnimeShowAllBtn.hidden = animeLibrary.length <= BOOKMARKS_PREVIEW_LIMIT;
   els.profileAnimeShowAllBtn.textContent = `Показать все (${animeLibrary.length})`;
+
+  renderProfileGenreStats();
+}
+
+// статистика жанров — считается по тайтлам из закладок (манга + аниме), у
+// которых заполнено поле genres. Сейчас жанры реально приходят только с
+// MangaDex и AniLibria (единственные источники, у которых я точно знаю
+// формат поля) — у ReManga/WaManga/MangaBuff/AnimeOn/anim-ru.net жанров нет,
+// такие тайтлы просто не участвуют в подсчёте. Старые закладки, сохранённые
+// до этого обновления, тоже без жанров — посчитаются только новые/заново
+// открытые и пересохранённые
+function renderProfileGenreStats() {
+  const counts = new Map();
+  for (const item of [...library, ...animeLibrary]) {
+    for (const g of (item.genres || [])) {
+      counts.set(g, (counts.get(g) || 0) + 1);
+    }
+  }
+  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+  els.profileGenresChart.hidden = sorted.length === 0;
+  els.profileGenresEmpty.hidden = sorted.length > 0;
+  if (!sorted.length) return;
+  const max = sorted[0][1];
+  els.profileGenresChart.innerHTML = sorted.map(([name, count]) => `
+    <div class="genre-stat-row">
+      <span class="genre-stat-name">${escapeHtml(name)}</span>
+      <div class="genre-stat-bar-track">
+        <div class="genre-stat-bar" style="width:${Math.max(6, Math.round((count / max) * 100))}%"></div>
+      </div>
+      <span class="genre-stat-count">${count}</span>
+    </div>
+  `).join('');
 }
 
 function openBookmarksModal(kind) {
@@ -2228,6 +2283,25 @@ els.bookmarksModalBackdrop.addEventListener('click', (e) => {
 // попадает вообще любой открытый тайтл, а не только добавленные в библиотеку.
 // Видно только на этом компьютере — раздел никак не связан с friendProfile*,
 // который видят друзья, там этого списка нет и не будет.
+// клик по строке истории раньше открывал карточку тайтла (openTitleModal),
+// хотя в самой истории уже есть chapterId ровно той главы, на которой
+// остановились — читатель ждал открытия главы, а получал тайтл заново.
+// Та же логика, что уже используется для открытия главы из "поделиться в
+// чате" (см. openSharedContent) — тянем список глав, находим нужную по id,
+// открываем ридер прямо на ней (с полным списком глав для кнопок вперёд/назад).
+async function openHistoryChapter(h) {
+  const item = { id: h.mangaId, title: h.title, coverUrl: h.coverUrl || '' };
+  try {
+    const chapters = await window.hanko.mangadexChapters(h.mangaId, h.title);
+    const chapter = chapters.find((c) => c.id === h.chapterId) || { id: h.chapterId, chapter: null };
+    await openReader(item, chapter, { chapters });
+  } catch {
+    // если список глав не подтянулся (источник недоступен и т.п.) — не
+    // теряем клик молча, откатываемся на карточку тайтла как раньше
+    openTitleModal(item);
+  }
+}
+
 function renderReadingHistory() {
   const items = readingHistory.slice().sort((a, b) => b.updatedAt - a.updatedAt);
   els.readingHistoryEmpty.hidden = items.length > 0;
@@ -2245,7 +2319,7 @@ function renderReadingHistory() {
       </div>
       <button class="history-row-remove" type="button" title="Удалить из истории">✕</button>
     `;
-    row.addEventListener('click', () => openTitleModal({ id: h.mangaId, title: h.title, coverUrl: h.coverUrl }));
+    row.addEventListener('click', () => openHistoryChapter(h));
     row.querySelector('.history-row-remove').addEventListener('click', async (e) => {
       e.stopPropagation();
       readingHistory = await window.hanko.removeHistoryItem(h.mangaId);
@@ -2263,6 +2337,30 @@ els.readingHistoryClearBtn.addEventListener('click', async () => {
 
 // то же самое, но для просмотра аниме — из anime-history.json, тоже для
 // ЛЮБОГО открытого тайтла, не только из аниме-закладок.
+// то же самое, но для просмотра аниме — из anime-history.json, тоже для
+// ЛЮБОГО открытого тайтла, не только из аниме-закладок.
+// Клик раньше открывал карточку тайтла (openAnimeTitleModal) вместо самого
+// плеера — та же логика, что уже используется кнопкой "Продолжить" внутри
+// карточки тайтла: сводим серии со всех источников, находим нужную по
+// подписи "Серия N" (не по индексу — список мог измениться из-за новых
+// серий), открываем плеер сразу на ней.
+async function openHistoryEpisode(h) {
+  const item = { id: h.releaseId, title: h.title, coverUrl: h.coverUrl || '' };
+  try {
+    const unified = await fetchUnifiedAnimeEpisodes(item);
+    const index = unified.findIndex((ep) => `Серия ${ep.number}` === h.episodeLabel);
+    if (index < 0) {
+      openAnimeTitleModal(item);
+      return;
+    }
+    await openAnimePlayer(item, unified, index);
+  } catch {
+    // источник недоступен и т.п. — не теряем клик молча, откатываемся на
+    // карточку тайтла, как было раньше
+    openAnimeTitleModal(item);
+  }
+}
+
 function renderWatchHistory() {
   const items = animeHistory.slice().sort((a, b) => b.updatedAt - a.updatedAt);
   els.watchHistoryEmpty.hidden = items.length > 0;
@@ -2280,7 +2378,7 @@ function renderWatchHistory() {
       </div>
       <button class="history-row-remove" type="button" title="Удалить из истории">✕</button>
     `;
-    row.addEventListener('click', () => openAnimeTitleModal({ id: h.releaseId, title: h.title, coverUrl: h.coverUrl }));
+    row.addEventListener('click', () => openHistoryEpisode(h));
     row.querySelector('.history-row-remove').addEventListener('click', async (e) => {
       e.stopPropagation();
       animeHistory = await window.hanko.removeAnimeHistoryItem(h.releaseId);
@@ -2467,18 +2565,30 @@ els.friendActionRemoveBtn.addEventListener('click', async () => {
   }
 });
 
-function myCommentRow(c) {
+// общая вёрстка строки комментария профиля (и на своей странице, и на
+// странице друга) — ник сверху с аватаркой слева и датой справа, текст
+// сообщения строкой ниже. Без "плашки"-подложки под каждым комментарием —
+// просто список, разделённый тонкой линией
+function buildProfileCommentRow(c, showDelete, onDelete) {
   const row = document.createElement('div');
-  row.className = 'chapter-row';
+  row.className = 'profile-comment-row';
   const date = new Date(c.created_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   row.innerHTML = `
-    <div class="chapter-row-main">
-      <span class="chapter-row-label"><b>${escapeHtml(c.author_name)}</b> — ${escapeHtml(c.body)}</span>
-      <p class="card-meta" style="margin:2px 0 0;">${escapeHtml(date)}</p>
+    <div class="profile-comment-row-head">
+      <span class="profile-comment-row-avatar">${avatarInnerHtml(c.author_name, c.avatar_url)}</span>
+      <span class="profile-comment-row-name">${escapeHtml(c.author_name)}</span>
+      <span class="profile-comment-row-date">${escapeHtml(date)}</span>
+      ${showDelete ? '<button class="friend-request-remove" title="Удалить комментарий">✕</button>' : ''}
     </div>
-    <button class="friend-request-remove" title="Удалить комментарий">✕</button>
+    <div class="profile-comment-row-text">${escapeHtml(c.body)}</div>
   `;
-  row.querySelector('.friend-request-remove').addEventListener('click', async () => {
+  const delBtn = row.querySelector('.friend-request-remove');
+  if (delBtn) delBtn.addEventListener('click', onDelete);
+  return row;
+}
+
+function myCommentRow(c) {
+  return buildProfileCommentRow(c, true, async () => {
     try {
       await window.hanko.onlineDeleteProfileComment(c.id);
       await loadMyComments();
@@ -2486,7 +2596,6 @@ function myCommentRow(c) {
       showAppAlert(cleanIpcError(err));
     }
   });
-  return row;
 }
 
 async function loadMyComments() {
@@ -3933,29 +4042,16 @@ function friendBookmarkCard(item) {
 }
 
 function friendCommentRow(c) {
-  const row = document.createElement('div');
-  row.className = 'chapter-row';
-  const date = new Date(c.created_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-  row.innerHTML = `
-    <div class="chapter-row-main">
-      <span class="chapter-row-label"><b>${escapeHtml(c.author_name)}</b> — ${escapeHtml(c.body)}</span>
-      <p class="card-meta" style="margin:2px 0 0;">${escapeHtml(date)}</p>
-    </div>
-    ${c.author_id === onlineState.myId ? '<button class="friend-request-remove" title="Удалить комментарий">✕</button>' : ''}
-  `;
-  const delBtn = row.querySelector('.friend-request-remove');
-  if (delBtn) {
-    delBtn.addEventListener('click', async () => {
-      try {
-        await window.hanko.onlineDeleteProfileComment(c.id);
-        await loadFriendComments(activeFriendProfile.friendId);
-        els.friendStatComments.textContent = String(Math.max(0, (parseInt(els.friendStatComments.textContent, 10) || 1) - 1));
-      } catch (err) {
-        showAppAlert(cleanIpcError(err));
-      }
-    });
-  }
-  return row;
+  const canDelete = c.author_id === onlineState.myId;
+  return buildProfileCommentRow(c, canDelete, async () => {
+    try {
+      await window.hanko.onlineDeleteProfileComment(c.id);
+      await loadFriendComments(activeFriendProfile.friendId);
+      els.friendStatComments.textContent = String(Math.max(0, (parseInt(els.friendStatComments.textContent, 10) || 1) - 1));
+    } catch (err) {
+      showAppAlert(cleanIpcError(err));
+    }
+  });
 }
 
 async function loadFriendComments(friendId) {
@@ -5378,15 +5474,9 @@ function buildAnimeRelatedWeb(items, currentId, currentTitleNorm) {
       <img src="${rel.coverUrl || ''}" alt="" onerror="this.style.opacity=0" />
       <span class="anime-web-node-title">${escapeHtml(rel.title)}</span>
     `;
-    node.addEventListener('click', () => {
-      if (dragMoved || isCurrent) return; // клик после перетаскивания сферы — не переход
-      if (animeRelatedWebStop) animeRelatedWebStop();
-      els.animeRelatedModalBackdrop.hidden = true;
-      openAnimeTitleModal({ id: rel.id, title: rel.title, coverUrl: rel.coverUrl });
-    });
-    // задержку делаем минимальной (а не стандартные 550мс, как у обычных
-    // карточек) — на сфере наводишься точечно на маленький узел, ждать
-    // полсекунды, чтобы понять, на тот ли навёлся, неудобно
+    // клик обрабатываем не тут, а в onPointerUp ниже — canvas.setPointerCapture()
+    // при перетаскивании сферы перехватывает событие click на себя, и оно до
+    // карточки просто не доходит
     attachCardPreview(node, rel, statusRu, 80);
     canvas.appendChild(node);
     return node;
@@ -5402,6 +5492,7 @@ function buildAnimeRelatedWeb(items, currentId, currentTitleNorm) {
   let dragStartY = 0;
   let dragStartRotY = 0;
   let dragStartRotX = 0;
+  let downNode = null; // узел, на котором началось нажатие — см. onPointerUp
   const focal = 820;
 
   function project(p) {
@@ -5460,6 +5551,9 @@ function buildAnimeRelatedWeb(items, currentId, currentTitleNorm) {
     dragStartY = e.clientY;
     dragStartRotY = rotY;
     dragStartRotX = rotX;
+    // запоминаем узел ДО setPointerCapture — после захвата e.target в
+    // pointerup всегда будет canvas, а не реальный узел под курсором
+    downNode = e.target.closest ? e.target.closest('.anime-web-node') : null;
     canvas.style.cursor = 'grabbing';
     canvas.setPointerCapture(e.pointerId);
   }
@@ -5474,18 +5568,37 @@ function buildAnimeRelatedWeb(items, currentId, currentTitleNorm) {
   function onPointerUp() {
     dragging = false;
     canvas.style.cursor = 'grab';
+    // клик — если не перетаскивали сферу и нажатие началось именно на узле
+    if (!dragMoved && downNode) {
+      const i = nodeEls.indexOf(downNode);
+      if (i >= 0 && i !== currentIndex) {
+        const rel = items[i];
+        if (animeRelatedWebStop) animeRelatedWebStop();
+        els.animeRelatedModalBackdrop.hidden = true;
+        openAnimeTitleModal({ id: rel.id, title: rel.title, coverUrl: rel.coverUrl });
+      }
+    }
+    downNode = null;
+  }
+  // pointerleave — просто сброс состояния перетаскивания (на всякий случай,
+  // если курсор уйдёт за пределы окна во время драга), БЕЗ обработки клика —
+  // иначе можно случайно "кликнуть" при обычном уводе мыши с холста
+  function onPointerLeave() {
+    dragging = false;
+    downNode = null;
+    canvas.style.cursor = 'grab';
   }
   canvas.addEventListener('pointerdown', onPointerDown);
   canvas.addEventListener('pointermove', onPointerMove);
   canvas.addEventListener('pointerup', onPointerUp);
-  canvas.addEventListener('pointerleave', onPointerUp);
+  canvas.addEventListener('pointerleave', onPointerLeave);
 
   animeRelatedWebStop = () => {
     cancelAnimationFrame(rafId);
     canvas.removeEventListener('pointerdown', onPointerDown);
     canvas.removeEventListener('pointermove', onPointerMove);
     canvas.removeEventListener('pointerup', onPointerUp);
-    canvas.removeEventListener('pointerleave', onPointerUp);
+    canvas.removeEventListener('pointerleave', onPointerLeave);
     animeRelatedWebStop = null;
   };
 }
@@ -5562,7 +5675,7 @@ async function openAnimeTitleModal(item) {
       await window.hanko.removeAnimeLibraryItem(item.id);
       syncBookmarkRemove(item.id);
     } else {
-      await window.hanko.upsertAnimeLibraryItem({ id: item.id, title: item.title, coverUrl: item.coverUrl, status: item.status, description: item.description });
+      await window.hanko.upsertAnimeLibraryItem({ id: item.id, title: item.title, coverUrl: item.coverUrl, status: item.status, description: item.description, genres: item.genres || [] });
       syncBookmarkUpsert(item);
       playSoftTick();
     }
