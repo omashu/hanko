@@ -627,7 +627,11 @@ els.cyberpunkThemeToggleBtn.addEventListener('click', () => {
 function enforcePremiumThemeGate() {
   els.premiumThemeToggleBtn.hidden = !onlineState.isPremium;
   els.cyberpunkThemeToggleBtn.hidden = !onlineState.isPremium;
-  if (PREMIUM_THEMES.includes(document.body.dataset.theme) && !onlineState.isPremium) {
+  // До завершения onlineInit() статус подписки неизвестен. Раньше undefined
+  // трактовался как «премиума нет», поэтому при каждом офлайн-старте или
+  // временном сбое сохранённая премиум-тема тут же перезаписывалась на dark.
+  // Сбрасываем выбор только после УСПЕШНОЙ проверки аккаунта.
+  if (onlineState.ready && PREMIUM_THEMES.includes(document.body.dataset.theme) && !onlineState.isPremium) {
     applyTheme('dark');
     window.hanko.saveSettings({ theme: 'dark' });
   }
