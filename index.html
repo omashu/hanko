@@ -12,6 +12,41 @@
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <!-- электрическая рамка (тема Neon Uplink/киберпанк) — по рецепту из
+       статьи про технику @BalintFerenczy: четыре слоя feTurbulence, каждый
+       едет в свою сторону через feOffset+animate (два по вертикали друг
+       другу навстречу, два по горизонтали), смешиваются feComposite
+       (сложение) + feBlend color-dodge — это даёт "живую" структурированную
+       турбулентность вместо ровного дрожания одного шума (так было в первой
+       попытке и выглядело плохо). Результат используется как displacement
+       map для настоящей рамки — см. .cyber-electric-border в style.css.
+       Точные числовые параметры (baseFrequency/scale/длительности) я
+       восстановил по текстовому описанию техники, не по оригинальному
+       исходнику — при необходимости их можно подкрутить.
+
+       ВАЖНО про бесшовное зацикливание: у шума с baseFrequency=0.02 период
+       повторения — 1/0.02 = 50 единиц. Сдвиг в <animate> должен быть кратен
+       этому периоду, иначе в момент, когда анимация доходит до конца и
+       скачком возвращается к началу (SMIL это делает мгновенно, без
+       перехода), виден шов — ровно то, что описал пользователь ("на пол
+       секунды появляется прямая линия, часть рамки залипает"). Вертикальный
+       сдвиг 700 кратен 50 (700/50=14) — с ним всё было гладко. Горизонтальный
+       490 — НЕ кратен (490/50=9.8), поэтому глючила именно горизонтальная
+       составляющая; исправлено на 500 (500/50=10). Плюс добавлен
+       stitchTiles="stitch" на все четыре feTurbulence — это отдельная
+       настройка именно за бесшовное тайлинг шума, без неё даже кратный
+       сдвиг не гарантирует идеальный шов. Если решишь потом поменять
+       baseFrequency — не забыть, что тогда и период (1/baseFrequency)
+       изменится, и сдвиги нужно будет пересчитать под кратность заново.
+
+       ПОЧЕМУ БЕЗ <animate> (SMIL): с ним анимация через некоторое время
+       намертво замирала (известная особенность Chromium — SMIL-таймлайн
+       внутри <filter>, чей svg-хост нулевого размера/невидим, браузер
+       через какое-то время троттлит/замораживает как "неважный для
+       рендера"). Вместо этого dx/dy у feOffset двигает JS через
+       requestAnimationFrame — см. startElectricBorderAnim() в renderer.js.
+       Тот же 6-секундный цикл и та же кратность периоду шума (700/500),
+       просто без SMIL. -->
 <div class="app-background" id="appBackground">
   <div class="app-background-photo"></div>
   <div class="bg-cloud" style="width:220px; height:90px; top:6%; left:-8%;"></div>
@@ -250,14 +285,29 @@
 
     <div class="stat-grid" id="profileStatGrid">
       <div class="stat-block">
+        <span class="cyber-electric-bg" aria-hidden="true"></span>
+        <span class="cyber-electric-glow2" aria-hidden="true"></span>
+        <span class="cyber-electric-glow1" aria-hidden="true"></span>
+        <span class="cyber-electric-border" aria-hidden="true"></span>
+        <span class="cyber-electric-sheen" aria-hidden="true"></span>
         <span class="stat-block-value" id="statBooks">0</span>
         <span class="stat-block-label" id="statBooksLabel">в библиотеке</span>
       </div>
       <div class="stat-block stat-block--clickable" id="statFriendsBlock" role="button" tabindex="0">
+        <span class="cyber-electric-bg" aria-hidden="true"></span>
+        <span class="cyber-electric-glow2" aria-hidden="true"></span>
+        <span class="cyber-electric-glow1" aria-hidden="true"></span>
+        <span class="cyber-electric-border" aria-hidden="true"></span>
+        <span class="cyber-electric-sheen" aria-hidden="true"></span>
         <span class="stat-block-value" id="statFriends">0</span>
         <span class="stat-block-label" id="statFriendsLabel">друзей</span>
       </div>
       <div class="stat-block">
+        <span class="cyber-electric-bg" aria-hidden="true"></span>
+        <span class="cyber-electric-glow2" aria-hidden="true"></span>
+        <span class="cyber-electric-glow1" aria-hidden="true"></span>
+        <span class="cyber-electric-border" aria-hidden="true"></span>
+        <span class="cyber-electric-sheen" aria-hidden="true"></span>
         <span class="stat-block-value" id="statComments">0</span>
         <span class="stat-block-label" id="statCommentsLabel">комментариев</span>
       </div>
@@ -663,7 +713,7 @@
       </header>
       <div class="reader-progress-track"><div class="reader-progress-fill" id="readerProgressFill"></div></div>
     </div>
-    <div class="reader-body" id="readerBody"></div>
+    <div class="reader-body" id="readerBody" tabindex="-1"></div>
     <footer class="reader-bottom" id="readerPaged">
       <button id="chapterPrevBtn" class="chapter-nav-btn" type="button">‹ Пред. глава</button>
       <div class="reader-page-controls" id="readerPageControls">

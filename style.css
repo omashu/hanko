@@ -78,17 +78,19 @@ body[data-theme="dark"] .app-background-veil {
    премиум. Теперь тёплый цвет есть только там же, где раньше был коралл
    (акцент/кнопки/рамки/точки), сам фон и текст — нейтральные. ---------- */
 body[data-theme="premium"] {
-  --surface: rgba(20, 20, 26, 0.6);
-  --surface-2: rgba(20, 20, 26, 0.44);
-  --surface-3: rgba(20, 20, 26, 0.3);
-  --border: rgba(212, 175, 106, 0.22);
-  --text: #eef0ff;
-  --text-muted: #a8adcf;
-  --accent: #d4af6a;
-  --accent-bright: #f0cf8f;
-  --accent-rgb: 212, 175, 106;
-  --accent-bright-rgb: 240, 207, 143;
-  --gold: #d4af6a;
+  /* Не кислотно-жёлтое «золото», а приглушённая бронза + свет сусального
+     золота: тёплый, но не грязный оттенок на почти чёрном лаке. */
+  --surface: rgba(20, 15, 16, 0.86);
+  --surface-2: rgba(37, 27, 22, 0.8);
+  --surface-3: rgba(71, 49, 30, 0.55);
+  --border: rgba(212, 166, 103, 0.38);
+  --text: #fbf5e9;
+  --text-muted: #d2c3af;
+  --accent: #bd8550;
+  --accent-bright: #f5d99e;
+  --accent-rgb: 189, 133, 80;
+  --accent-bright-rgb: 245, 217, 158;
+  --gold: #e0b775;
 }
 body[data-theme="premium"] .rail,
 body[data-theme="premium"] .view,
@@ -100,21 +102,166 @@ body[data-theme="premium"] .section {
    прошёл единственный золотой шов, а не разлилась краска */
 body[data-theme="premium"] .app-background-veil {
   background:
-    radial-gradient(ellipse at 15% 10%, rgba(212, 175, 106, 0.1), transparent 45%),
-    linear-gradient(180deg, rgba(6, 8, 20, 0.45) 0%, rgba(6, 8, 20, 0.25) 30%, rgba(6, 8, 20, 0.35) 65%, rgba(4, 5, 14, 0.6) 100%);
+    radial-gradient(ellipse at 15% 10%, rgba(239, 210, 154, 0.11), transparent 42%),
+    radial-gradient(ellipse at 82% 88%, rgba(185, 130, 79, 0.09), transparent 44%),
+    linear-gradient(180deg, rgba(10, 8, 11, 0.58) 0%, rgba(10, 8, 11, 0.3) 30%, rgba(9, 7, 9, 0.43) 65%, rgba(5, 4, 6, 0.68) 100%);
+  animation: kintsugi-veil-drift 26s ease-in-out infinite alternate;
+}
+/* Редкие частицы золота — как пыль сусали, а не блёстки. */
+body[data-theme="premium"] .app-background-veil::after {
+  content: '';
+  position: absolute;
+  inset: -15%;
+  pointer-events: none;
+  opacity: .42;
+  background:
+    radial-gradient(circle, rgba(255, 237, 191, .9) 0 .8px, transparent 1.4px) 11px 19px / 191px 173px,
+    radial-gradient(circle, rgba(195, 142, 79, .72) 0 1px, transparent 1.6px) 78px 44px / 283px 229px;
+  animation: kintsugi-dust-float 34s linear infinite;
 }
 body[data-theme="premium"] .seal {
-  background: radial-gradient(circle at 32% 28%, var(--accent-bright), var(--accent) 65%, #6b4a1e 100%);
-  box-shadow: 0 0 0 3px rgba(212, 175, 106, 0.22);
+  background: radial-gradient(circle at 32% 28%, #fff3cf, var(--accent-bright) 28%, var(--accent) 68%, #59351f 100%);
+  box-shadow: 0 0 0 3px rgba(239, 210, 154, .2), 0 0 19px rgba(185, 130, 79, .28);
+  animation: kintsugi-seal-breathe 4.8s ease-in-out infinite;
 }
 
-/* ---------- Neon Uplink — вторая премиум-тема, киберпанк. Неоновый
-   циан+маджента на почти чёрном фоне ночного мегаполиса. В отличие от
-   Kintsugi (тонкий золотой акцент на нейтральной базе) — тут сама светящаяся
-   рамка/тень это и есть тема, поэтому глубже перекрашивает --accent-rgb,
-   на которые уже завязаны box-shadow у .card/.btn-primary/.card--glow — само
-   свечение карточек и кнопок подхватывается без переопределения каждого
-   класса отдельно, достаточно перекрасить переменные. ---------- */
+/* Кинцуги-швы: карточки остаются спокойными, а тонкая золотая линия
+   просыпается лишь под курсором — как свет, который пробежал по трещине. */
+body[data-theme="premium"] .card,
+body[data-theme="premium"] .profile-card,
+body[data-theme="premium"] .stat-block {
+  border-color: rgba(190, 143, 83, .24);
+}
+body[data-theme="premium"] .card::after {
+  content: '';
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(118deg, transparent 38%, rgba(255, 242, 202, .04) 44%, rgba(255, 233, 177, .46) 50%, rgba(184, 121, 72, .18) 55%, transparent 64%);
+  background-size: 230% 100%;
+  background-position: 120% 0;
+  mix-blend-mode: screen;
+}
+body[data-theme="premium"] .card:hover::after { animation: kintsugi-lacquer-sweep .9s linear both; }
+body[data-theme="premium"] .card:hover {
+  border-color: rgba(239, 210, 154, .72);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, .3), 0 0 0 1px rgba(239, 210, 154, .17), 0 0 22px rgba(185, 130, 79, .16);
+}
+body[data-theme="premium"] .stat-block {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background: linear-gradient(135deg, rgba(255, 244, 214, .025), transparent 43%), var(--surface);
+  animation: kintsugi-ceramic-warmth 7.2s ease-in-out infinite;
+}
+body[data-theme="premium"] .stat-block:nth-child(2) { animation-delay: -4s; }
+body[data-theme="premium"] .stat-block:nth-child(3) { animation-delay: -8s; }
+/* Вместо неонового вращения — два очень тонких шва в лаке. Они не бегут
+   вокруг блока: лишь тихо проявляются и меняют яркость, словно золотой лак
+   ловит свет. */
+body[data-theme="premium"] .stat-block::after {
+  content: '';
+  position: absolute;
+  /* Above the lacquer background, below the labels.  A negative layer is
+     painted behind the isolated block in Chromium and becomes invisible. */
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+  opacity: .26;
+  background:
+    linear-gradient(137deg, transparent 0 28%, rgba(255, 244, 214, .08) 29.2%, rgba(245, 217, 158, .56) 30%, rgba(189, 133, 80, .26) 30.8%, transparent 32% 100%),
+    linear-gradient(39deg, transparent 0 63%, rgba(189, 133, 80, .12) 64.1%, rgba(255, 240, 195, .42) 65%, transparent 66% 100%);
+  background-size: 170% 100%, 190% 100%;
+  filter: blur(.35px);
+  animation: kintsugi-crack-awaken 7.2s ease-in-out infinite;
+}
+body[data-theme="premium"] .stat-block:nth-child(2)::after { animation-delay: -2.4s; }
+body[data-theme="premium"] .stat-block:nth-child(3)::after { animation-delay: -5.1s; }
+body[data-theme="premium"] .stat-block-value,
+body[data-theme="premium"] .stat-block-label { position: relative; z-index: 1; }
+body[data-theme="premium"] h1,
+body[data-theme="premium"] .section-title {
+  background: linear-gradient(100deg, #fff4d6 0%, #d39b5d 33%, #fff7df 52%, #b97743 73%, #fff4d6 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: kintsugi-title-glow 10s linear infinite;
+}
+body[data-theme="premium"] .profile-avatar-wrap::before {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  z-index: 0;
+  border-radius: 50%;
+  padding: 2px;
+  pointer-events: none;
+  background: conic-gradient(from 28deg, transparent 0 18%, #efd29a 22% 33%, transparent 38% 61%, #b9824f 66% 77%, transparent 81% 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  filter: drop-shadow(0 0 4px rgba(239, 210, 154, .62));
+  animation: kintsugi-avatar-orbit 14s linear infinite;
+}
+body[data-theme="premium"] .profile-avatar { position: relative; z-index: 1; }
+body[data-theme="premium"] .rail-btn.is-active {
+  color: #fff2cf;
+  background: linear-gradient(90deg, rgba(185, 130, 79, .18), rgba(239, 210, 154, .08));
+  text-shadow: 0 0 10px rgba(239, 210, 154, .34);
+}
+body[data-theme="premium"] .rail-btn.is-active::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  top: 23%;
+  width: 2px;
+  height: 54%;
+  border-radius: 99px;
+  background: linear-gradient(#fff2cf, #b9824f);
+  box-shadow: 0 0 7px rgba(239, 210, 154, .7);
+  animation: kintsugi-nav-glow 3.4s ease-in-out infinite;
+}
+
+@keyframes kintsugi-veil-drift { to { filter: saturate(1.08) brightness(1.05); } }
+@keyframes kintsugi-dust-float {
+  from { background-position: 11px 19px, 78px 44px; }
+  to { background-position: 76px -121px, -38px 162px; }
+}
+@keyframes kintsugi-seal-breathe {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(239, 210, 154, .17), 0 0 14px rgba(185, 130, 79, .2); }
+  50% { box-shadow: 0 0 0 3px rgba(239, 210, 154, .3), 0 0 27px rgba(185, 130, 79, .38); }
+}
+@keyframes kintsugi-lacquer-sweep {
+  from { opacity: 0; background-position: 120% 0; }
+  18% { opacity: 1; }
+  to { opacity: 0; background-position: -120% 0; }
+}
+@keyframes kintsugi-ceramic-warmth {
+  0%, 100% { border-color: rgba(190, 143, 83, .24); box-shadow: inset 0 0 0 1px rgba(255, 240, 195, 0), 0 0 0 rgba(189, 133, 80, 0); }
+  50% { border-color: rgba(245, 217, 158, .52); box-shadow: inset 0 0 22px rgba(189, 133, 80, .07), 0 0 17px rgba(189, 133, 80, .09); }
+}
+@keyframes kintsugi-crack-awaken {
+  0%, 100% { opacity: .2; background-position: 5% 0, -8% 0; }
+  50% { opacity: .95; background-position: -8% 0, 7% 0; }
+}
+@keyframes kintsugi-avatar-orbit { to { transform: rotate(1turn); } }
+@keyframes kintsugi-title-glow { to { background-position: -150% 0; } }
+@keyframes kintsugi-nav-glow {
+  0%, 100% { opacity: .42; transform: scaleY(.82); }
+  50% { opacity: 1; transform: scaleY(1); }
+}
+
+/* ---------- Neon Uplink — вторая премиум-тема, киберпанк. Первая версия
+   красила только --border/--accent-rgb, но добрая половина рамок в
+   приложении (сам .rail, активная кнопка навигации, обводка аватара при
+   наведении) захардкожены цветом коралловой темы напрямую в rgba(), а не
+   через переменные — поэтому вживую тема почти не отличалась от обычной
+   тёмной. Тут те места перебиты явно, плюс рамки светятся ВСЕГДА, не только
+   при наведении — сама светящаяся обводка это и есть тема, а не эффект по
+   ховеру. ---------- */
 body[data-theme="cyberpunk"] {
   --surface: rgba(8, 8, 20, 0.62);
   --surface-2: rgba(8, 8, 20, 0.46);
@@ -128,21 +275,113 @@ body[data-theme="cyberpunk"] {
   --accent-bright-rgb: 5, 230, 255;
   --gold: #05e6ff;
 }
-body[data-theme="cyberpunk"] .rail,
 body[data-theme="cyberpunk"] .view,
 body[data-theme="cyberpunk"] .section {
-  border-color: rgba(5, 230, 255, 0.22);
-  box-shadow: 0 0 28px rgba(5, 230, 255, 0.05);
+  border-color: rgba(5, 230, 255, 0.32);
+  box-shadow: 0 0 0 1px rgba(5, 230, 255, 0.08), 0 0 32px rgba(5, 230, 255, 0.07);
 }
+/* сама боковая панель — раньше border был захардкожен белым
+   (rgba(255,255,255,.55)) прямо в базовом .rail, той же силы, что и в
+   обычной теме, поэтому цвет темы до неё не доходил вовсе */
+body[data-theme="cyberpunk"] .rail {
+  border: 1px solid rgba(5, 230, 255, 0.45);
+  box-shadow: 0 0 0 1px rgba(255, 46, 196, 0.12), 0 0 34px rgba(5, 230, 255, 0.16), inset 0 0 40px rgba(255, 46, 196, 0.05);
+}
+body[data-theme="cyberpunk"] .rail-brand:hover,
+body[data-theme="cyberpunk"] .rail-brand.is-active {
+  box-shadow: 0 0 0 3px rgba(5, 230, 255, 0.55), 0 0 14px rgba(255, 46, 196, 0.5);
+}
+/* активный пункт навигации — тоже был захардкожен коралловым (209,69,61) */
+body[data-theme="cyberpunk"] .rail-btn.is-active {
+  color: var(--accent-bright);
+  background: rgba(5, 230, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(5, 230, 255, 0.4);
+  text-shadow: 0 0 8px rgba(5, 230, 255, 0.7);
+}
+body[data-theme="cyberpunk"] .rail-btn:hover { color: var(--accent-bright); background: rgba(5, 230, 255, 0.08); }
+
+/* карточки — светящаяся неоновая рамка ВСЕГДА, не только на ховере (обычный
+   .card:hover уже красится через var(--dot, var(--accent)) сам, тут только
+   добавляем свечение в состоянии покоя) */
+body[data-theme="cyberpunk"] .card {
+  border-color: rgba(5, 230, 255, 0.4);
+  box-shadow: 0 0 0 1px rgba(5, 230, 255, 0.12), 0 0 14px rgba(5, 230, 255, 0.1);
+}
+body[data-theme="cyberpunk"] .card:hover {
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4), 0 0 0 1px color-mix(in srgb, var(--dot, var(--accent)) 55%, transparent), 0 0 22px color-mix(in srgb, var(--dot, var(--accent)) 45%, transparent);
+}
+/* Короткий «сигнальный» блик запускается только при наведении. Это делает
+   обложки живыми, но не отвлекает постоянным движением в каталоге. */
+body[data-theme="cyberpunk"] .card::after {
+  content: '';
+  position: absolute;
+  z-index: 4;
+  top: -35%;
+  bottom: -35%;
+  left: -42%;
+  width: 26%;
+  pointer-events: none;
+  opacity: 0;
+  transform: skewX(-18deg);
+  background: linear-gradient(90deg, transparent, rgba(189, 251, 255, .04) 18%, rgba(226, 255, 255, .56) 50%, rgba(255, 107, 215, .22) 75%, transparent);
+  filter: blur(1px);
+}
+body[data-theme="cyberpunk"] .card:hover::after { animation: cyber-card-glint .7s ease-out both; }
+body[data-theme="cyberpunk"] .rail-btn.is-active::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #eaffff;
+  box-shadow: 0 0 5px 2px #05e6ff, 0 0 10px 3px rgba(255, 46, 196, .65);
+  animation: cyber-rail-beacon 1.9s ease-in-out infinite;
+}
+@keyframes cyber-card-glint {
+  0% { opacity: 0; transform: translateX(0) skewX(-18deg); }
+  14% { opacity: 1; }
+  88% { opacity: .55; }
+  100% { opacity: 0; transform: translateX(720%) skewX(-18deg); }
+}
+@keyframes cyber-rail-beacon {
+  0%, 100% { opacity: .55; transform: translateY(-50%) scale(.75); }
+  50% { opacity: 1; transform: translateY(-50%) scale(1.25); }
+}
+
+/* аватар профиля — обводка при наведении тоже была захардкожена коралловым */
+body[data-theme="cyberpunk"] .profile-avatar:hover {
+  box-shadow: 0 0 0 4px rgba(5, 230, 255, 0.4), 0 0 16px rgba(255, 46, 196, 0.5);
+}
+
 /* вуаль фона — вместо мягкого блика (как у Kintsugi) тут два разноцветных
    неоновых зарева по углам, будто отражение витрин ночного города, плюс
-   едва заметные горизонтальные полосы (скан-линии) для духа старых CRT-вывесок */
+   заметная сетка тонких линий, похожая на дорожки печатной платы (в первой
+   версии альфа-канал был настолько мал, что сетку не было видно вообще) */
 body[data-theme="cyberpunk"] .app-background-veil {
   background:
-    repeating-linear-gradient(0deg, rgba(5, 230, 255, 0.025) 0px, rgba(5, 230, 255, 0.025) 1px, transparent 1px, transparent 3px),
-    radial-gradient(ellipse at 12% 8%, rgba(255, 46, 196, 0.16), transparent 45%),
-    radial-gradient(ellipse at 88% 92%, rgba(5, 230, 255, 0.14), transparent 45%),
+    repeating-linear-gradient(0deg, rgba(5, 230, 255, 0.05) 0px, rgba(5, 230, 255, 0.05) 1px, transparent 1px, transparent 34px),
+    repeating-linear-gradient(90deg, rgba(255, 46, 196, 0.035) 0px, rgba(255, 46, 196, 0.035) 1px, transparent 1px, transparent 34px),
+    radial-gradient(ellipse at 12% 8%, rgba(255, 46, 196, 0.22), transparent 45%),
+    radial-gradient(ellipse at 88% 92%, rgba(5, 230, 255, 0.2), transparent 45%),
     linear-gradient(180deg, rgba(4, 4, 14, 0.55) 0%, rgba(4, 4, 14, 0.3) 30%, rgba(4, 4, 14, 0.4) 65%, rgba(2, 2, 10, 0.65) 100%);
+  animation: cyber-grid-drift 22s linear infinite;
+}
+/* Редкие точки в трёх независимых слоях дают ощущение данных, летящих в
+   глубине интерфейса. Это именно фон, поэтому он не перекрывает UI. */
+body[data-theme="cyberpunk"] .app-background-veil::after {
+  content: '';
+  position: absolute;
+  inset: -18%;
+  pointer-events: none;
+  opacity: .5;
+  mix-blend-mode: screen;
+  background:
+    radial-gradient(circle, rgba(164, 250, 255, .9) 0 1px, transparent 1.6px) 0 0 / 151px 173px,
+    radial-gradient(circle, rgba(255, 105, 218, .72) 0 1px, transparent 1.7px) 35px 68px / 227px 193px,
+    radial-gradient(circle, rgba(5, 230, 255, .55) 0 .8px, transparent 1.5px) 91px 22px / 307px 251px;
+  animation: cyber-particles-drift 28s linear infinite;
 }
 body[data-theme="cyberpunk"] .seal {
   background: radial-gradient(circle at 32% 28%, var(--accent-bright), var(--accent) 65%, #170028 100%);
@@ -153,12 +392,218 @@ body[data-theme="cyberpunk"] .seal {
   0%, 100% { box-shadow: 0 0 0 3px rgba(5, 230, 255, 0.3), 0 0 14px 2px rgba(255, 46, 196, 0.3); }
   50% { box-shadow: 0 0 0 3px rgba(5, 230, 255, 0.5), 0 0 26px 6px rgba(255, 46, 196, 0.5); }
 }
-/* заголовки крупным шрифтом — редкие капсом+разрядка читаются как неоновая
-   вывеска, не трогаем обычный текст (мелкий капс/разрядка нечитаемы) */
+/* заголовки крупным шрифтом читаются как неоновая вывеска */
 body[data-theme="cyberpunk"] h1,
 body[data-theme="cyberpunk"] .view > h2,
 body[data-theme="cyberpunk"] .section > h2 {
-  text-shadow: 0 0 12px rgba(5, 230, 255, 0.45);
+  text-shadow: 0 0 12px rgba(5, 230, 255, 0.5), 0 0 26px rgba(255, 46, 196, 0.25);
+}
+/* поля ввода и вторичные кнопки — тоже должны заметно светиться, а не
+   оставаться нейтрально-серыми на фоне остальной неоновой обводки */
+body[data-theme="cyberpunk"] input,
+body[data-theme="cyberpunk"] textarea,
+body[data-theme="cyberpunk"] select {
+  border-color: rgba(5, 230, 255, 0.3) !important;
+}
+body[data-theme="cyberpunk"] input:focus,
+body[data-theme="cyberpunk"] textarea:focus,
+body[data-theme="cyberpunk"] select:focus {
+  border-color: var(--accent-bright) !important;
+  box-shadow: 0 0 0 2px rgba(5, 230, 255, 0.25);
+}
+body[data-theme="cyberpunk"] .btn-secondary {
+  border-color: rgba(5, 230, 255, 0.35);
+}
+body[data-theme="cyberpunk"] .btn-secondary:hover {
+  border-color: var(--accent-bright);
+  box-shadow: 0 0 14px rgba(5, 230, 255, 0.35);
+}
+
+/* Настоящая "электрическая рамка" — по рецепту из статьи, которую нашёл
+   пользователь (техника @BalintFerenczy, CodePen): НЕ один turbulence-шум
+   (так было раньше, и выглядело плохо — "плывущая краска"), а четыре слоя
+   шума, едущих в разные стороны (два по вертикали навстречу друг другу, два
+   по горизонтали), смешанные через feComposite+feBlend(color-dodge) — это и
+   даёт "живую" структурированную турбулентность, а не ровное дрожание. Сам
+   фильтр — в index.html (<filter id="hankoElectricBorder">). Дальше —
+   "стек свечения": под искажённой рамкой ещё две статичные (без искажения)
+   размытые копии той же рамки — они и создают мягкое сияние вокруг реальной
+   потрескивающей линии. Плюс два спилловер-слоя (градиент-хайлайт с
+   mix-blend-mode: overlay и фоновая подсветка с blur(32px)) — они
+   специально НЕ обрезаны по форме блока (без clip-path/inset:0), чтобы
+   свет "вытекал" за пределы блока, как в оригинальном эффекте. */
+body[data-theme="cyberpunk"] .stat-block {
+  position: relative;
+  border-color: transparent;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(5, 230, 255, .13), transparent 38%),
+    radial-gradient(circle at 100% 100%, rgba(255, 46, 196, .11), transparent 42%),
+    var(--surface);
+  border-radius: 4px;
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+}
+.cyber-electric-bg,
+.cyber-electric-glow2,
+.cyber-electric-glow1,
+.cyber-electric-border,
+.cyber-electric-sheen {
+  display: none;
+  pointer-events: none;
+  position: absolute;
+}
+body[data-theme="cyberpunk"] .cyber-electric-bg,
+body[data-theme="cyberpunk"] .cyber-electric-glow2,
+body[data-theme="cyberpunk"] .cyber-electric-glow1,
+body[data-theme="cyberpunk"] .cyber-electric-border,
+body[data-theme="cyberpunk"] .cyber-electric-sheen {
+  display: block;
+}
+/* фоновая подсветка — самый нижний слой, размытое цветное "облако" позади
+   блока, спилловер намеренно не обрезан по форме блока */
+body[data-theme="cyberpunk"] .cyber-electric-bg {
+  inset: -30%;
+  z-index: 0;
+  background: conic-gradient(from 10deg, transparent 0 30%, rgba(5, 230, 255, .4) 42%, transparent 54% 68%, rgba(255, 46, 196, .34) 80%, transparent 92%);
+  filter: blur(24px);
+  opacity: .55;
+  animation: cyber-ambient-orbit 9s linear infinite;
+}
+/* две статичные (без искажения) размытые копии рамки — мягкий ореол вокруг
+   потрескивающей линии, без них искажённая линия сама по себе смотрится
+   плоско */
+body[data-theme="cyberpunk"] .cyber-electric-glow2,
+body[data-theme="cyberpunk"] .cyber-electric-glow1 {
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  clip-path: inherit;
+  border: 1px solid #05e6ff;
+}
+body[data-theme="cyberpunk"] .cyber-electric-glow2 { filter: blur(7px); opacity: .34; animation: cyber-frame-breathe 2.8s ease-in-out infinite; }
+body[data-theme="cyberpunk"] .cyber-electric-glow1 { filter: blur(2px); opacity: .55; animation: cyber-frame-breathe 2.8s ease-in-out infinite reverse; }
+/* сама искажённая ("живая") линия — вот тут реально работает фильтр */
+body[data-theme="cyberpunk"] .cyber-electric-border {
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  clip-path: inherit;
+  padding: 1px;
+  background: conic-gradient(from 0deg, #05e6ff 0deg, #8ff7ff 18deg, transparent 50deg 146deg, #ff2ec4 180deg, #ff9be4 200deg, transparent 235deg 326deg, #05e6ff 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: cyber-frame-orbit 5.5s linear infinite;
+}
+/* градиент-хайлайт поверх — тоже спилловером за пределы блока, overlay
+   усиливает яркие места и даёт ощущение "свет вытекает наружу" */
+body[data-theme="cyberpunk"] .cyber-electric-sheen {
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(112deg, transparent 35%, rgba(187, 250, 255, .02) 44%, rgba(187, 250, 255, .32) 50%, rgba(255, 143, 225, .12) 54%, transparent 64%);
+  background-size: 240% 100%;
+  background-position: 120% 0;
+  mix-blend-mode: screen;
+  animation: cyber-scan 6.2s linear infinite;
+}
+body[data-theme="cyberpunk"] .stat-block:nth-child(2) .cyber-electric-bg,
+body[data-theme="cyberpunk"] .stat-block:nth-child(2) .cyber-electric-border { animation-delay: -1.8s; }
+body[data-theme="cyberpunk"] .stat-block:nth-child(2) .cyber-electric-sheen { animation-delay: -2.2s; }
+body[data-theme="cyberpunk"] .stat-block:nth-child(3) .cyber-electric-bg,
+body[data-theme="cyberpunk"] .stat-block:nth-child(3) .cyber-electric-border { animation-delay: -3.6s; }
+body[data-theme="cyberpunk"] .stat-block:nth-child(3) .cyber-electric-sheen { animation-delay: -4.5s; }
+
+@keyframes cyber-frame-orbit { to { transform: rotate(1turn); } }
+@keyframes cyber-ambient-orbit { to { transform: rotate(-1turn); } }
+@keyframes cyber-frame-breathe {
+  0%, 100% { opacity: .28; }
+  50% { opacity: .68; }
+}
+@keyframes cyber-scan {
+  from { background-position: 130% 0; }
+  to { background-position: -130% 0; }
+}
+@keyframes cyber-grid-drift {
+  from { background-position: 0 0, 0 0, 0 0, 0 0, 0 0; }
+  to { background-position: 34px 34px, -34px 34px, 0 0, 0 0, 0 0; }
+}
+@keyframes cyber-particles-drift {
+  from { background-position: 0 0, 35px 68px, 91px 22px; }
+  to { background-position: 92px -116px, -71px 152px, 184px 78px; }
+}
+/* Профиль получает свой «маяк»: два сегмента кольца и точка-сигнал, которая
+   обходит аватар. Эффект живёт только в Neon Uplink и не зависит от рамки,
+   выбранной пользователем в премиум-настройках. */
+body[data-theme="cyberpunk"] .profile-avatar-wrap::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  z-index: 0;
+  border-radius: 50%;
+  padding: 2px;
+  pointer-events: none;
+  background: conic-gradient(from 25deg, #05e6ff 0deg 44deg, transparent 45deg 164deg, #ff2ec4 165deg 207deg, transparent 208deg 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  filter: drop-shadow(0 0 4px rgba(5, 230, 255, .9)) drop-shadow(0 0 7px rgba(255, 46, 196, .48));
+  animation: cyber-avatar-ring 5s linear infinite;
+}
+body[data-theme="cyberpunk"] .profile-avatar-wrap::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  z-index: 2;
+  margin: -2.5px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: #efffff;
+  box-shadow: 0 0 5px 2px #05e6ff, 0 0 11px 3px rgba(255, 46, 196, .72);
+  animation: cyber-avatar-signal 5s linear infinite;
+}
+body[data-theme="cyberpunk"] .profile-avatar { z-index: 1; }
+@keyframes cyber-avatar-ring { to { transform: rotate(1turn); } }
+@keyframes cyber-avatar-signal {
+  from { transform: rotate(0deg) translateX(48px); }
+  to { transform: rotate(1turn) translateX(48px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  body[data-theme="premium"] .app-background-veil,
+  body[data-theme="premium"] .app-background-veil::after,
+  body[data-theme="premium"] .seal,
+  body[data-theme="premium"] .stat-block,
+  body[data-theme="premium"] .stat-block::after,
+  body[data-theme="premium"] .card:hover::after,
+  body[data-theme="premium"] h1,
+  body[data-theme="premium"] .section-title,
+  body[data-theme="premium"] .profile-avatar-wrap::before,
+  body[data-theme="premium"] .rail-btn.is-active::after,
+  body[data-theme="cyberpunk"] .app-background-veil,
+  body[data-theme="cyberpunk"] .app-background-veil::after,
+  body[data-theme="cyberpunk"] .cyber-electric-bg,
+  body[data-theme="cyberpunk"] .cyber-electric-glow2,
+  body[data-theme="cyberpunk"] .cyber-electric-glow1,
+  body[data-theme="cyberpunk"] .cyber-electric-border,
+  body[data-theme="cyberpunk"] .cyber-electric-sheen,
+  body[data-theme="cyberpunk"] .profile-avatar-wrap::before,
+  body[data-theme="cyberpunk"] .profile-avatar-wrap::after,
+  body[data-theme="cyberpunk"] .card:hover::after,
+  body[data-theme="cyberpunk"] .rail-btn.is-active::after { animation: none; }
+}
+body[data-theme="cyberpunk"] .stat-block-value {
+  position: relative;
+  z-index: 2;
+  color: var(--accent-bright);
+  text-shadow: 0 0 8px rgba(5, 230, 255, .6);
+}
+body[data-theme="cyberpunk"] .stat-block-label {
+  position: relative;
+  z-index: 2;
 }
 
 * { box-sizing: border-box; }
@@ -1959,7 +2404,6 @@ webview#siteWebview { flex: 1; width: 100%; }
   height: 100%;
   width: 0%;
   background: var(--accent);
-  transition: width .2s ease;
 }
 
 .mode-btn {
@@ -1998,6 +2442,9 @@ webview#siteWebview { flex: 1; width: 100%; }
   flex: 1;
   overflow-y: auto;
   overflow-x: auto;
+  /* Отдельный композитный слой для скролла: большие страницы не заставляют
+     перерисовывать всю полноэкранную читалку при каждом движении. */
+  will-change: scroll-position;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2436,6 +2883,7 @@ webview#siteWebview { flex: 1; width: 100%; }
   flex-direction: column;
   align-items: center;
   width: 100%;
+  contain: paint;
 }
 
 .reader-body.mode-paged .reader-page {

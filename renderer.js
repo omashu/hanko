@@ -1753,6 +1753,7 @@ async function openReader(item, chapter, opts = {}) {
   window.hanko.onlineSetActivity({ kind: 'reading', title: item.title, meta: reader.chapterLabel }).catch(() => {});
   els.readerTitle.textContent = reader.title + (reader.offline ? ' (офлайн)' : '');
   els.readerBody.innerHTML = '<div class="reader-loading-skeleton"></div><div class="reader-loading-skeleton"></div>';
+  els.readerBody.scrollTop = 0;
   setZoom(reader.zoom);
   updateChapterNavButtons();
 
@@ -1767,6 +1768,15 @@ async function openReader(item, chapter, opts = {}) {
     reader.pages = pages;
     renderReaderPages();
     setReaderMode(reader.mode);
+    // После кнопки «следующая глава» фокус остаётся на этой кнопке. В режиме
+    // вебтун-скролла тогда ArrowDown не знает, какой контейнер прокручивать,
+    // пока пользователь не кликнет по странице. Возвращаем его readerBody
+    // сразу после отрисовки новой главы — без видимого скролла к элементу.
+    requestAnimationFrame(() => {
+      if (!els.readerOverlay.hidden && reader.mode === 'scroll') {
+        els.readerBody.focus({ preventScroll: true });
+      }
+    });
     if (!reader.offline) {
       recordHistoryProgress({
         mangaId: item.id, title: item.title, coverUrl: item.coverUrl || '',
@@ -1849,7 +1859,10 @@ function attachPageErrorHandling(wrap, img, url) {
 // главы разом (десятки параллельных соединений) — грузим очередью, не больше
 // PAGE_LOAD_CONCURRENCY штук одновременно, тогда получается так же надёжно,
 // как при последовательном скачивании
-const PAGE_LOAD_CONCURRENCY = 3;
+// Две одновременные декодировки заметно ровнее держат скролл на больших
+// страницах, чем три: сеть всё ещё загружается с запасом, но main-поток не
+// получает несколько тяжёлых bitmap-decode в один момент.
+const PAGE_LOAD_CONCURRENCY = 2;
 
 function loadPagesQueued(tasks, limit) {
   let cursor = 0;
@@ -1878,6 +1891,7 @@ function renderReaderPages() {
 
     const img = document.createElement('img');
     img.dataset.retries = '0';
+    img.decoding = 'async';
     attachPageErrorHandling(wrap, img, url);
 
     wrap.appendChild(img);
@@ -1893,6 +1907,56 @@ function renderReaderPages() {
 // полупрозрачная панель поверх (см. #readerOverlay .reader-bottom в CSS)
 function setReaderChromeHidden(hidden) {
   els.readerOverlay.classList.toggle('is-chrome-hidden', hidden);
+}
+
+let readerChromeTimer = null;
+// Kept only as a safety net for any already queued animation frame from an
+// older renderer instance. New keyboard scrolling uses Chromium natively.
+let readerKeyScrollDirection = 0;
+let readerKeyScrollFrame = null;
+let readerKeyScrollLastTime = 0;
+let readerScrollSpeed = 1;
+function stopReaderKeyScroll() {
+  readerKeyScrollDirection = 0;
+  if (readerKeyScrollFrame) cancelAnimationFrame(readerKeyScrollFrame);
+  readerKeyScrollFrame = null;
+  readerKeyScrollLastTime = 0;
+}
+function startReaderKeyScroll(direction) {
+  if (readerKeyScrollDirection === direction && readerKeyScrollFrame) return;
+  stopReaderKeyScroll();
+  readerKeyScrollDirection = direction;
+  showReaderChrome();
+  const tick = (time) => {
+    if (!readerKeyScrollDirection || els.readerOverlay.hidden || reader.mode !== 'scroll') {
+      stopReaderKeyScroll();
+      return;
+    }
+    // The first animation frame has no previous timestamp yet. Treat it as a
+    // normal frame; otherwise elapsed is zero and the loop stops immediately.
+    const elapsed = readerKeyScrollLastTime ? Math.min(40, time - readerKeyScrollLastTime) : 16;
+    readerKeyScrollLastTime = time;
+    // Один непрерывный rAF-поток при удержании клавиши, а не отдельный
+    // smooth-scroll на каждое keydown: движение остаётся ровным на экранах
+    // с высокой частотой обновления.
+    const before = els.readerBody.scrollTop;
+    els.readerBody.scrollTop += readerKeyScrollDirection * 1100 * readerScrollSpeed * (elapsed / 1000);
+    if (els.readerBody.scrollTop === before) { stopReaderKeyScroll(); return; }
+    readerKeyScrollFrame = requestAnimationFrame(tick);
+  };
+  readerKeyScrollFrame = requestAnimationFrame(tick);
+}
+function armReaderChromeHide() {
+  clearTimeout(readerChromeTimer);
+  if (reader.mode !== 'scroll' || els.readerOverlay.hidden) return;
+  const el = els.readerBody;
+  // Near the end, keep chapter navigation visible.
+  if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) return;
+  readerChromeTimer = setTimeout(() => setReaderChromeHidden(true), 3500);
+}
+function showReaderChrome() {
+  setReaderChromeHidden(false);
+  armReaderChromeHide();
 }
 
 function setReaderMode(mode) {
@@ -1920,21 +1984,39 @@ function updateReaderProgress() {
   els.readerProgressFill.style.width = `${Math.min(100, Math.max(0, pct))}%`;
 }
 
+let readerProgressFrame = null;
+function scheduleReaderProgress() {
+  if (readerProgressFrame) return;
+  readerProgressFrame = requestAnimationFrame(() => {
+    readerProgressFrame = null;
+    updateReaderProgress();
+  });
+}
+
 els.readerBody.addEventListener('scroll', () => {
   if (reader.mode !== 'scroll') return;
-  updateReaderProgress();
+  // scroll приходит чаще, чем экран может отрисоваться. Обновляем UI
+  // максимум раз за кадр, а не на каждое промежуточное событие.
+  scheduleReaderProgress();
   const el = els.readerBody;
   // в самом низу главы (или почти) сами показываем шапку/подвал — иначе
   // кнопку "следующая глава" было бы не достать без отдельного тапа
-  if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) setReaderChromeHidden(false);
-});
+  if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) {
+    clearTimeout(readerChromeTimer);
+    setReaderChromeHidden(false);
+  } else {
+    armReaderChromeHide();
+  }
+}, { passive: true });
 
 // тап/клик по самой странице прячет или возвращает шапку и подвал — как в
 // большинстве читалок манги. Работает только по картинке страницы, а не по
 // пустому фону вокруг неё (иначе легко промахнуться мимо самого чтения).
 els.readerBody.addEventListener('click', (e) => {
   if (!e.target.closest('.reader-page')) return;
-  setReaderChromeHidden(!els.readerOverlay.classList.contains('is-chrome-hidden'));
+  const willHide = !els.readerOverlay.classList.contains('is-chrome-hidden');
+  setReaderChromeHidden(willHide);
+  if (!willHide) armReaderChromeHide();
 });
 
 // масштаб страниц — общий для обоих режимов чтения (постранично и скролл),
@@ -2056,14 +2138,23 @@ els.readerRefresh.addEventListener('click', async () => {
 document.addEventListener('keydown', (e) => {
   if (els.readerOverlay.hidden) return;
   if (e.key === 'Escape') { closeReader(); return; }
-
   if (e.ctrlKey || e.metaKey) {
     if (e.key === '+' || e.key === '=') { e.preventDefault(); setZoom((reader.zoom || 1) + ZOOM_STEP); return; }
     if (e.key === '-') { e.preventDefault(); setZoom((reader.zoom || 1) - ZOOM_STEP); return; }
     if (e.key === '0') { e.preventDefault(); setZoom(1); return; }
   }
 
+  // ArrowUp/ArrowDown are deliberately left to Chromium's native scrolling:
+  // it is smoother than a JS animation loop. Hide chrome immediately, but do
+  // not prevent the key, so the focused reader body scrolls at its normal rate.
+  if (reader.mode === 'scroll' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+    clearTimeout(readerChromeTimer);
+    setReaderChromeHidden(true);
+    return;
+  }
+
   if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+  e.preventDefault();
 
   if (reader.mode !== 'paged') {
     // в вебтун-скролле нет понятия «страница» — стрелочки сразу листают главу целиком
