@@ -1552,6 +1552,11 @@ function mapRemangaListItem(raw) {
     status: null,
     rating: null,
     description: '',
+    // raw.genres — массив {id, name, dir}, есть прямо в результатах поиска
+    // (в отличие от description, которого тут нет) — используется как
+    // language-независимый признак в genreOverlapScore при неоднозначном
+    // совпадении по названию (см. findRemangaMatchForTitle)
+    genres: (raw.genres || []).map((g) => g?.name).filter(Boolean),
   };
 }
 
@@ -1619,7 +1624,12 @@ ipcMain.handle('mangadex:details', async (_e, id) => {
     const params = new URLSearchParams();
     params.append('includes[]', 'cover_art');
     const data = await mdFetch(`${MANGADEX_API}/manga/${id}?${params.toString()}`);
-    return { description: cleanMangaDescription(data.data?.attributes?.description?.ru).slice(0, 400) };
+    return {
+      description: cleanMangaDescription(data.data?.attributes?.description?.ru).slice(0, 400),
+      // жанры почти всегда есть, даже когда описания нет вовсе — надёжнее
+      // как признак для disambiguateByGenres (см. mangadex:chapters ниже)
+      genres: mangadexGenres(data.data?.attributes),
+    };
   } catch {
     return null;
   }
@@ -1630,10 +1640,15 @@ ipcMain.handle('mangadex:details', async (_e, id) => {
 // описание оттуда. ReManga в поиске отдаёт описание пустым (см. mapRemangaListItem),
 // поэтому для неё нужен отдельный шаг remangaTitleDetails; у WaManga описание
 // уже приходит прямо в результатах поиска.
-ipcMain.handle('manga:findRuDescription', async (_e, title) => {
+ipcMain.handle('manga:findRuDescription', async (_e, title, referenceGenres) => {
   if (!title) return null;
   try {
-    const rm = await findRemangaMatchForTitle(title);
+    // без referenceGenres (жанры-референс с MangaDex) неоднозначные тайтлы
+    // вроде "Ветролом" (два разных тайтла под одним именем) не разрешаются —
+    // тот же механизм disambiguateByGenres, что уже работает для глав
+    // (см. mangadex:chapters), нужен и здесь, иначе описание для таких
+    // тайтлов молча не находится, даже когда главы уже подтянулись верно
+    const rm = await findRemangaMatchForTitle(title, null, referenceGenres);
     if (rm?.id) {
       const dir = rm.id.slice(REMANGA_PREFIX.length);
       const content = await remangaTitleDetails(dir);
@@ -1642,9 +1657,22 @@ ipcMain.handle('manga:findRuDescription', async (_e, title) => {
     }
   } catch { /* пробуем следующий источник */ }
   try {
-    const wa = await findWamangaMatchForTitle(title);
+    const wa = await findWamangaMatchForTitle(title, null, referenceGenres);
     if (wa?.description) return { description: wa.description };
-  } catch { /* ни один источник не нашёлся — оставляем без описания */ }
+  } catch { /* пробуем последний резерв ниже */ }
+  // оба обычных пути выше молчат — вероятно, название неоднозначно сразу на
+  // обоих сайтах (см. crossDisambiguateRuSources). Последний шанс — вдруг
+  // хотя бы один из них сам по себе разрешается однозначно и может послужить
+  // опорой для другого.
+  try {
+    const { remangaMatch, wamangaMatch } = await crossDisambiguateRuSources(title);
+    if (remangaMatch?.id) {
+      const details = await remangaTitleDetails(remangaMatch.id.slice(REMANGA_PREFIX.length)).catch(() => null);
+      const description = String(details?.description || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      if (description) return { description };
+    }
+    if (wamangaMatch?.description) return { description: wamangaMatch.description };
+  } catch { /* и здесь не нашлось — значит правда неоднозначно с обеих сторон */ }
   return null;
 });
 
@@ -1822,6 +1850,13 @@ function mapWamangaListItem(raw) {
     status: WAMANGA_STATUS_MAP[raw.statusTitle] || null,
     rating: null,
     description: String(raw.description || '').trim(),
+    // как и у ReManga (см. findRemangaMatchForTitle), поле с жанрами тут
+    // никем не подтверждено вручную — пробуем частые варианты имени, а
+    // _raw оставляем на случай, если понадобится залогировать сырой ответ
+    // для диагностики неоднозначных совпадений (см. findWamangaMatchForTitle)
+    genres: (raw.genres || raw.categories || raw.tags || raw.genre || [])
+      .map((g) => (typeof g === 'string' ? g : g?.name)).filter(Boolean),
+    _raw: raw,
   };
 }
 
@@ -1886,12 +1921,26 @@ async function waPages(type, slug, chapterSlug) {
 }
 
 // поиск на WaManga тайтла, соответствующего названию с MangaDex/другого источника
-// (тот же API, что и обычный поиск, просто используем его для матчинга по имени)
-async function findWamangaMatchForTitle(title) {
+// (тот же API, что и обычный поиск, просто используем его для матчинга по имени).
+// referenceDescription/referenceGenres — только для неоднозначного случая
+// (см. ReManga-версию чуть ниже по файлу за подробным комментарием, тут та
+// же логика). Жанры (mapWamangaListItem пробует несколько вероятных имён
+// поля) не подтверждены вручную — если пусто, ниже залогируем сырой объект.
+async function findWamangaMatchForTitle(title, referenceDescription, referenceGenres) {
   if (!title) return null;
   try {
     const { items } = await waSearch(title, { limit: 10 });
-    return pickBestTitleMatch(title, items, (it) => it.title);
+    const tied = pickTopTiedCandidates(title, items, (it) => it.title);
+    if (tied.length === 1) return tied[0];
+    if (tied.length > 1) {
+      const byGenre = disambiguateByGenres(tied, referenceGenres);
+      if (byGenre) return byGenre;
+      // у WaManga описание уже приходит прямо в карточке поиска — лишний
+      // запрос на кандидата не нужен (в отличие от ReManga)
+      const byDesc = await disambiguateByDescription(tied, referenceDescription, (c) => c.description || '');
+      return byDesc;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -3128,13 +3177,25 @@ function normalizeTitleForMatch(s) {
   return (s || '').toLowerCase().replace(/[^a-zа-яё0-9]+/gi, ' ').trim();
 }
 
-function pickBestTitleMatch(target, candidates, getTitle) {
+// раньше pickBestTitleMatch при неоднозначности (несколько разных тайтлов
+// с одинаковым лучшим счётом — два разных произведения под одним именем,
+// см. историю с "Ветролом") просто отказывался сопоставлять вообще. Это
+// само по себе тоже оказалось проблемой: у тайтлов, которые ДЕЙСТВИТЕЛЬНО
+// существуют на нескольких сайтах под одинаковым названием, совпадение
+// переставало находиться вообще — тайтл оставался без RU-источника глав и
+// без описания, хотя оба сайта реально его знают, просто не под одной
+// записью. Поэтому: pickTopTiedCandidates отдаёт ВСЕ карточки с лучшим
+// счётом (а не одну и не null), а дальше вызывающий код сам решает, что
+// делать с неоднозначностью — либо (как раньше) не выбирать никого, либо
+// (как теперь для ReManga/WaManga, см. ниже) различить по описанию, если
+// оно у нас уже есть от исходного источника.
+function pickTopTiedCandidates(target, candidates, getTitle) {
   const targetNorm = normalizeTitleForMatch(target);
-  if (!targetNorm) return null;
+  if (!targetNorm) return [];
   const targetWords = targetNorm.split(' ').filter(Boolean);
-  if (!targetWords.length) return null;
-  let best = null;
+  if (!targetWords.length) return [];
   let bestScore = 0;
+  let tied = [];
   for (const c of candidates) {
     const t = normalizeTitleForMatch(getTitle(c));
     if (!t) continue;
@@ -3159,18 +3220,209 @@ function pickBestTitleMatch(target, candidates, getTitle) {
         score = 1 + overlapRatio;
       }
     }
-    if (score > bestScore) { bestScore = score; best = c; }
+    if (score === 0) continue;
+    if (score > bestScore) { bestScore = score; tied = [c]; }
+    else if (score === bestScore) { tied.push(c); }
   }
-  return best;
+  return tied;
+}
+
+// используется везде, где неоднозначность не разрешить (нет описания под
+// рукой для сравнения, или это не манга-контекст вообще, например аниме) —
+// при нескольких равных кандидатах лучше не выбрать никого, чем наугад не
+// тот (см. pickTopTiedCandidates)
+function pickBestTitleMatch(target, candidates, getTitle) {
+  const tied = pickTopTiedCandidates(target, candidates, getTitle);
+  return tied.length === 1 ? tied[0] : null;
+}
+
+// сравнение по описанию — простое пересечение слов (длиннее 3 букв, чтобы
+// не считать предлоги/местоимения), без внешних NLP-библиотек. Этого
+// достаточно, чтобы отличить два ПОЛНОСТЬЮ разных сюжета под одинаковым
+// названием (велоспорт vs школьные драки) — у них пересечение будет почти
+// нулевым, а у реально того же произведения — заметным, даже если сами
+// описания на разных сайтах пересказаны разными словами.
+// сравнение по жанрам — намного надёжнее описания как признак: у MangaDex
+// теги почти всегда есть, даже когда описания нет вовсе (ровно случай
+// "Ветролома" — описания нет ни у одного варианта, а жанры у MangaDex есть).
+// НО: раньше сравнение шло строками в лоб, без перевода — а у MangaDex жанр
+// подставляется на английском именно тогда, когда для конкретного тайтла нет
+// русского перевода тегов (см. mangadexGenres: name.ru || name.en). Это ровно
+// случай "Ветролома" — "Sports" с MangaDex никогда не совпадёт со "Спорт" у
+// ReManga/WaManga без перевода, даже если оба жанра реально на месте. Карта
+// ниже — не полный словарь, а практический минимум по частым жанрам
+// каталогов; при сравнении разворачиваем каждое название в набор синонимов
+// на обоих языках и сравниваем уже эти множества.
+const GENRE_EN_RU_SYNONYMS = {
+  action: ['экшен', 'боевик'],
+  adventure: ['приключения'],
+  comedy: ['комедия'],
+  drama: ['драма'],
+  fantasy: ['фэнтези'],
+  horror: ['ужасы'],
+  mystery: ['детектив', 'мистика'],
+  psychological: ['психология', 'психологическое'],
+  romance: ['романтика', 'любовь'],
+  'school life': ['школа', 'школьная жизнь'],
+  'sci-fi': ['фантастика', 'научная фантастика'],
+  'slice of life': ['повседневность'],
+  sports: ['спорт'],
+  supernatural: ['сверхъестественное'],
+  tragedy: ['трагедия'],
+  historical: ['история', 'исторический'],
+  'martial arts': ['боевые искусства'],
+  isekai: ['исекай'],
+  ecchi: ['этти'],
+  harem: ['гарем'],
+  mecha: ['меха'],
+  music: ['музыка'],
+  shounen: ['сёнен'],
+  shoujo: ['сёдзё'],
+  seinen: ['сейнен'],
+  josei: ['дзёсей'],
+};
+// разворачиваем в обе стороны один раз при старте — и "sports"->"спорт", и
+// "спорт"->"sports", чтобы неважно было, с какой стороны (референс/кандидат)
+// пришёл русский, а с какой английский вариант
+const GENRE_SYNONYM_GROUPS = (() => {
+  const groups = [];
+  for (const [en, ruList] of Object.entries(GENRE_EN_RU_SYNONYMS)) groups.push([en, ...ruList]);
+  return groups;
+})();
+function normalizeGenreToken(raw) {
+  const t = String(raw).toLowerCase().trim();
+  const group = GENRE_SYNONYM_GROUPS.find((g) => g.includes(t));
+  // канонический ключ — всегда первый (английский) элемент группы; если
+  // синонимов не нашлось, канонизируем сам токен, чтобы он хотя бы совпал
+  // сам с собой при точном совпадении на одном языке
+  return group ? group[0] : t;
+}
+function genreOverlapScore(refGenres, candGenres) {
+  if (!refGenres?.length || !candGenres?.length) return 0;
+  const refSet = new Set(refGenres.map(normalizeGenreToken));
+  let overlap = 0;
+  for (const g of candGenres) if (refSet.has(normalizeGenreToken(g))) overlap++;
+  return overlap / Math.min(refSet.size, candGenres.length);
+}
+
+// различаем неоднозначных кандидатов по жанрам: если у одного явный отрыв от
+// остальных (порог 0.5 — не идеальное совпадение, а больше половины общих
+// жанров) и он не делит первое место с другим — выбираем его. Иначе (жанров
+// нет вовсе или тоже ничья) возвращаем null — пусть решает description
+function disambiguateByGenres(tied, referenceGenres) {
+  if (!referenceGenres?.length) return null;
+  const scored = tied
+    .map((c) => ({ c, score: genreOverlapScore(referenceGenres, c.genres) }))
+    .sort((a, b) => b.score - a.score);
+  if (scored[0].score >= 0.5 && scored[0].score > (scored[1]?.score ?? 0)) return scored[0].c;
+  return null;
+}
+
+function descriptionOverlapScore(a, b) {
+  const wordsA = new Set(normalizeTitleForMatch(a).split(' ').filter((w) => w.length > 3));
+  const wordsB = normalizeTitleForMatch(b).split(' ').filter((w) => w.length > 3);
+  if (!wordsA.size || !wordsB.length) return 0;
+  let overlap = 0;
+  for (const w of wordsB) if (wordsA.has(w)) overlap++;
+  return overlap / Math.min(wordsA.size, wordsB.length);
+}
+
+// различаем неоднозначных кандидатов по описанию: getDescription(c) может
+// быть как синхронной (WaManga — описание уже есть в самой карточке
+// поиска), так и асинхронной (ReManga — нужен отдельный запрос за
+// описанием на каждого кандидата). Порог 0.15 — сознательно невысокий (у
+// пересказов одного и того же сюжета разными словами дословного совпадения
+// не будет), но отсекает совсем случайное совпадение по паре общих слов
+async function disambiguateByDescription(tied, referenceDescription, getDescription) {
+  if (!referenceDescription || !tied.length) return null;
+  let best = null;
+  let bestScore = 0;
+  for (const c of tied) {
+    try {
+      const desc = await getDescription(c);
+      const score = descriptionOverlapScore(referenceDescription, desc || '');
+      if (score > bestScore) { bestScore = score; best = c; }
+    } catch { /* если у конкретного кандидата описание не получить — просто пропускаем его */ }
+  }
+  return bestScore >= 0.15 ? best : null;
 }
 
 // ищем на ReManga тайтл, соответствующий названию с MangaDex (для карточек,
-// открытых как MangaDex-тайтл — чтобы можно было сравнить, где глав на русском больше)
-async function findRemangaMatchForTitle(title) {
+// открытых как MangaDex-тайтл — чтобы можно было сравнить, где глав на русском больше).
+// referenceDescription (если есть) используется только при неоднозначном
+// совпадении названия — см. pickTopTiedCandidates/disambiguateByDescription
+// когда оба сайта одновременно не могут разрешить неоднозначность по
+// названию (у обоих есть несколько по-разному-сюжетных, но одинаково
+// называющихся тайтлов) — раньше на этом всё и заканчивалось: описание,
+// которым можно было бы различить кандидатов, взять было негде (сам
+// findRuDescription ниже вызывал те же неоднозначные поиски без референса —
+// тупик "курица и яйцо"). Но если хотя бы один из двух сайтов сам по себе
+// НЕ неоднозначен (условно там реально только один такой тайтл, хотя на
+// другом их несколько) — его описание можно взять как опорное для другого:
+// оба источника на русском, сравнение по словам (descriptionOverlapScore)
+// работает без всякого MangaDex/перевода.
+async function crossDisambiguateRuSources(title) {
+  const [rmSearch, waSearchResult] = await Promise.all([
+    remangaSearch(title, { count: 10 }).catch(() => ({ items: [] })),
+    waSearch(title, { limit: 10 }).catch(() => ({ items: [] })),
+  ]);
+  const rmTied = pickTopTiedCandidates(title, rmSearch.items, (it) => it.title);
+  const waTied = pickTopTiedCandidates(title, waSearchResult.items, (it) => it.title);
+
+  let remangaMatch = rmTied.length === 1 ? rmTied[0] : null;
+  let wamangaMatch = waTied.length === 1 ? waTied[0] : null;
+
+  if (!wamangaMatch && remangaMatch && waTied.length > 1) {
+    const details = await remangaTitleDetails(remangaMatch.id.slice(REMANGA_PREFIX.length)).catch(() => null);
+    const refDesc = String(details?.description || '').replace(/<[^>]+>/g, ' ');
+    wamangaMatch = await disambiguateByDescription(waTied, refDesc, (c) => c.description || '');
+  }
+  if (!remangaMatch && wamangaMatch && rmTied.length > 1) {
+    const refDesc = wamangaMatch.description || '';
+    remangaMatch = await disambiguateByDescription(rmTied, refDesc, async (c) => {
+      const details = await remangaTitleDetails(c.id.slice(REMANGA_PREFIX.length)).catch(() => null);
+      return String(details?.description || '').replace(/<[^>]+>/g, ' ');
+    });
+  }
+  return { remangaMatch, wamangaMatch };
+}
+
+async function findRemangaMatchForTitle(title, referenceDescription, referenceGenres) {
   if (!title) return null;
   try {
     const { items } = await remangaSearch(title, { count: 10 });
-    return pickBestTitleMatch(title, items, (it) => it.title);
+    const tied = pickTopTiedCandidates(title, items, (it) => it.title);
+    if (tied.length === 1) return tied[0];
+    if (tied.length > 1) {
+      // жанры — надёжнее описания: у ReManga они уже есть прямо в карточке
+      // поиска (в отличие от description), а у MangaDex почти всегда
+      // заполнены, даже когда описания нет вовсе — пробуем их первыми
+      let byGenre = disambiguateByGenres(tied, referenceGenres);
+      if (byGenre) return byGenre;
+      // в листинге поиска genres у ReManga бывают пустыми (см. диагностику) —
+      // на каждого неоднозначного кандидата один общий запрос деталей:
+      // оттуда же берём и описание (для disambiguateByDescription ниже), и
+      // пробуем достать жанры, если они там есть под одним из вероятных имён
+      // поля (сама структура ответа ReManga нигде не задокументирована и не
+      // проверена вручную — если и тут не найдётся, залогируем сырой ответ
+      // целиком, чтобы увидеть реальное имя поля, а не гадать дальше)
+      const detailsById = {};
+      const rawDetailsById = {};
+      await Promise.all(tied.map(async (c) => {
+        const details = await remangaTitleDetails(c.id.slice(REMANGA_PREFIX.length)).catch(() => null);
+        rawDetailsById[c.id] = details;
+        detailsById[c.id] = String(details?.description || '').replace(/<[^>]+>/g, ' ');
+        const rawGenres = details?.genres || details?.categories || details?.tags || details?.genre;
+        if (Array.isArray(rawGenres) && rawGenres.length) {
+          c.genres = rawGenres.map((g) => (typeof g === 'string' ? g : g?.name)).filter(Boolean);
+        }
+      }));
+      byGenre = disambiguateByGenres(tied, referenceGenres);
+      if (byGenre) return byGenre;
+      const byDesc = await disambiguateByDescription(tied, referenceDescription, (c) => detailsById[c.id] || '');
+      return byDesc;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -3178,7 +3430,14 @@ async function findRemangaMatchForTitle(title) {
 
 // и наоборот — ищем на MangaDex тайтл, соответствующий названию с ReManga
 // (нужно, чтобы у ReManga-карточек тоже был английский перевод от MangaDex)
-async function findMangadexMatchForTitle(title) {
+// referenceDescription/referenceGenres — те же, что уходят в findRemangaMatchForTitle/
+// findWamangaMatchForTitle (см. mangadex:chapters). Раньше их тут не было вовсе: при
+// однозначном (по словам) совпадении названия findMangadexMatchForTitle молча
+// возвращал id, даже если это был совсем другой сюжет под тем же названием — а
+// дальше этот неправильный id мог выиграть сравнение "у кого глав больше" и
+// подменить уже верно закреплённый источник (ReManga/WaManga). Теперь ведём себя
+// как остальные источники: при нескольких кандидатах — жанры, потом описание.
+async function findMangadexMatchForTitle(title, referenceDescription, referenceGenres) {
   if (!title) return null;
   try {
     const params = new URLSearchParams({ limit: '10', title: title.trim() });
@@ -3186,8 +3445,21 @@ async function findMangadexMatchForTitle(title) {
     params.append('contentRating[]', 'safe');
     params.append('contentRating[]', 'suggestive');
     const data = await mdFetch(`${MANGADEX_API}/manga?${params.toString()}`);
-    const match = pickBestTitleMatch(title, data.data || [], (m) => pickTitle(m.attributes));
-    return match?.id || null;
+    const items = data.data || [];
+    const tied = pickTopTiedCandidates(title, items, (m) => pickTitle(m.attributes));
+    if (tied.length === 1) return tied[0].id;
+    if (tied.length > 1) {
+      const withGenres = tied.map((m) => ({ ...m, genres: mangadexGenres(m.attributes) }));
+      const byGenre = disambiguateByGenres(withGenres, referenceGenres);
+      if (byGenre) return byGenre.id;
+      const byDesc = await disambiguateByDescription(
+        withGenres,
+        referenceDescription,
+        (m) => cleanMangaDescription(m.attributes?.description?.ru),
+      );
+      if (byDesc) return byDesc.id;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -3357,7 +3629,7 @@ function startLibraryUpdatesWatcher() {
 }
 
 ipcMain.handle('mangadex:chapters', async (_e, payload) => {
-  const { mangaId, title } = typeof payload === 'string' ? { mangaId: payload, title: '' } : (payload || {});
+  const { mangaId, title, description, genres } = typeof payload === 'string' ? { mangaId: payload, title: '' } : (payload || {});
   const isRemanga = typeof mangaId === 'string' && mangaId.startsWith(REMANGA_PREFIX);
   const isWamanga = typeof mangaId === 'string' && mangaId.startsWith(WAMANGA_PREFIX);
   const isMangabuff = typeof mangaId === 'string' && mangaId.startsWith(MANGABUFF_PREFIX);
@@ -3377,13 +3649,30 @@ ipcMain.handle('mangadex:chapters', async (_e, payload) => {
   // цепочке целиком, прежде чем дело доходило до следующего источника. Именно
   // это, похоже, и ощущалось как "тайтл долго грузится, хотя все сайты вроде
   // живы" — теперь худший случай это самый медленный источник, а не их сумма.
-  const [mdMatch, rmMatch, waMatch, mbMatch, ugMatch] = await Promise.all([
-    (!mdId && title) ? findMangadexMatchForTitle(title).catch(() => null) : null,
-    (!rmDir && title) ? findRemangaMatchForTitle(title).catch(() => null) : null,
-    (!waType && title) ? findWamangaMatchForTitle(title).catch(() => null) : null,
+  // description/genres передаём в ReManga/WaManga/MangaDex — для различения
+  // неоднозначных совпадений по названию (см. findRemangaMatchForTitle) —
+  // жанры пробуются первыми (надёжнее, у MangaDex почти всегда заполнены,
+  // даже когда описания нет вовсе)
+  let [mdMatch, rmMatch, waMatch, mbMatch, ugMatch] = await Promise.all([
+    (!mdId && title) ? findMangadexMatchForTitle(title, description, genres).catch(() => null) : null,
+    (!rmDir && title) ? findRemangaMatchForTitle(title, description, genres).catch(() => null) : null,
+    (!waType && title) ? findWamangaMatchForTitle(title, description, genres).catch(() => null) : null,
     (!mbSlug && title) ? findMangabuffMatchForTitle(title).catch(() => null) : null,
     (!ugSlug && title) ? findUsagiMatchForTitle(title).catch(() => null) : null,
   ]);
+  // если у названия несколько вариантов сюжета сразу И на ReManga, И на
+  // WaManga (см. crossDisambiguateRuSources) — обычное сравнение по
+  // description выше ничего не даёт: description часто пуст именно у таких
+  // тайтлов (см. findRuDescription — та же проблема "курица и яйцо"). Раз
+  // всё ещё не нашли ни там, ни там — последний резерв: сверить их друг
+  // с другом (оба на русском, без всякого MangaDex)
+  if (!rmDir && !rmMatch && !waType && !waMatch && title) {
+    try {
+      const cross = await crossDisambiguateRuSources(title);
+      if (cross.remangaMatch) rmMatch = cross.remangaMatch;
+      if (cross.wamangaMatch) waMatch = cross.wamangaMatch;
+    } catch { /* и тут не вышло — остаёмся с тем, что было (скорее всего, только MangaDex) */ }
+  }
   if (!mdId && mdMatch) mdId = mdMatch;
   if (!rmDir && rmMatch) rmDir = rmMatch.id.slice(REMANGA_PREFIX.length);
   if (!waType && waMatch) ({ type: waType, slug: waSlug } = parseWamangaId(waMatch.id));
@@ -3399,15 +3688,31 @@ ipcMain.handle('mangadex:chapters', async (_e, payload) => {
     ugSlug ? ugChapters(ugSlug).catch(() => []) : [],
   ]);
 
-  // из источников RU (MangaDex/ReManga/WaManga/MangaBuff/Usagi) берём тот, где глав больше
-  const ruCandidates = [
-    { name: 'MangaDex', items: mdRuItems },
+  // из источников RU берём тот, где глав больше — но MangaDex сюда не наравне
+  // с остальными: даже с disambiguateByGenres/ByDescription (см.
+  // findMangadexMatchForTitle) он ищет заново по названию при каждом
+  // открытии, а не по уже закреплённому id, как ReManga/WaManga/MangaBuff/
+  // Usagi (когда тайтл добавлен именно оттуда). Поэтому он теперь резервный:
+  // участвует в сравнении только если ReManga/WaManga/MangaBuff/Usagi вместе
+  // не нашли вообще ни одной главы на русском.
+  const primaryCandidates = [
     { name: 'ReManga', items: rmRuItems },
     { name: 'WaManga', items: waRuItems },
     { name: 'MangaBuff', items: mbRuItems },
     { name: 'Usagi', items: ugRuItems },
   ];
-  let winner = ruCandidates.reduce((best, cur) => (cur.items.length > best.items.length ? cur : best));
+  const ruCandidates = [...primaryCandidates, { name: 'MangaDex', items: mdRuItems }];
+  const hasPrimary = primaryCandidates.some((c) => c.items.length > 0);
+  // когда вообще ни у кого из RU нет глав (частый случай для этого тайтла —
+  // см. диагностику), reduce() возвращал бы первый элемент массива просто
+  // как "победителя по умолчанию" (0 > 0 никогда не true), из-за чего в логах
+  // выше показывалось неверное имя "ReManga" на пустых 0 главах. Само
+  // поведение приложения это не меняло (глав всё равно 0), но для точности
+  // диагностики и на случай, если дальше это имя используют где-то ещё —
+  // явно возвращаем "заглушку", когда реально нечего выбирать.
+  let winner = hasPrimary
+    ? primaryCandidates.reduce((best, cur) => (cur.items.length > best.items.length ? cur : best))
+    : (mdRuItems.length ? { name: 'MangaDex', items: mdRuItems } : { name: 'none', items: [] });
 
   // Предохранитель для "хрупких" источников (MangaBuff/Usagi): список глав
   // парсится из отдельного HTML (карточка тайтла) независимо от страниц
@@ -3568,7 +3873,11 @@ async function shikiFetch(path) {
 async function shikiFindId(title) {
   const list = await shikiFetch(`/animes?search=${encodeURIComponent(title)}&limit=5`);
   const candidates = (list || []).map((a) => ({ id: a.id, title: a.russian || a.name || '' }));
-  const match = pickBestTitleMatch(title, candidates, (c) => c.title) || candidates[0];
+  // без запасного "|| candidates[0]" — при неоднозначном совпадении (два
+  // разных аниме с одинаковым названием) pickBestTitleMatch теперь сам
+  // возвращает null, и это специально не переопределяем наугад первым из
+  // списка (см. комментарий в самой pickBestTitleMatch)
+  const match = pickBestTitleMatch(title, candidates, (c) => c.title);
   return match?.id ?? null;
 }
 

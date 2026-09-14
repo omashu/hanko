@@ -51,11 +51,11 @@ contextBridge.exposeInMainWorld('hanko', {
   mangadexLatest: () => ipcRenderer.invoke('mangadex:latest'),
   remangaLatest: () => ipcRenderer.invoke('remanga:latest'),
   remangaYearPopular: () => ipcRenderer.invoke('remanga:yearPopular'),
-  mangadexChapters: (mangaId, title) => ipcRenderer.invoke('mangadex:chapters', { mangaId, title }),
+  mangadexChapters: (mangaId, title, description, genres) => ipcRenderer.invoke('mangadex:chapters', { mangaId, title, description, genres }),
   mangadexPages: (chapterId) => ipcRenderer.invoke('mangadex:pages', chapterId),
   remangaDetails: (id) => ipcRenderer.invoke('remanga:details', id),
   mangadexDetails: (id) => ipcRenderer.invoke('mangadex:details', id),
-  findRuDescription: (title) => ipcRenderer.invoke('manga:findRuDescription', title),
+  findRuDescription: (title, genres) => ipcRenderer.invoke('manga:findRuDescription', title, genres),
   wamangaDetails: (title) => ipcRenderer.invoke('wamanga:details', title),
 
   anilistTrending: () => ipcRenderer.invoke('anilist:trending'),

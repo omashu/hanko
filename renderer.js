@@ -1026,7 +1026,7 @@ function mangaCard(item, { inLibrary }) {
   // прочитанных глав (не для каждой карточки подряд, а только для тех, где
   // это вообще имеет смысл, чтобы не заваливать MangaDex запросами)
   if (item.progress) {
-    window.hanko.mangadexChapters(item.id, item.title).then((chapters) => {
+    window.hanko.mangadexChapters(item.id, item.title, item.description, item.genres).then((chapters) => {
       if (!chapters || !chapters.length) return;
       const idx = chapters.findIndex((c) => c.id === item.progress.chapterId);
       const percent = idx >= 0 ? Math.round(((idx + 1) / chapters.length) * 100) : 0;
@@ -1371,12 +1371,12 @@ async function openTitleModal(item) {
       // описания) — последний шанс: поищем то же название на ReManga/WaManga
       if (!item.description) {
         try {
-          const found = await window.hanko.findRuDescription(item.title);
+          const found = await window.hanko.findRuDescription(item.title, item.genres);
           if (found?.description) item = { ...item, description: found.description };
         } catch { /* и здесь не нашлось — значит просто нет */ }
       }
     }
-    const allChapters = await window.hanko.mangadexChapters(item.id, item.title);
+    const allChapters = await window.hanko.mangadexChapters(item.id, item.title, item.description, item.genres);
     const inLibrary = library.some((l) => l.id === item.id);
     const libItem = library.find((l) => l.id === item.id);
     const historyEntry = readingHistory.find((h) => h.mangaId === item.id);
